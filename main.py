@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
+from sentence_transformers import SentenceTransformer
 import openai
 import os
 from dotenv import load_dotenv
@@ -33,6 +34,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize OpenAI client
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Initialize FREE sentence transformer model
+sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
@@ -88,12 +92,8 @@ async def chat(message: ChatMessage):
         if "üretim" in user_message.lower() and ("çıktı" in user_message.lower() or "miktar" in user_message.lower()):
             return ChatResponse(response="Güncel üretim çıktısı: 850 adet. Bu bilgi canlı sistemden alınmıştır.")
         
-        # Generate embedding for user message
-        embedding_response = openai.embeddings.create(
-            model="text-embedding-ada-002",
-            input=user_message
-        )
-        user_embedding = embedding_response.data[0].embedding
+        # Generate embedding for user message using FREE model
+        user_embedding = sentence_model.encode([user_message])[0].tolist()
         
         # Search for similar questions in Qdrant
         search_results = qdrant_client.search(
