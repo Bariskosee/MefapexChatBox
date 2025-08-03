@@ -1,6 +1,13 @@
-# MEFAPEX Turkish AI Chatbot Prototype
+# 🏭 MEFAPEX Turkish AI Chatbot
 
-Bu proje, MEFAPEX fabrikası için Türkçe AI destekli chatbot prototipidir. Çalışanların sık sorulan sorulara hızlı ve doğru yanıtlar alabilmesi için tasarlanmıştır.
+> Fabrika çalışanları için Türkçe AI destekli soru-cevap sistemi
+
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--3.5-orange.svg)](https://openai.com)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+MEFAPEX fabrikası için geliştirilmiş Türkçe AI chatbot prototipi. Çalışanların fabrika ile ilgili sorularına hızlı ve doğru yanıtlar vermek için tasarlanmıştır.
 
 ## 🚀 Özellikler
 
