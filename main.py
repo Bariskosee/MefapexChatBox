@@ -70,9 +70,11 @@ async def login(request: LoginRequest):
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
     """
-    Main chat endpoint that:
-    1. Performs vector search in Qdrant
-    2. Uses OpenAI GPT-3.5 Turbo to generate response
+    Hybrid chat endpoint that:
+    1. First searches in uploaded FAQ database
+    2. If relevant info found, uses that as primary source
+    3. If no relevant info found, uses ChatGPT's general knowledge
+    4. Always generates response via GPT-3.5 Turbo for natural conversation
     """
     try:
         user_message = message.message.strip()
@@ -101,38 +103,95 @@ async def chat(message: ChatMessage):
             with_payload=True
         )
         
-        if not search_results:
-            context = "Maalesef bu konuda spesifik bilgim yok."
-        else:
+        # Determine if we have relevant info from database
+        has_relevant_context = False
+        context = ""
+        similarity_threshold = 0.7  # Adjust this threshold as needed
+        
+        if search_results and search_results[0].score > similarity_threshold:
+            # High similarity - use database info
+            has_relevant_context = True
             best_match = search_results[0]
-            context = f"Soru: {best_match.payload['question']}\nCevap: {best_match.payload['answer']}"
-            logger.info(f"Found context with score: {best_match.score}")
+            context = f"Fabrika veritabanından: {best_match.payload['answer']}"
+            logger.info(f"Using database context with score: {best_match.score}")
+        else:
+            # Low similarity or no results - will use general knowledge
+            has_relevant_context = False
+            logger.info("No relevant database context found, using general knowledge")
         
-        # Create prompt for GPT-3.5 Turbo
-        system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe olarak yanıt ver. 
-        Çalışanlara yardımcı olmak için tasarlandın. Kibar, profesyonel ve yardımsever ol.
-        Eğer bir sorunun cevabını bilmiyorsan, bunu açıkça belirt ve kime başvurabileceklerini söyle."""
-        
-        user_prompt = f"""Kullanıcı sorusu: {user_message}
+            # Create adaptive prompt based on context availability with advanced formatting
+            if has_relevant_context:
+                # Use database information as primary source with beautiful formatting
+                system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe olarak yanıt ver.
 
-İlgili bilgi: {context}
+ÖNCELİK SIRASI:
+1. Önce veritabanındaki bilgileri kullan (bunlar doğru ve güncel)
+2. Bu bilgileri ChatGPT tarzı temiz formatta sun
 
-Lütfen yukarıdaki bilgiyi kullanarak kullanıcının sorusuna Türkçe olarak yanıt ver. 
-Eğer sağlanan bilgi soruyla tam olarak ilgili değilse, genel yardımcı bir yanıt ver."""
-        
-        # Generate response using GPT-3.5 Turbo
+FORMAT ÖNCELİĞİ (ÇOK ÖNEMLİ):
+Her yanıtını temiz, yapılandırılmış ve görsel olarak çekici yap:
+• Düşünceler/bölümler arası açık satır boşlukları
+• Çoklu öğeler için madde işaretli veya numaralı listeler  
+• Okunabilirlik için kısa paragraflar
+• Gerektiğinde **kalın** veya *italik* vurgu
+• Büyük metin blokları yapmaktan kaçın
+• Akıcılık, netlik ve organize görünüm önceliği
+
+Kibar, profesyonel ve yardımsever ol."""
+                
+                user_prompt = f"""Kullanıcı sorusu: {user_message}
+
+Fabrika veritabanından alınan bilgi: {context}
+
+Yukarıdaki veritabanı bilgisini kullanarak soruyu yanıtla. Bu bilgi fabrikamıza özeldir ve doğru kabul edilmelidir.
+Yanıtını ChatGPT kalitesinde temiz ve okunabilir formatta sun."""
+            
+            else:
+                # Use general knowledge but maintain MEFAPEX context with clean formatting
+                system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe olarak yanıt ver.
+
+KAYNAK STRATEJİSİ:
+• Bu soru fabrika veritabanında bulunmuyor
+• Genel bilginle doğrudan yanıtla - ChatGPT bilgini kullan
+• MEFAPEX perspektifini koru ama soru hakkında bilgin varsa paylaş
+• Yanıtının sonunda "Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor" ifadesini ekle
+
+FORMAT ÖNCELİĞİ (ÇOK ÖNEMLİ):
+Her yanıtını temiz, yapılandırılmış ve görsel olarak çekici yap:
+• Düşünceler/bölümler arası açık satır boşlukları
+• Çoklu öğeler için madde işaretli veya numaralı listeler
+• Okunabilirlik için kısa paragraflar  
+• Gerektiğinde **kalın** veya *italik* vurgu
+• Büyük metin blokları yapmaktan kaçın
+• Akıcılık, netlik ve organize görünüm önceliği
+
+Kibar, profesyonel ve yardımsever ol."""
+                
+                user_prompt = f"""Kullanıcı sorusu: {user_message}
+
+Bu konuda fabrika veritabanında spesifik bilgi bulunamadı. 
+Lütfen genel bilginle doğrudan yanıtla. Soruyu ChatGPT olarak cevaplayabilirsin.
+Yanıtının sonunda mutlaka şu ifadeyi ekle: "Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor."
+Yanıtını ChatGPT kalitesinde temiz ve okunabilir formatta sun."""        # Generate response using GPT-3.5 Turbo
         chat_completion = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=300,
+            max_tokens=400,  # Increased for more detailed responses
             temperature=0.7
         )
         
         bot_response = chat_completion.choices[0].message.content
-        logger.info(f"Generated response: {bot_response}")
+        
+        # Add source indicator to response
+        if has_relevant_context:
+            logger.info("Generated response using database context")
+        else:
+            logger.info("Generated response using general knowledge")
+            # Optionally add a subtle indicator that this is general knowledge
+            bot_response += "\n\n💡 *Bu yanıt genel bilgiye dayanmaktadır.*"
         
         return ChatResponse(response=bot_response)
         

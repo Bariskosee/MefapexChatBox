@@ -58,9 +58,30 @@ class LoginResponse(BaseModel):
     message: str
 
 def simple_text_similarity(query, question):
-    """Simple text-based similarity for demo purposes"""
-    query_words = set(query.lower().split())
-    question_words = set(question.lower().split())
+    """Improved text-based similarity for demo purposes"""
+    # Normalize text - lowercase and basic cleaning
+    query_clean = query.lower().strip()
+    question_clean = question.lower().strip()
+    
+    # Exact match gets highest score
+    if query_clean == question_clean:
+        return 1.0
+    
+    # Check if query is contained in question or vice versa
+    if query_clean in question_clean or question_clean in query_clean:
+        return 0.8
+    
+    # Word-based similarity
+    query_words = set(query_clean.split())
+    question_words = set(question_clean.split())
+    
+    # Remove common Turkish stopwords
+    stopwords = {'ve', 'ile', 'için', 'nasıl', 'nedir', 'nelerdir', 'ne', 'bu', 'o', 'bir', 'olan', 'olur'}
+    query_words = query_words - stopwords
+    question_words = question_words - stopwords
+    
+    if not query_words or not question_words:
+        return 0.0
     
     intersection = len(query_words.intersection(question_words))
     union = len(query_words.union(question_words))
@@ -68,7 +89,20 @@ def simple_text_similarity(query, question):
     if union == 0:
         return 0.0
     
-    return intersection / union
+    jaccard_score = intersection / union
+    
+    # Give bonus for key matching words
+    key_words = ['çalışma', 'saat', 'mesai', 'fabrika', 'personel', 'giriş', 'çıkış', 'stok', 
+                 'logo', 'izin', 'başvuru', 'vardiya', 'değişim', 'güvenlik', 'kural', 
+                 'yemek', 'mola', 'kalite', 'kontrol', 'makine', 'arıza', 'üretim', 'hedef']
+    
+    bonus = 0
+    for word in key_words:
+        if word in query_clean and word in question_clean:
+            bonus += 0.2
+    
+    final_score = min(1.0, jaccard_score + bonus)
+    return final_score
 
 def search_similar_demo(query, top_k=1):
     """Search for similar questions using demo data"""
@@ -86,41 +120,168 @@ def search_similar_demo(query, top_k=1):
     results.sort(key=lambda x: x['score'], reverse=True)
     return results[:top_k]
 
-def generate_demo_response(user_message, context):
-    """Generate a demo response when OpenAI API is not available"""
+def generate_demo_response(user_message, context, has_relevant_data=False):
+    """Generate a well-formatted demo response when OpenAI API is not available"""
     
-    # Simple rule-based responses for common queries
     user_lower = user_message.lower()
     
-    if any(word in user_lower for word in ['çalışma', 'saat', 'mesai']):
-        return f"Çalışma saatleri ile ilgili sorunuzu yanıtlayayım: {context}"
+    # If we have relevant data from database, use it with clean formatting
+    if has_relevant_data and context != "Bu konuda spesifik bilgim bulunmuyor.":
+        if any(word in user_lower for word in ['çalışma', 'saat', 'mesai']):
+            return f"""**Çalışma Saatleri**
+
+{context}
+
+📋 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['izin', 'tatil']):
+            return f"""**İzin Başvuruları**
+
+{context}
+
+📋 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['güvenlik', 'kural']):
+            return f"""**Güvenlik Kuralları**
+
+{context}
+
+🛡️ *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['vardiya', 'değişim']):
+            return f"""**Vardiya Değişiklikleri**
+
+{context}
+
+🔄 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['yemek', 'mola']):
+            return f"""**Yemek ve Mola Saatleri**
+
+{context}
+
+🍽️ *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['stok', 'logo']):
+            return f"""**Stok Durumu**
+
+{context}
+
+📦 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['kalite', 'kontrol']):
+            return f"""**Kalite Kontrol**
+
+{context}
+
+✅ *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['makine', 'arıza']):
+            return f"""**Makine Arızası**
+
+{context}
+
+🔧 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        elif any(word in user_lower for word in ['üretim', 'hedef']):
+            return f"""**Üretim Hedefleri**
+
+{context}
+
+🎯 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
+            
+        else:
+            return f"""**Fabrika Bilgisi**
+
+{context}
+
+📋 *Bu bilgi fabrika veritabanımızdan alınmıştır.*"""
     
-    elif any(word in user_lower for word in ['izin', 'tatil']):
-        return f"İzin başvuruları hakkında bilgi: {context}"
-    
-    elif any(word in user_lower for word in ['güvenlik', 'kural']):
-        return f"Güvenlik kurallarımız şunlardır: {context}"
-    
-    elif any(word in user_lower for word in ['vardiya', 'değişim']):
-        return f"Vardiya değişiklikleri için: {context}"
-    
-    elif any(word in user_lower for word in ['yemek', 'mola']):
-        return f"Yemek ve mola saatleri: {context}"
-    
-    elif any(word in user_lower for word in ['stok', 'logo']):
-        return f"Stok durumu kontrolü: {context}"
-    
-    elif any(word in user_lower for word in ['kalite', 'kontrol']):
-        return f"Kalite kontrol prosedürlerimiz: {context}"
-    
-    elif any(word in user_lower for word in ['makine', 'arıza']):
-        return f"Makine arızası bildirimi: {context}"
-    
-    elif any(word in user_lower for word in ['üretim', 'hedef']):
-        return f"Üretim hedeflerimiz: {context}"
-    
+    # If no relevant data, provide general knowledge responses with clean formatting
     else:
-        return f"Sorunuzla ilgili bulduğum bilgi: {context}. Daha detaylı bilgi için lütfen yöneticinize başvurun."
+        if any(word in user_lower for word in ['mefapex', 'bilişim', 'şirket', 'teknoloji']):
+            return """**MEFAPEX Bilişim Hakkında**
+
+MEFAPEX, Türkiye'de faaliyet gösteren bir teknoloji şirketidir. Şirket, yazılım geliştirme, sistem entegrasyonu ve bilişim danışmanlığı alanlarında hizmet vermektedir.
+
+**Başlıca Hizmet Alanları:**
+• Yazılım geliştirme ve özelleştirme
+• Sistem entegrasyonu  
+• Veritabanı yönetimi
+• Bilişim danışmanlığı
+• Dijital dönüşüm projeleri
+
+**Bu Chatbot Teknolojileri:**
+• Python - Programlama dili
+• FastAPI - Web framework
+• OpenAI GPT-3.5 - AI modeli
+• Qdrant - Vector veritabanı
+• HTML/CSS/JavaScript - Web arayüzü
+
+� *Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor.*"""
+
+        elif any(word in user_lower for word in ['ai', 'yapay', 'zeka', 'chatbot', 'chatgpt']):
+            return """**ChatGPT ve Yapay Zeka Hakkında**
+
+**ChatGPT Nedir?**
+ChatGPT, OpenAI tarafından geliştirilen büyük dil modelidir (LLM). Doğal dil işleme teknolojisini kullanarak insanlarla anlık sohbet edebilir.
+
+**ChatGPT'nin Özellikleri:**
+• Geniş bilgi birikimi ve anlayış
+• Çok dilli destek (Türkçe dahil)
+• Yaratıcı yazma ve analiz yetenekleri
+• Kod yazma ve debugging
+• Sorulara detaylı yanıtlar
+
+**Yapay Zeka Teknolojileri:**
+• Makine öğrenmesi ve derin öğrenme
+• Doğal dil işleme (NLP)
+• Bilgisayarlı görü
+• Otomasyon ve karar verme sistemleri
+
+Bu chatbot da ChatGPT benzeri teknolojiler kullanarak size yardımcı olmaktadır.
+
+📋 *Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor.*"""
+
+        elif any(word in user_lower for word in ['merhaba', 'selam', 'hello', 'hi']):
+            return """**Merhaba! 👋**
+
+Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım.
+
+**Size nasıl yardımcı olabilirim?**
+
+🏭 **Fabrika konularında:**
+• Çalışma saatleri ve vardiya bilgileri
+• Güvenlik kuralları ve prosedürler
+• İzin başvuruları ve tatil planları
+• Yemek saatleri ve sosyal olanaklar
+
+💬 **Genel konularda:**
+• Şirket hakkında bilgiler
+• Teknoloji ve AI konuları
+• Günlük sorular ve merak ettikleriniz
+
+Sorunuzu Türkçe olarak yazabilirsiniz. Size en iyi şekilde yardımcı olmaya çalışacağım! ✨"""
+
+        else:
+            return """**Genel Bilgi** �
+
+Bu konu hakkında genel bilgi verebilirim, ancak spesifik detaylar için uygun kaynaklara başvurmanızı öneririm.
+
+**Yardım alabileceğiniz yerler:**
+• Yöneticinize başvurabilirsiniz
+• İnsan Kaynakları departmanından bilgi alabilirsiniz  
+• Teknik konular için IT desteği ile iletişime geçebilirsiniz
+
+**Size yardımcı olabileceğim konular:**
+• Fabrika ile ilgili genel sorular
+• Çalışma düzeni ve kurallar
+• Şirket hakkında bilgiler
+• Teknoloji ve AI konuları
+
+📋 *Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor.*
+
+Başka bir sorunuz var mı? Size yardımcı olmaktan memnuniyet duyarım! 💫"""
 
 @app.get("/")
 async def serve_index():
@@ -138,7 +299,11 @@ async def login(request: LoginRequest):
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
     """
-    Main chat endpoint that works in demo mode
+    Hybrid chat endpoint that:
+    1. First searches in uploaded FAQ database
+    2. If relevant info found, uses that as primary source
+    3. If no relevant info found, uses ChatGPT's general knowledge
+    4. Always generates response via GPT-3.5 Turbo for natural conversation
     """
     try:
         user_message = message.message.strip()
@@ -155,24 +320,87 @@ async def chat(message: ChatMessage):
         # Search for similar questions in demo data
         search_results = search_similar_demo(user_message, top_k=1)
         
-        if not search_results or search_results[0]['score'] < 0.1:
-            context = "Bu konuda spesifik bilgim bulunmuyor."
+        # Log search results for debugging
+        if search_results:
+            logger.info(f"Search results - Top match score: {search_results[0]['score']:.3f}")
+            logger.info(f"Top match question: {search_results[0]['data']['question']}")
         else:
+            logger.info("No search results found")
+        
+        # Determine if we have relevant info from database
+        has_relevant_context = False
+        context = ""
+        similarity_threshold = 0.1  # Lowered threshold even more for demo similarity
+        
+        if search_results and search_results[0]['score'] > similarity_threshold:
+            # Found relevant info in database
+            has_relevant_context = True
             best_match = search_results[0]
             context = f"{best_match['data']['answer']}"
-            logger.info(f"Found context with score: {best_match['score']:.3f}")
+            logger.info(f"Using database context with score: {best_match['score']:.3f}")
+        else:
+            # No relevant info in database
+            has_relevant_context = False
+            context = "Bu konuda spesifik bilgim bulunmuyor."
+            logger.info("No relevant database context found, will use general knowledge")
         
         # Try to use OpenAI API, fallback to demo response
         try:
-            # Create prompt for GPT-3.5 Turbo
-            system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe olarak yanıt ver. 
-            Çalışanlara yardımcı olmak için tasarlandın. Kibar, profesyonel ve yardımsever ol."""
+            # Create adaptive prompt based on context availability with advanced formatting
+            if has_relevant_context:
+                # Use database information as primary source with beautiful formatting
+                system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe olarak yanıt ver.
+
+ÖNCELİK SIRASI:
+1. Önce veritabanındaki bilgileri kullan (bunlar doğru ve güncel)
+2. Bu bilgileri ChatGPT tarzı temiz formatta sun
+
+FORMAT ÖNCELİĞİ (ÇOK ÖNEMLİ):
+Her yanıtını temiz, yapılandırılmış ve görsel olarak çekici yap:
+• Düşünceler/bölümler arası açık satır boşlukları
+• Çoklu öğeler için madde işaretli veya numaralı listeler  
+• Okunabilirlik için kısa paragraflar
+• Gerektiğinde **kalın** veya *italik* vurgu
+• Büyük metin blokları yapmaktan kaçın
+• Akıcılık, netlik ve organize görünüm önceliği
+
+Kibar, profesyonel ve yardımsever ol."""
+                
+                user_prompt = f"""Kullanıcı sorusu: {user_message}
+
+Fabrika veritabanından alınan bilgi: {context}
+
+Yukarıdaki veritabanı bilgisini kullanarak soruyu yanıtla. Bu bilgi fabrikamıza özeldir ve doğru kabul edilmelidir.
+Yanıtını ChatGPT kalitesinde temiz ve okunabilir formatta sun."""
             
-            user_prompt = f"""Kullanıcı sorusu: {user_message}
+            else:
+                # Use general knowledge but maintain MEFAPEX context with clean formatting
+                system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe olarak yanıt ver.
 
-İlgili bilgi: {context}
+KAYNAK STRATEJİSİ:
+• Bu soru fabrika veritabanında bulunmuyor
+• Genel bilginle doğrudan yanıtla - ChatGPT bilgini kullan
+• MEFAPEX perspektifini koru ama soru hakkında bilgin varsa paylaş
+• Yanıtının sonunda "Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor" ifadesini ekle
 
-Lütfen yukarıdaki bilgiyi kullanarak kullanıcının sorusuna Türkçe olarak yanıt ver."""
+FORMAT ÖNCELİĞİ (ÇOK ÖNEMLİ):
+Her yanıtını temiz, yapılandırılmış ve görsel olarak çekici yap:
+• Düşünceler/bölümler arası açık satır boşlukları
+• Çoklu öğeler için madde işaretli veya numaralı listeler
+• Okunabilirlik için kısa paragraflar  
+• Gerektiğinde **kalın** veya *italik* vurgu
+• Büyük metin blokları yapmaktan kaçın
+• Akıcılık, netlik ve organize görünüm önceliği
+
+Kibar, profesyonel ve yardımsever ol."""
+                
+                user_prompt = f"""Kullanıcı sorusu: {user_message}
+
+Bu konuda fabrika veritabanında spesifik bilgi bulunamadı. 
+Lütfen genel bilginle doğrudan yanıtla. Soruyu ChatGPT olarak cevaplayabilirsin.
+Yanıtının sonunda mutlaka şu ifadeyi ekle: "Bu konuda fabrika veritabanımızda spesifik bilgi bulunmuyor."
+Eğer soruyla ilgili bir şey bilmiyorsan, bunu açıkça belirt.
+Yanıtını ChatGPT kalitesinde temiz ve okunabilir formatta sun."""
             
             # Generate response using GPT-3.5 Turbo
             chat_completion = openai.chat.completions.create(
@@ -181,18 +409,24 @@ Lütfen yukarıdaki bilgiyi kullanarak kullanıcının sorusuna Türkçe olarak 
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=300,
+                max_tokens=400,  # Increased for more detailed responses
                 temperature=0.7
             )
             
             bot_response = chat_completion.choices[0].message.content
-            logger.info("Generated response using OpenAI API")
+            
+            # Add source indicator to response
+            if has_relevant_context:
+                logger.info("Generated response using database context")
+            else:
+                logger.info("Generated response using general knowledge")
+                # Optionally add a subtle indicator that this is general knowledge
+                bot_response += "\n\n💡 *Bu yanıt genel bilgiye dayanmaktadır.*"
             
         except Exception as openai_error:
             logger.warning(f"OpenAI API error: {openai_error}")
             # Fallback to demo response
-            bot_response = generate_demo_response(user_message, context)
-            bot_response += "\n\n(Not: Bu yanıt demo modunda oluşturulmuştur. Tam özellikler için OpenAI API kotanızı kontrol edin.)"
+            bot_response = generate_demo_response(user_message, context, has_relevant_context)
             logger.info("Generated response using demo mode")
         
         return ChatResponse(response=bot_response)

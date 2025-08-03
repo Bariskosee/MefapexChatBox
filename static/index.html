@@ -101,13 +101,63 @@
             display: none;
             flex-direction: column;
             flex: 1;
+            position: relative;
+        }
+
+        .scroll-to-top {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        .scroll-to-top:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .scroll-to-top.show {
+            display: flex;
         }
 
         .chat-messages {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 20px;
             background: #f8f9fa;
+            scroll-behavior: smooth;
+            max-height: calc(80vh - 200px);
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
         }
 
         .message {
@@ -259,6 +309,9 @@
                     Size nasıl yardımcı olabilirim?
                 </div>
             </div>
+            <button class="scroll-to-top" id="scrollToTop" onclick="scrollToTop()">
+                ↑
+            </button>
             <div class="typing-indicator" id="typingIndicator">
                 AI asistan yazıyor...
             </div>
