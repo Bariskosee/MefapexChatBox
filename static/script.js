@@ -20,9 +20,21 @@ const scrollToTopBtn = document.getElementById('scrollToTop');
 // State
 let isLoggedIn = false;
 let isTyping = false;
+let authToken = null;
+let currentSessionId = null;  // Track current chat session
+let sessionStartTime = null;  // Track when current session started
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', function() {
+    // Check for saved auth token
+    const savedToken = localStorage.getItem('authToken');
+    if (savedToken) {
+        authToken = savedToken;
+        console.log('🔑 Found saved auth token:', authToken.substring(0, 20) + '...');
+        // Verify token is still valid
+        verifyTokenAndAutoLogin();
+    }
+    
     // Focus on username input
     document.getElementById('username').focus();
     
@@ -55,7 +67,50 @@ document.addEventListener('DOMContentLoaded', function() {
     if (chatMessages) {
         chatMessages.addEventListener('scroll', handleScroll);
     }
+    
+    console.log('✅ Event listeners added!');
 });
+
+// Verify saved token and auto-login
+async function verifyTokenAndAutoLogin() {
+    if (!authToken) return;
+    
+    try {
+        console.log('🔍 Verifying saved auth token...');
+        const response = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+            const userData = await response.json();
+            console.log('✅ Token verified, auto-login successful:', userData.username);
+            
+            // Auto-login successful
+            isLoggedIn = true;
+            loginContainer.style.display = 'none';
+            chatContainer.style.display = 'flex';
+            logoutBtn.style.display = 'block';
+            
+            // Focus message input
+            messageInput.focus();
+            
+            // Start a new chat session instead of loading old history
+            startNewChatSession();
+            
+            // Update history button visibility
+            updateHistoryButtonVisibility();
+        } else {
+            console.log('❌ Token expired or invalid, clearing...');
+            // Token invalid, clear it
+            authToken = null;
+            localStorage.removeItem('authToken');
+        }
+    } catch (error) {
+        console.log('❌ Token verification failed:', error);
+        authToken = null;
+        localStorage.removeItem('authToken');
+    }
+}
 
 // Handle scroll events
 function handleScroll() {
@@ -77,31 +132,6 @@ function scrollToTop() {
     });
 }
 
-// Test function to check if login works (can be called from browser console)
-window.testLogin = async function() {
-    console.log('Testing login function...');
-    try {
-        const response = await fetch(`${API_BASE_URL}/login-legacy`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                username: 'demo',
-                password: '1234'
-            })
-        });
-        
-        const data = await response.json();
-        console.log('Test login response:', data);
-        return data;
-    } catch (error) {
-        console.error('Test login error:', error);
-        return error;
-    }
-};
-
-// Login function - Fixed for JWT and legacy endpoints
 // Login function - Fixed for JWT and legacy endpoints
 async function login() {
     console.log('🔐 Login function called!');
@@ -150,6 +180,16 @@ async function login() {
             logoutBtn.style.display = 'block';
             messageInput.focus();
             hideLoginError();
+            try {
+                await loginWithJWT(username, password);
+                // Start a new chat session instead of loading old history
+                startNewChatSession();
+            } catch (err) {
+                console.warn('JWT login failed but legacy succeeded:', err);
+                // Still start new session even if JWT fails
+                startNewChatSession();
+            }
+            updateHistoryButtonVisibility();
         } else {
             console.log('❌ Login failed:', data.message);
             showLoginError(data.message || 'Giriş başarısız');
@@ -160,6 +200,67 @@ async function login() {
     }
 }
 
+// Fallback to legacy login if JWT fails
+async function loginLegacyFallback(username, password) {
+    try {
+        console.log('📡 Calling legacy login endpoint...');
+        const response = await fetch(`${API_BASE_URL}/login-legacy`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password
+            })
+        });
+        
+        console.log('📊 Legacy Response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('📄 Legacy Response data:', data);
+        
+        if (data.success) {
+            console.log('✅ Legacy login successful!');
+            
+            // Legacy login doesn't provide JWT, but we can still proceed
+            // Note: History features will be limited without JWT
+            isLoggedIn = true;
+            loginContainer.style.display = 'none';
+            chatContainer.style.display = 'flex';
+            logoutBtn.style.display = 'block';
+            
+            // Focus message input
+            messageInput.focus();
+            
+            // Clear login error
+            showLoginError('');
+            
+            // Clear password field for security
+            document.getElementById('password').value = '';
+            
+            try {
+                await loginWithJWT(username, password);
+                // Don't automatically load chat history - let users start fresh
+            } catch (err) {
+                console.warn('JWT login failed but legacy succeeded:', err);
+            }
+            updateHistoryButtonVisibility();
+            
+            console.log('🎯 Legacy login completed!');
+        } else {
+            throw new Error(data.message || 'Giriş başarısız');
+        }
+        
+    } catch (legacyError) {
+        console.error('❌ Legacy login error:', legacyError);
+        showLoginError('Giriş başarısız. Kullanıcı adı ve şifreyi kontrol edin.');
+    }
+}
 // Make login function available globally
 window.login = login;
 
@@ -170,15 +271,28 @@ function logout() {
     chatContainer.style.display = 'none';
     logoutBtn.style.display = 'none';
     
-    // Clear chat messages
-    chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+    // Keep current session messages visible until next login
+    // Only reset to welcome message if no messages exist
+    const messages = chatMessages.querySelectorAll('.message');
+    if (messages.length === 0) {
+        chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+    }
     
     // Clear input fields
     document.getElementById('username').value = 'demo';
     document.getElementById('password').value = '1234';
     messageInput.value = '';
-    
+
     hideLoginError();
+    
+    // Clear session info (will start fresh on next login)
+    currentSessionId = null;
+    sessionStartTime = null;
+    
+    // Keep token temporarily to allow history loading on re-login
+    // authToken = null;
+    // localStorage.removeItem('authToken');
+    updateHistoryButtonVisibility();
 }
 
 // Show login error
@@ -242,13 +356,22 @@ async function sendMessage() {
     showTyping();
     
     try {
-        console.log('Making API request to:', `${API_BASE_URL}/chat`);
+        // Use authenticated endpoint if user is logged in and has token
+        const endpoint = authToken ? '/chat/authenticated' : '/chat';
+        const headers = {
+            'Content-Type': 'application/json',
+        };
         
-        const response = await fetch(`${API_BASE_URL}/chat`, {
+        // Add authentication header if token exists
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        
+        console.log('Making API request to:', `${API_BASE_URL}${endpoint}`);
+        
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: headers,
             body: JSON.stringify({
                 message: message
             })
@@ -305,8 +428,100 @@ function addMessage(text, sender) {
     
     chatMessages.appendChild(messageDiv);
     
+    // Save to localStorage as backup (only if logged in)
+    if (isLoggedIn && authToken) {
+        saveChatToLocalStorage();
+    }
+    
     // Auto-scroll to bottom with smooth animation
     scrollToBottom();
+}
+
+// Save current chat to localStorage as backup
+function saveChatToLocalStorage() {
+    try {
+        const messages = [];
+        const messageElements = chatMessages.querySelectorAll('.message');
+        
+        for (let i = 0; i < messageElements.length; i += 2) {
+            const userMsg = messageElements[i];
+            const botMsg = messageElements[i + 1];
+            
+            if (userMsg && botMsg) {
+                messages.push({
+                    user_message: userMsg.querySelector('.message-bubble').textContent,
+                    bot_response: botMsg.querySelector('.message-bubble').innerHTML,
+                    timestamp: new Date().toISOString(),
+                    session_id: currentSessionId
+                });
+            }
+        }
+        
+        const sessionData = {
+            sessionId: currentSessionId,
+            startTime: sessionStartTime,
+            messages: messages,
+            lastUpdate: new Date().toISOString()
+        };
+        
+        localStorage.setItem('currentSession', JSON.stringify(sessionData));
+        console.log('💾 Current session saved to localStorage:', currentSessionId);
+    } catch (error) {
+        console.warn('Failed to save chat backup:', error);
+    }
+}
+
+// Load chat from localStorage backup
+function loadChatFromLocalStorage() {
+    try {
+        const sessionData = localStorage.getItem('currentSession');
+        if (sessionData) {
+            const session = JSON.parse(sessionData);
+            
+            // Only load if no current messages or we're loading the same session
+            const currentMessages = chatMessages.querySelectorAll('.message');
+            const hasWelcomeMessage = chatMessages.querySelector('.welcome-message');
+            
+            if (currentMessages.length === 0 || hasWelcomeMessage) {
+                chatMessages.innerHTML = '';
+                
+                // Restore session info
+                currentSessionId = session.sessionId;
+                sessionStartTime = session.startTime;
+                
+                session.messages.forEach(msg => {
+                    addMessageWithoutSaving(msg.user_message, 'user');
+                    addMessageWithoutSaving(msg.bot_response, 'bot');
+                });
+                
+                scrollToBottom();
+                console.log('📱 Loaded current session from localStorage:', currentSessionId);
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to load chat backup:', error);
+    }
+}
+
+// Add message without saving to localStorage (for loading from backup)
+function addMessageWithoutSaving(text, sender) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}`;
+    
+    const bubbleDiv = document.createElement('div');
+    bubbleDiv.className = 'message-bubble';
+    
+    const formattedText = sender === 'bot' ? text : formatMessage(text);
+    bubbleDiv.innerHTML = formattedText;
+    
+    messageDiv.appendChild(bubbleDiv);
+    
+    const welcomeMessage = chatMessages.querySelector('.welcome-message');
+    if (welcomeMessage) {
+        welcomeMessage.remove();
+    }
+    
+    chatMessages.appendChild(messageDiv);
 }
 
 // Format message text (basic markdown support)
@@ -398,29 +613,7 @@ window.addEventListener('unhandledrejection', function(event) {
     console.error('Unhandled promise rejection:', event.reason);
 });
 
-// Connection test function
-async function testConnection() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/health`);
-        const data = await response.json();
-        console.log('Health check:', data);
-        return data.status === 'healthy';
-    } catch (error) {
-        console.error('Connection test failed:', error);
-        return false;
-    }
-}
-
-// Initialize connection test
-testConnection().then(isHealthy => {
-    if (!isHealthy) {
-        console.warn('Backend connection may be unavailable');
-    }
-});
-
 // JWT management for MEFAPEX Chatbot
-let authToken = null;
-
 async function loginWithJWT(username, password) {
     const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
@@ -476,6 +669,106 @@ async function fetchAndDisplayChatHistory() {
 // Make available globally for button
 window.fetchAndDisplayChatHistory = fetchAndDisplayChatHistory;
 
+// Auto-load chat history on login (without replacing current chat)
+async function loadChatHistoryOnLogin() {
+    if (!authToken) {
+        console.log('No auth token for history loading');
+        return;
+    }
+    
+    try {
+        console.log('🔄 Loading chat history on login...');
+        
+        // Get current user info to obtain user_id
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!meResp.ok) {
+            console.warn('Failed to get user info for history loading');
+            return;
+        }
+        
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+
+        // Fetch chat history
+        const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!histResp.ok) {
+            console.warn('Failed to fetch chat history');
+            return;
+        }
+        
+        const histData = await histResp.json();
+        const messages = histData.messages || [];
+
+        // Only load history if chat is currently empty or shows welcome message
+        const currentMessages = chatMessages.querySelectorAll('.message');
+        const hasWelcomeMessage = chatMessages.querySelector('.welcome-message');
+        
+        if (messages.length > 0 && (currentMessages.length === 0 || hasWelcomeMessage)) {
+            console.log(`📚 Loading ${messages.length} messages from history`);
+            
+            // Clear current content
+            chatMessages.innerHTML = '';
+            
+            // Load messages from history
+            messages.forEach(msg => {
+                addMessage(msg.user_message, 'user');
+                addMessage(msg.bot_response, 'bot');
+            });
+            
+            scrollToBottom();
+            console.log('✅ Chat history loaded successfully');
+        } else {
+            console.log('📝 Keeping current chat session, history available in sidebar');
+        }
+        
+    } catch (err) {
+        console.warn('Failed to load chat history:', err);
+    }
+}
+
+// 🆕 NEW SESSION MANAGEMENT FUNCTIONS
+
+// Start a new chat session (clean slate)
+function startNewChatSession() {
+    console.log('🆕 Starting new chat session...');
+    
+    // Generate a new session ID
+    currentSessionId = generateSessionId();
+    sessionStartTime = new Date().toISOString();
+    
+    // Clear chat messages and show welcome message
+    chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+    
+    // Clear localStorage backup for new session
+    localStorage.removeItem('chatBackup');
+    
+    console.log('✅ New chat session started:', currentSessionId);
+}
+
+// Generate unique session ID
+function generateSessionId() {
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Get current session info
+function getCurrentSessionInfo() {
+    return {
+        sessionId: currentSessionId,
+        startTime: sessionStartTime,
+        messageCount: chatMessages.querySelectorAll('.message').length
+    };
+}
+
+// Check if current session has messages
+function hasCurrentSessionMessages() {
+    const messages = chatMessages.querySelectorAll('.message');
+    return messages.length > 0;
+}
+
 // Sidebar open/close logic
 function openChatHistorySidebar() {
     document.getElementById('chatHistorySidebar').style.transform = 'translateX(0)';
@@ -498,6 +791,7 @@ async function fetchAndDisplayChatHistorySidebar() {
         if (!meResp.ok) throw new Error('Kullanıcı bilgisi alınamadı');
         const meData = await meResp.json();
         const userId = meData.user_id;
+        
         // Fetch chat history
         const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
@@ -505,23 +799,60 @@ async function fetchAndDisplayChatHistorySidebar() {
         if (!histResp.ok) throw new Error('Geçmiş alınamadı');
         const histData = await histResp.json();
         const messages = histData.messages || [];
-        // Only show user questions (last 20)
+        
+        // Group messages by sessions (simulate sessions by time gaps)
+        const sessions = groupMessagesBySessions(messages);
+        
+        // Display session previews
         const list = document.getElementById('chatHistoryList');
         list.innerHTML = '';
-        if (messages.length === 0) {
+        
+        if (sessions.length === 0) {
             list.innerHTML = '<li style="padding:20px; color:#ccc;">Hiç geçmiş yok.</li>';
         } else {
-            messages.forEach((msg, idx) => {
+            // Show current session if it has messages
+            if (hasCurrentSessionMessages()) {
+                const currentSessionLi = document.createElement('li');
+                currentSessionLi.style.cssText = 'padding:16px 20px; border-bottom:2px solid #667eea; cursor:pointer; background:rgba(102,126,234,0.1);';
+                const sessionInfo = getCurrentSessionInfo();
+                currentSessionLi.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:#667eea; font-weight:600;">📝 Mevcut Oturum</span>
+                        <span style="color:#999; font-size:12px;">${sessionInfo.messageCount} mesaj</span>
+                    </div>
+                    <div style="color:#ccc; font-size:13px; margin-top:4px;">Devam eden sohbet...</div>
+                `;
+                currentSessionLi.onclick = () => {
+                    closeChatHistorySidebar();
+                    // Already showing current session, just close sidebar
+                };
+                list.appendChild(currentSessionLi);
+            }
+            
+            // Show previous sessions (last 20)
+            sessions.slice(0, 20).forEach((session, idx) => {
                 const li = document.createElement('li');
-                li.style.padding = '16px 20px';
-                li.style.borderBottom = '1px solid #444';
-                li.style.cursor = 'pointer';
-                li.style.whiteSpace = 'nowrap';
-                li.style.overflow = 'hidden';
-                li.style.textOverflow = 'ellipsis';
-                li.title = msg.user_message;
-                li.innerHTML = `<span style='color:#ffd700;'>${idx+1}.</span> ${msg.user_message}`;
-                li.onclick = () => loadHistoryConversation(idx, messages);
+                li.style.cssText = 'padding:16px 20px; border-bottom:1px solid #444; cursor:pointer; transition:background 0.3s;';
+                li.onmouseenter = () => li.style.background = 'rgba(255,255,255,0.05)';
+                li.onmouseleave = () => li.style.background = 'transparent';
+                
+                const firstMessage = session.messages[0];
+                const messageCount = session.messages.length;
+                const sessionDate = new Date(firstMessage.timestamp || Date.now());
+                const timeAgo = getTimeAgo(sessionDate);
+                
+                li.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:#ffd700; font-weight:500;">💬 Oturum ${idx + 1}</span>
+                        <span style="color:#999; font-size:12px;">${messageCount} mesaj</span>
+                    </div>
+                    <div style="color:#ccc; font-size:13px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${firstMessage.user_message}">
+                        "${firstMessage.user_message}"
+                    </div>
+                    <div style="color:#888; font-size:11px; margin-top:2px;">${timeAgo}</div>
+                `;
+                
+                li.onclick = () => loadHistorySession(session);
                 list.appendChild(li);
             });
         }
@@ -529,6 +860,112 @@ async function fetchAndDisplayChatHistorySidebar() {
         document.getElementById('chatHistoryList').innerHTML = '<li style="padding:20px; color:#fcc;">Geçmiş yüklenemedi.</li>';
     }
 }
+
+// Group messages into sessions based on time gaps
+function groupMessagesBySessions(messages) {
+    if (messages.length === 0) return [];
+    
+    const sessions = [];
+    let currentSession = { messages: [], startTime: null };
+    const SESSION_GAP_MINUTES = 30; // 30 minutes gap = new session
+    
+    messages.forEach((message, index) => {
+        const messageTime = new Date(message.timestamp || Date.now());
+        
+        if (currentSession.messages.length === 0) {
+            // First message of session
+            currentSession.startTime = messageTime;
+            currentSession.messages.push(message);
+        } else {
+            // Check time gap from last message
+            const lastMessageTime = new Date(currentSession.messages[currentSession.messages.length - 1].timestamp || Date.now());
+            const timeDiffMinutes = (messageTime - lastMessageTime) / (1000 * 60);
+            
+            if (timeDiffMinutes > SESSION_GAP_MINUTES) {
+                // Start new session
+                sessions.push({ ...currentSession });
+                currentSession = { messages: [message], startTime: messageTime };
+            } else {
+                // Continue current session
+                currentSession.messages.push(message);
+            }
+        }
+    });
+    
+    // Add last session
+    if (currentSession.messages.length > 0) {
+        sessions.push(currentSession);
+    }
+    
+    // Return sessions in reverse order (newest first)
+    return sessions.reverse();
+}
+
+// Load a specific historical session
+function loadHistorySession(session) {
+    console.log('📖 Loading historical session with', session.messages.length, 'messages');
+    
+    // Clear current chat
+    chatMessages.innerHTML = '';
+    
+    // Add session header
+    const sessionHeader = document.createElement('div');
+    sessionHeader.style.cssText = 'text-align:center; padding:15px; margin-bottom:10px; background:rgba(102,126,234,0.1); border-radius:10px; color:#667eea; font-weight:600;';
+    sessionHeader.innerHTML = `📚 Geçmiş Oturum - ${new Date(session.startTime).toLocaleString('tr-TR')}`;
+    chatMessages.appendChild(sessionHeader);
+    
+    // Load messages from this session
+    session.messages.forEach(msg => {
+        addMessageWithoutSaving(msg.user_message, 'user');
+        addMessageWithoutSaving(msg.bot_response, 'bot');
+    });
+    
+    // Add back to current session button
+    const backButton = document.createElement('div');
+    backButton.style.cssText = 'text-align:center; padding:15px; margin-top:20px;';
+    backButton.innerHTML = '<button onclick="returnToCurrentSession()" style="background:#667eea; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;">📝 Mevcut Oturuma Dön</button>';
+    chatMessages.appendChild(backButton);
+    
+    closeChatHistorySidebar();
+    scrollToBottom();
+}
+
+// Return to current session
+function returnToCurrentSession() {
+    console.log('🔄 Returning to current session');
+    
+    // Clear chat and show welcome message if no current messages
+    if (!hasCurrentSessionMessages()) {
+        chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+    } else {
+        // Reload current session from localStorage backup
+        loadChatFromLocalStorage();
+    }
+    
+    scrollToBottom();
+}
+
+// Helper function to get time ago string
+function getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffMins < 60) {
+        return `${diffMins} dakika önce`;
+    } else if (diffHours < 24) {
+        return `${diffHours} saat önce`;
+    } else if (diffDays < 7) {
+        return `${diffDays} gün önce`;
+    } else {
+        return date.toLocaleDateString('tr-TR');
+    }
+}
+
+// Make returnToCurrentSession globally available
+window.returnToCurrentSession = returnToCurrentSession;
 
 function loadHistoryConversation(idx, messages) {
     // Show only the selected Q&A in the chat window
@@ -547,25 +984,15 @@ window.closeChatHistorySidebar = closeChatHistorySidebar;
 // Show/hide history button based on login state
 function updateHistoryButtonVisibility() {
     const btn = document.getElementById('openHistoryBtn');
-    if (isLoggedIn) {
-        btn.style.display = 'block';
-    } else {
-        btn.style.display = 'none';
-        closeChatHistorySidebar();
+    if (btn) {
+        if (isLoggedIn) {
+            btn.style.display = 'block';
+        } else {
+            btn.style.display = 'none';
+            closeChatHistorySidebar();
+        }
     }
 }
 
 // Call on page load
 window.addEventListener('DOMContentLoaded', updateHistoryButtonVisibility);
-
-// Patch login/logout to update button
-const originalLogin = window.login;
-window.login = async function() {
-    await originalLogin();
-    updateHistoryButtonVisibility();
-};
-const originalLogout = window.logout;
-window.logout = function() {
-    originalLogout();
-    updateHistoryButtonVisibility();
-};

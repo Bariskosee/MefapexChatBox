@@ -15,37 +15,46 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             height: 100vh;
+            margin: 0;
+            padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
+            position: relative;
         }
 
         .container {
             background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            width: 90%;
-            max-width: 800px;
-            height: 80vh;
+            border-radius: 20px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+            width: 95%;
+            max-width: 900px;
+            height: 85vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative;
         }
 
         .header {
-            background: #2c3e50;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
             color: white;
-            padding: 20px;
+            padding: 25px 30px;
             text-align: center;
+            position: relative;
+            border-radius: 20px 20px 0 0;
         }
 
         .header h1 {
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            font-size: 28px;
+            font-weight: 600;
         }
 
         .header p {
-            opacity: 0.8;
-            font-size: 14px;
+            opacity: 0.9;
+            font-size: 15px;
+            margin: 0;
         }
 
         .login-container {
@@ -54,47 +63,66 @@
             justify-content: center;
             align-items: center;
             flex: 1;
-            padding: 40px;
+            padding: 50px 40px;
+            background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%);
         }
 
         .login-form {
-            background: #f8f9fa;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
             width: 100%;
-            max-width: 300px;
+            max-width: 350px;
+            border: 1px solid rgba(0,0,0,0.05);
         }
 
         .login-form h2 {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             color: #2c3e50;
+            font-size: 24px;
+            font-weight: 600;
         }
 
         .login-form input {
             width: 100%;
-            padding: 12px;
-            margin-bottom: 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            padding: 15px 18px;
+            margin-bottom: 18px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
             font-size: 16px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        .login-form input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
         }
 
         .login-form button {
             width: 100%;
-            padding: 12px;
-            background: #3498db;
+            padding: 15px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 10px;
             font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
         }
 
         .login-form button:hover {
-            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .login-form button:active {
+            transform: translateY(0);
         }
 
         .chat-container {
@@ -102,30 +130,60 @@
             flex-direction: column;
             flex: 1;
             position: relative;
+            background: #f8f9fa;
+        }
+
+        .history-button-topLeft {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 1100;
+            box-shadow: 0 4px 15px rgba(118, 75, 162, 0.3);
+            transition: all 0.3s ease;
+            display: none;
+        }
+
+        .history-button-topLeft:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(118, 75, 162, 0.4);
+        }
+
+        .history-button-topLeft:active {
+            transform: translateY(0);
         }
 
         .scroll-to-top {
             position: absolute;
-            bottom: 80px;
-            right: 20px;
-            background: #3498db;
+            bottom: 90px;
+            right: 25px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
             color: white;
             border: none;
             border-radius: 50%;
-            width: 45px;
-            height: 45px;
+            width: 50px;
+            height: 50px;
             cursor: pointer;
             display: none;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
             z-index: 1000;
             transition: all 0.3s ease;
+            font-size: 18px;
+            font-weight: bold;
         }
 
         .scroll-to-top:hover {
-            background: #2980b9;
-            transform: translateY(-2px);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
         }
 
         .scroll-to-top.show {
@@ -136,34 +194,46 @@
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 20px;
-            background: #f8f9fa;
+            padding: 25px;
+            background: #ffffff;
             scroll-behavior: smooth;
-            max-height: calc(80vh - 200px);
+            max-height: calc(85vh - 220px);
         }
 
         .chat-messages::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
 
         .chat-messages::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 3px;
+            background: #f1f3f4;
+            border-radius: 4px;
         }
 
         .chat-messages::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 3px;
+            background: linear-gradient(135deg, #c1c1c1 0%, #a8a8a8 100%);
+            border-radius: 4px;
         }
 
         .chat-messages::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
+            background: linear-gradient(135deg, #a8a8a8 0%, #909090 100%);
         }
 
         .message {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             display: flex;
             align-items: flex-end;
+            animation: messageSlideIn 0.3s ease-out;
+        }
+
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .message.user {
@@ -175,107 +245,276 @@
         }
 
         .message-bubble {
-            max-width: 70%;
-            padding: 12px 18px;
-            border-radius: 18px;
+            max-width: 75%;
+            padding: 15px 20px;
+            border-radius: 20px;
             word-wrap: break-word;
+            line-height: 1.5;
+            font-size: 15px;
         }
 
         .message.user .message-bubble {
-            background: #3498db;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
             color: white;
-            border-bottom-right-radius: 5px;
+            border-bottom-right-radius: 6px;
+            box-shadow: 0 3px 10px rgba(52, 152, 219, 0.3);
         }
 
         .message.bot .message-bubble {
             background: white;
             color: #2c3e50;
-            border: 1px solid #e1e8ed;
-            border-bottom-left-radius: 5px;
+            border: 2px solid #e9ecef;
+            border-bottom-left-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
         }
 
         .chat-input-container {
             display: flex;
-            padding: 20px;
+            padding: 25px;
             background: white;
-            border-top: 1px solid #e1e8ed;
+            border-top: 2px solid #e9ecef;
+            align-items: center;
+            gap: 15px;
         }
 
         .chat-input {
             flex: 1;
-            padding: 12px 18px;
-            border: 1px solid #ddd;
+            padding: 15px 20px;
+            border: 2px solid #e9ecef;
             border-radius: 25px;
             outline: none;
             font-size: 16px;
-            margin-right: 10px;
+            transition: all 0.3s ease;
+            background: #f8f9fa;
         }
 
         .chat-input:focus {
             border-color: #3498db;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
         }
 
         .send-button {
-            background: #3498db;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
             color: white;
             border: none;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 55px;
+            height: 55px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
         }
 
         .send-button:hover {
-            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
         }
 
         .send-button:disabled {
-            background: #bdc3c7;
+            background: linear-gradient(135deg, #bdc3c7 0%, #95a5a6 100%);
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
         .typing-indicator {
             display: none;
-            padding: 10px 0;
+            padding: 15px 25px;
             font-style: italic;
             color: #7f8c8d;
+            background: rgba(52, 152, 219, 0.05);
+            border-top: 1px solid rgba(52, 152, 219, 0.1);
         }
 
         .error-message {
             color: #e74c3c;
-            background: #fdf2f2;
-            border: 1px solid #e74c3c;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 15px;
+            background: linear-gradient(135deg, #fdf2f2 0%, #ffeaea 100%);
+            border: 2px solid #fadbd8;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
             text-align: center;
+            font-weight: 500;
         }
 
         .welcome-message {
             text-align: center;
             color: #7f8c8d;
-            padding: 40px 20px;
+            padding: 50px 30px;
             font-style: italic;
+            font-size: 16px;
+            line-height: 1.6;
         }
 
         .logout-button {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(255,255,255,0.2);
+            top: 25px;
+            right: 30px;
+            background: rgba(255,255,255,0.15);
             color: white;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
+            border: 2px solid rgba(255,255,255,0.3);
+            padding: 10px 18px;
+            border-radius: 8px;
             cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
         }
 
         .logout-button:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-1px);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .container {
+                width: 98%;
+                height: 95vh;
+                margin: 2.5vh 1%;
+                border-radius: 15px;
+            }
+
+            .header {
+                padding: 20px 15px;
+                border-radius: 15px 15px 0 0;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .header p {
+                font-size: 14px;
+            }
+
+            .login-container {
+                padding: 30px 20px;
+            }
+
+            .login-form {
+                padding: 30px 25px;
+                max-width: 320px;
+            }
+
+            .chat-messages {
+                padding: 20px 15px;
+                max-height: calc(95vh - 200px);
+            }
+
+            .message-bubble {
+                max-width: 85%;
+                padding: 12px 16px;
+                font-size: 14px;
+            }
+
+            .chat-input-container {
+                padding: 20px 15px;
+                gap: 12px;
+            }
+
+            .chat-input {
+                padding: 12px 16px;
+                font-size: 15px;
+            }
+
+            .send-button {
+                width: 50px;
+                height: 50px;
+                font-size: 16px;
+            }
+
+            .history-button-topLeft {
+                top: 15px;
+                left: 15px;
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+
+            .logout-button {
+                top: 20px;
+                right: 20px;
+                padding: 8px 14px;
+                font-size: 14px;
+            }
+
+            .scroll-to-top {
+                bottom: 80px;
+                right: 20px;
+                width: 45px;
+                height: 45px;
+                font-size: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                width: 100%;
+                height: 100vh;
+                border-radius: 0;
+            }
+
+            .header {
+                border-radius: 0;
+                padding: 18px 15px;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .login-form {
+                padding: 25px 20px;
+                border-radius: 10px;
+            }
+
+            .chat-messages {
+                padding: 15px;
+                max-height: calc(100vh - 180px);
+            }
+
+            .message-bubble {
+                max-width: 90%;
+                padding: 10px 14px;
+            }
+
+            .chat-input-container {
+                padding: 15px;
+                gap: 10px;
+            }
+
+            .history-button-topLeft {
+                top: 10px;
+                left: 10px;
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+
+            .logout-button {
+                top: 15px;
+                right: 15px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+        }
+
+        /* Sidebar Responsive */
+        @media (max-width: 768px) {
+            #chatHistorySidebar {
+                width: 280px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #chatHistorySidebar {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -303,9 +542,6 @@
 
         <!-- Chat Container -->
         <div class="chat-container" id="chatContainer">
-            <div style="display: flex; justify-content: flex-end; padding: 10px 20px 0 20px;">
-                <button onclick="fetchAndDisplayChatHistory()" style="background: #764ba2; color: white; border: none; border-radius: 5px; padding: 8px 16px; cursor: pointer; margin-bottom: 8px;">Geçmişi Göster</button>
-            </div>
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-message">
                     👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
@@ -333,14 +569,17 @@
         </div>
     </div>
 
-    <div id="chatHistorySidebar" style="position: fixed; left: 0; top: 0; height: 100vh; width: 300px; background: #2c3e50; color: white; z-index: 2000; box-shadow: 2px 0 10px rgba(0,0,0,0.2); transform: translateX(-100%); transition: transform 0.3s; overflow-y: auto;">
-        <div style="padding: 20px; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 20px; font-weight: bold;">🕑 Geçmiş</span>
-            <button onclick="closeChatHistorySidebar()" style="background: none; border: none; color: white; font-size: 22px; cursor: pointer;">&times;</button>
+    <!-- Chat History Sidebar -->
+    <div id="chatHistorySidebar" style="position: fixed; left: 0; top: 0; height: 100vh; width: 300px; background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; z-index: 2000; box-shadow: 4px 0 15px rgba(0,0,0,0.3); transform: translateX(-100%); transition: transform 0.3s ease; overflow-y: auto;">
+        <div style="padding: 25px 20px; border-bottom: 2px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 20px; font-weight: 600;">🕑 Geçmiş</span>
+            <button onclick="closeChatHistorySidebar()" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='none'" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 8px; border-radius: 50%; transition: background 0.3s ease;">&times;</button>
         </div>
         <ul id="chatHistoryList" style="list-style: none; padding: 0; margin: 0;"></ul>
     </div>
-    <button id="openHistoryBtn" onclick="openChatHistorySidebar()" style="position: absolute; left: 10px; top: 100px; background: #764ba2; color: white; border: none; border-radius: 8px; padding: 10px 18px; font-size: 16px; cursor: pointer; z-index: 1100;">🕑 Geçmiş</button>
+
+    <!-- History Button - Top Left -->
+    <button id="openHistoryBtn" class="history-button-topLeft" onclick="openChatHistorySidebar()">🕑 Geçmiş</button>
 
     <script src="static/script.js"></script>
 </body>

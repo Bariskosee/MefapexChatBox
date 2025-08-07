@@ -607,47 +607,8 @@ Tekrar görüşmek üzere! Başka sorularınız olduğunda ben burada olacağım
 
     # Fabrika dışı genel sorular için
     else:
-        # Önce gelişmiş AI response'u dene
-        if text_generator is not None:
-            try:
-                ai_response = generate_advanced_ai_response(user_message)
-                if ai_response and len(ai_response) > 20:
-                    return f"🤖 {ai_response}\n\n💡 Bu yanıt AI tarafından üretilmiştir."
-            except Exception as e:
-                logger.warning(f"Advanced AI response failed: {e}")
-        
-        # Fallback: Basit text generation
-        if text_generator is not None:
-            try:
-                # Türkçe prompt
-                prompt = f"Soru: {user_message}\nYanıt:"
-                
-                # Model ile yanıt üret - eski API uyumlu
-                result = text_generator(
-                    prompt,
-                    max_length=min(len(prompt) + 80, 200),
-                    num_return_sequences=1,
-                    temperature=0.7,
-                    do_sample=True,
-                    pad_token_id=text_generator.tokenizer.eos_token_id
-                )
-                
-                generated = result[0]['generated_text']
-                # Sadece yanıt kısmını al
-                if "Yanıt:" in generated:
-                    response = generated.split("Yanıt:")[-1].strip()
-                else:
-                    response = generated[len(prompt):].strip()
-                
-                # Response'u temizle
-                response = response.split('\n')[0].strip()
-                response = response.split('Soru:')[0].strip()
-                
-                if len(response) > 15:  # Yeterince uzun bir cevap üretildiyse
-                    return f"🤖 {response}\n\n💡 Bu yanıt AI tarafından üretilmiştir."
-            except Exception as e:
-                logger.warning(f"Basic text generation failed: {e}")
-        
+        # DialoGPT çok tutarsız sonuçlar üretiyor, sadece local intelligent responses kullan
+        return generate_ai_response_local(user_message)
         # Fallback: Genel yardımcı yanıt
         return f"""🤖 **'{user_message}' hakkında:**
 
@@ -750,6 +711,21 @@ def generate_ai_response_local(user_message: str) -> str:
     """Generate AI response using enhanced local intelligence"""
     # Convert to lowercase for analysis
     msg_lower = user_message.lower().strip()
+    
+    # Greeting responses - Selamlama ve basit sorular
+    if any(word in msg_lower for word in ["merhaba", "selam", "hello", "hi", "hey", "nasılsın", "nasilsin", "naber", "nasıl gidiyor"]):
+        return """👋 **Merhaba! Hoş geldiniz!**
+
+Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
+
+**Size yardımcı olabileceğim konular:**
+• Fabrika ile ilgili sorular (çalışma saatleri, kurallar vb.)
+• Genel bilgi soruları
+• Teknoloji ve AI konuları
+• Basit hesaplamalar
+• Ve daha fazlası...
+
+Nasıl yardımcı olabilirim? 😊"""
     
     # Python ve Programlama Soruları
     if any(word in msg_lower for word in ["python", "programlama", "kod", "yazılım", "programming"]):
@@ -1142,7 +1118,7 @@ async def chat(message: ChatMessage):
                 best_score = search_results[0].score
                 logger.info(f"Best match score: {best_score}")
                 
-                if best_score > 0.75:  # Higher confidence threshold for exact matches
+                if best_score > 0.85:  # Higher confidence threshold for exact matches
                     best_match = search_results[0].payload
                     context = f"Question: {best_match['question']}\nAnswer: {best_match['answer']}"
                     logger.info(f"Using database context with score: {best_score}")
@@ -1242,7 +1218,7 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
                 best_score = search_results[0].score
                 logger.info(f"Best match score: {best_score}")
                 
-                if best_score > 0.75:  # Higher confidence threshold for exact matches
+                if best_score > 0.85:  # Higher confidence threshold for exact matches
                     best_match = search_results[0].payload
                     context = f"Question: {best_match['question']}\nAnswer: {best_match['answer']}"
                     logger.info(f"Using database context with score: {best_score}")
