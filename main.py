@@ -1040,6 +1040,10 @@ def generate_rule_based_response(user_message: str) -> str:
     # Default response
     return "🤖 Bu konuda detaylı bilgim bulunmuyor, ancak size yardımcı olmaya çalışabilirim. Sorunuzu biraz daha detaylandırabilir misiniz? Veya fabrika ile ilgili spesifik bir konu hakkında soru sorabilirsiniz."
 
+# =============================
+# 📚 CHAT HISTORY SECTION
+# =============================
+
 # 🆕 CHAT HISTORY ENDPOINTS
 @app.get("/chat/history/{user_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(user_id: str, current_user: dict = Depends(get_current_user)):
