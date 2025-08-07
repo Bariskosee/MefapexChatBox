@@ -2,6 +2,10 @@
 // Dynamic API URL based on current page location
 const API_BASE_URL = window.location.origin;
 
+// Debug: Log the API URL
+console.log('API_BASE_URL:', API_BASE_URL);
+console.log('JavaScript loaded successfully!');
+
 // DOM Elements
 const loginContainer = document.getElementById('loginContainer');
 const chatContainer = document.getElementById('chatContainer');
@@ -73,18 +77,52 @@ function scrollToTop() {
     });
 }
 
-// Login function
+// Test function to check if login works (can be called from browser console)
+window.testLogin = async function() {
+    console.log('Testing login function...');
+    try {
+        const response = await fetch(`${API_BASE_URL}/login-legacy`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: 'demo',
+                password: '1234'
+            })
+        });
+        
+        const data = await response.json();
+        console.log('Test login response:', data);
+        return data;
+    } catch (error) {
+        console.error('Test login error:', error);
+        return error;
+    }
+};
+
+// Login function - Fixed for JWT and legacy endpoints
+// Login function - Fixed for JWT and legacy endpoints
 async function login() {
+    console.log('🔐 Login function called!');
+    
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
     
+    console.log('Username:', username, 'Password length:', password.length);
+    
     if (!username || !password) {
+        console.log('❌ Missing credentials');
         showLoginError('Kullanıcı adı ve şifre gereklidir.');
         return;
     }
     
+    console.log('🚀 Attempting login with:', username, '****'); // Debug log
+    
     try {
-        const response = await fetch(`${API_BASE_URL}/login`, {
+        // Try legacy login first (this should work for demo/1234)
+        console.log('📡 Calling legacy login endpoint...');
+        const response = await fetch(`${API_BASE_URL}/login-legacy`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -95,9 +133,17 @@ async function login() {
             })
         });
         
+        console.log('📊 Response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
+        console.log('📄 Response data:', data);
         
         if (data.success) {
+            console.log('✅ Login successful!');
             isLoggedIn = true;
             loginContainer.style.display = 'none';
             chatContainer.style.display = 'flex';
@@ -105,13 +151,17 @@ async function login() {
             messageInput.focus();
             hideLoginError();
         } else {
-            showLoginError(data.message);
+            console.log('❌ Login failed:', data.message);
+            showLoginError(data.message || 'Giriş başarısız');
         }
     } catch (error) {
-        console.error('Login error:', error);
-        showLoginError('Bağlantı hatası. Lütfen tekrar deneyin.');
+        console.error('💥 Login error:', error);
+        showLoginError('Bağlantı hatası. Lütfen tekrar deneyin. Server çalışıyor mu?');
     }
 }
+
+// Make login function available globally
+window.login = login;
 
 // Logout function
 function logout() {

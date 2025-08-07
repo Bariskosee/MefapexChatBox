@@ -374,8 +374,6 @@ async def login_legacy(request: LoginRequest):
         return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
 
 @app.get("/health")
-
-@app.get("/health")
 async def health_check():
     try:
         # Check Qdrant connection
