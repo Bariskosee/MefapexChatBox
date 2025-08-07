@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -6,9 +6,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
-from sentence_transformers import SentenceTransformer
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
-import torch
 import openai
 import os
 from dotenv import load_dotenv
@@ -19,7 +16,13 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 import uuid
 import json
+import asyncio
+
+# Import optimized components
 from database_manager import DatabaseManager
+from model_manager import model_manager
+from response_cache import response_cache
+from websocket_manager import websocket_manager, message_handler
 
 # Load environment variables
 load_dotenv()
@@ -58,6 +61,20 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Startup event for model warmup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize and warm up models on startup"""
+    logger.info("🚀 Starting MEFAPEX Chatbot API")
+    try:
+        # Warm up models for better first-request performance
+        model_manager.warmup_models()
+        logger.info("✅ Model warmup completed")
+    except Exception as e:
+        logger.warning(f"⚠️ Model warmup failed: {e}")
+    
+    logger.info("🔥 MEFAPEX API ready for requests")
+
 # 🎯 HYBRID CONFIGURATION
 USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
 USE_HUGGINGFACE = os.getenv("USE_HUGGINGFACE", "true").lower() == "true"
@@ -74,54 +91,24 @@ if USE_OPENAI:
         logger.warning(f"⚠️ OpenAI initialization failed: {e}")
         USE_OPENAI = False
 
-# Initialize Hugging Face model (if enabled)
-text_generator = None
-if USE_HUGGINGFACE:
-    try:
-        sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-        logger.info("✅ Sentence transformer loaded")
-        
-        # Initialize text generation model
-        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"🖥️ Using device: {device}")
-        
-        # Get model from environment or use default
-        model_name = os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-small")
-        logger.info(f"🤖 Loading model: {model_name}")
-        
-        try:
-            text_generator = pipeline(
-                "text-generation",
-                model=model_name,
-                tokenizer=model_name,
-                device=0 if device == "cuda" else -1,
-                max_length=150,
-                do_sample=True,
-                temperature=0.7,
-                pad_token_id=50256
-            )
-            logger.info(f"✅ Text generation model loaded: {model_name}")
-        except OSError as e:
-            logger.error(f"Model loading failed: {e}")
-            USE_HUGGINGFACE = False
-        except ImportError as e:
-            logger.error(f"Missing dependencies: {e}")
-            USE_HUGGINGFACE = False
-    except Exception as e:
-        logger.warning(f"⚠️ Advanced Hugging Face initialization failed: {e}")
-        # Fallback to sentence transformer only
-        try:
-            sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("✅ Fallback: Sentence transformer only")
-        except Exception as e2:
-            logger.warning(f"⚠️ Sentence transformer also failed: {e2}")
-            USE_HUGGINGFACE = False
-
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
     host=os.getenv("QDRANT_HOST", "localhost"),
     port=int(os.getenv("QDRANT_PORT", 6333))
 )
+
+# Warm up models on startup for better first-request performance
+async def startup_warmup():
+    """Warm up models during application startup"""
+    logger.info("🔥 Starting model warmup...")
+    try:
+        model_manager.warmup_models()
+        logger.info("✅ Model warmup completed")
+    except Exception as e:
+        logger.warning(f"⚠️ Model warmup failed: {e}")
+
+# Will be called during app startup
+asyncio.create_task(startup_warmup())
 
 #️ DATA MODELS
 class ChatMessage(BaseModel):
@@ -371,24 +358,24 @@ async def health_check():
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 def generate_embedding(text: str) -> list:
-    """Generate embedding using available method"""
-    if USE_HUGGINGFACE:
-        try:
-            return sentence_model.encode([text])[0].tolist()
-        except Exception as e:
-            logger.error(f"Hugging Face embedding error: {e}")
-    
-    if USE_OPENAI:
-        try:
-            response = openai.embeddings.create(
-                model="text-embedding-ada-002",
-                input=text
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            logger.error(f"OpenAI embedding error: {e}")
-    
-    raise HTTPException(status_code=500, detail="No embedding service available")
+    """Generate embedding using ModelManager with caching"""
+    try:
+        return model_manager.generate_embedding(text)
+    except Exception as e:
+        logger.error(f"Embedding generation error: {e}")
+        
+        # Fallback to OpenAI if available
+        if USE_OPENAI:
+            try:
+                response = openai.embeddings.create(
+                    model="text-embedding-ada-002",
+                    input=text
+                )
+                return response.data[0].embedding
+            except Exception as e2:
+                logger.error(f"OpenAI embedding fallback error: {e2}")
+        
+        raise HTTPException(status_code=500, detail="No embedding service available")
 
 def generate_response_openai(context: str, user_message: str) -> str:
     """Generate response using OpenAI"""
@@ -624,88 +611,46 @@ Sorunuz fabrika veritabanımızda bulunmamakla birlikte, genel bilgilerimle yan�
 Size başka nasıl yardımcı olabilirim? 💭"""
 
 def generate_advanced_ai_response(user_message: str) -> str:
-    """Generate response using advanced Hugging Face text generation model"""
+    """Generate response using ModelManager with caching"""
     try:
-        if text_generator is None:
-            raise Exception("Text generator not loaded")
+        # Check cache first
+        cached_response = response_cache.get(user_message, "")
+        if cached_response:
+            response_text, source = cached_response
+            logger.info(f"🎯 Cache hit for message: {user_message[:30]}...")
+            return response_text
         
-        # DialoGPT için konuşma formatında prompt
-        # Model konuşma tarzında eğitilmiş, bu yüzden diyalog formatı kullanmalıyız
-        conversation_prompt = f"Kullanıcı: {user_message}\nAsistan:"
-        
-        # Generate response - DialoGPT için optimize edilmiş
-        outputs = text_generator(
-            conversation_prompt,
-            max_length=min(len(conversation_prompt) + 80, 200),
-            num_return_sequences=1,
-            temperature=0.8,
-            do_sample=True,
-            top_p=0.9,
-            top_k=50,
-            pad_token_id=text_generator.tokenizer.eos_token_id,
-            eos_token_id=text_generator.tokenizer.eos_token_id,
-            no_repeat_ngram_size=2,
-            repetition_penalty=1.2
-        )
-        
-        # Extract the generated text
-        generated_text = outputs[0]['generated_text']
-        
-        # Extract only the assistant's response
-        if "Asistan:" in generated_text:
-            response = generated_text.split("Asistan:")[-1].strip()
-        else:
-            response = generated_text[len(conversation_prompt):].strip()
-        
-        # Clean up the response
-        response = response.replace("\\n", " ").strip()
-        response = response.replace("  ", " ").strip()
-        
-        # Remove unwanted patterns
-        response = response.split("Kullanıcı:")[0].strip()  # Stop at next user input
-        response = response.split("\n")[0].strip()  # Take first line
-        
-        # DialoGPT sometimes generates very short responses, which is normal
-        # But we want at least some meaningful content
-        if len(response) < 5:
-            raise Exception(f"Generated response too short: '{response}'")
-        
-        # Check for garbled/meaningless output (common with DialoGPT)
-        # Look for repetitive patterns or non-Turkish characters
-        words = response.split()
-        if len(words) > 0:
-            # Check for too much repetition
-            unique_words = set(words)
-            if len(unique_words) < len(words) / 2 and len(words) > 3:
-                raise Exception(f"Generated response too repetitive: '{response}'")
+        # Use ModelManager for text generation
+        if model_manager.text_generator is not None:
+            conversation_prompt = f"Kullanıcı: {user_message}\nAsistan:"
+            generated = model_manager.generate_text_response(conversation_prompt, max_length=100)
             
-            # Check for meaningless patterns
-            meaningless_patterns = ['malaziz', 'nazir', 'aksine', 'kelar', 'bajkim']
-            if any(pattern in response.lower() for pattern in meaningless_patterns):
-                raise Exception(f"Generated response contains meaningless patterns: '{response}'")
-        
-        # Limit response length
-        if len(response) > 150:
-            # Find last complete word or sentence
-            response = response[:150]
-            last_space = response.rfind(' ')
-            if last_space > 100:
-                response = response[:last_space]
-        
-        # Post-process for better Turkish responses
-        if response and len(response) >= 5:
-            # Add contextual enhancement for Turkish
-            if any(word in user_message.lower() for word in ['nedir', 'ne', 'nasıl', 'neden']):
-                if not any(char in response for char in '.!?'):
-                    response += "."
-            return response
+            # Clean up response
+            if "Asistan:" in generated:
+                response_text = generated.split("Asistan:")[-1].strip()
+            else:
+                response_text = generated
+            
+            # Additional cleanup
+            response_text = response_text.replace("\\n", " ").strip()
+            response_text = response_text.split("Kullanıcı:")[0].strip()
+            
+            if len(response_text) >= 5:
+                # Cache successful response
+                response_cache.set(user_message, response_text, "", source="advanced_ai")
+                return response_text
+            else:
+                raise Exception("Generated response too short")
+                
         else:
-            raise Exception("Generated response not meaningful")
-        
+            raise Exception("Text generator not available")
+            
     except Exception as e:
         logger.warning(f"Advanced AI generation failed: {e}")
-        # Fallback to local AI with more intelligent responses
-        return generate_ai_response_local(user_message)
+        # Fallback to local AI response
+        response = generate_ai_response_local(user_message)
+        response_cache.set(user_message, response, "", source="local_ai")
+        return response
 
 def generate_ai_response_local(user_message: str) -> str:
     """Generate AI response using enhanced local intelligence"""
@@ -1285,22 +1230,28 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
 @app.get("/system/status")
 async def system_status():
     """Get current system configuration"""
+    model_info = model_manager.get_model_info()
+    cache_stats = response_cache.get_stats()
+    db_stats = db_manager.get_stats()
+    
     return {
         "openai_enabled": USE_OPENAI,
         "huggingface_enabled": USE_HUGGINGFACE,
         "embedding_method": "huggingface" if USE_HUGGINGFACE else "openai",
         "response_method": "openai" if USE_OPENAI else "huggingface",
-        "text_generator_loaded": text_generator is not None,
-        "current_model": os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-small"),
-        "version": "hybrid_v2.0_enhanced"
+        "model_info": model_info,
+        "cache_stats": cache_stats,
+        "database_stats": db_stats,
+        "websocket_stats": websocket_manager.get_connection_stats(),
+        "version": "optimized_v3.0_with_caching_and_websockets"
     }
 
 @app.get("/ai/models")
 async def available_models():
     """Get available AI models information"""
+    model_info = model_manager.get_model_info()
     return {
-        "current_model": os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-small"),
-        "text_generator_loaded": text_generator is not None,
+        "current_config": model_info,
         "available_models": {
             "microsoft/DialoGPT-small": {
                 "size": "117M parameters",
@@ -1333,8 +1284,213 @@ async def available_models():
                 "speed": "Fast"
             }
         },
+        "performance_optimization": {
+            "model_caching": "✅ Enabled",
+            "response_caching": "✅ Enabled", 
+            "database_pooling": "✅ Enabled",
+            "websocket_support": "✅ Enabled"
+        },
         "instructions": "Change model in .env file: HUGGINGFACE_MODEL=model_name"
     }
+
+# 🔌 WEBSOCKET ENDPOINTS
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    """
+    WebSocket endpoint for real-time chat communication
+    """
+    try:
+        # For demo purposes, accept any user_id
+        # In production, you should validate the user_id with proper authentication
+        username = f"user_{user_id}" if user_id != "demo" else "demo"
+        
+        await websocket_manager.connect(websocket, user_id, username)
+        logger.info(f"🔌 WebSocket connected: {username}")
+        
+        try:
+            while True:
+                # Receive message from client
+                data = await websocket.receive_text()
+                message_data = json.loads(data)
+                
+                # Handle different message types
+                message_type = message_data.get('type', 'chat_message')
+                
+                if message_type == 'chat_message':
+                    await handle_websocket_chat_message(websocket, user_id, message_data)
+                elif message_type == 'ping':
+                    await websocket_manager.send_personal_message({
+                        'type': 'pong',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }, websocket)
+                elif message_type == 'get_history':
+                    await handle_websocket_get_history(websocket, user_id)
+                else:
+                    await message_handler.handle_message(websocket, message_data)
+                    
+        except WebSocketDisconnect:
+            logger.info(f"🔌 WebSocket disconnected: {username}")
+        except Exception as e:
+            logger.error(f"WebSocket error for {username}: {e}")
+            await websocket_manager.send_personal_message({
+                'type': 'error',
+                'message': f'Server error: {str(e)}',
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
+    
+    finally:
+        websocket_manager.disconnect(websocket)
+
+async def handle_websocket_chat_message(websocket: WebSocket, user_id: str, message_data: dict):
+    """
+    Handle chat message received via WebSocket
+    """
+    try:
+        user_message = message_data.get('message', '').strip()
+        
+        if not user_message:
+            await websocket_manager.send_personal_message({
+                'type': 'error',
+                'message': 'Message cannot be empty',
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
+            return
+        
+        # Send typing indicator
+        await websocket_manager.send_personal_message({
+            'type': 'bot_typing',
+            'typing': True,
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+        
+        # Generate embedding for search
+        try:
+            user_embedding = generate_embedding(user_message)
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {e}")
+            await websocket_manager.send_personal_message({
+                'type': 'chat_response',
+                'response': "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin.",
+                'source': "error",
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
+            return
+        
+        # Search in Qdrant
+        context = ""
+        try:
+            search_results = qdrant_client.search(
+                collection_name="mefapex_faq",
+                query_vector=user_embedding,
+                limit=3,
+                with_payload=True
+            )
+            
+            if search_results and len(search_results) > 0:
+                best_score = search_results[0].score
+                if best_score > 0.85:
+                    best_match = search_results[0].payload
+                    context = f"Question: {best_match['question']}\nAnswer: {best_match['answer']}"
+        except Exception as e:
+            logger.error(f"Qdrant search error: {e}")
+        
+        # Generate response
+        try:
+            if USE_OPENAI:
+                response_text = generate_response_openai(context, user_message)
+                source = "openai"
+            elif USE_HUGGINGFACE:
+                response_text = generate_response_huggingface(context, user_message)
+                source = "huggingface"
+            else:
+                response_text = generate_ai_response_local(user_message)
+                source = "local"
+        except Exception as e:
+            logger.error(f"Response generation failed: {e}")
+            response_text = "🤖 Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin."
+            source = "error"
+        
+        # Save to database (for authenticated users)
+        try:
+            session_id = get_user_session(user_id)
+            add_message_to_session(session_id, user_message, response_text, source, user_id=user_id)
+        except Exception as e:
+            logger.error(f"Failed to save message to database: {e}")
+        
+        # Stop typing indicator and send response
+        await websocket_manager.send_personal_message({
+            'type': 'bot_typing',
+            'typing': False,
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+        
+        await websocket_manager.send_personal_message({
+            'type': 'chat_response',
+            'response': response_text,
+            'source': source,
+            'timestamp': datetime.utcnow().isoformat(),
+            'cached': 'cached' in response_text.lower()
+        }, websocket)
+        
+    except Exception as e:
+        logger.error(f"Error handling WebSocket chat message: {e}")
+        await websocket_manager.send_personal_message({
+            'type': 'error',
+            'message': f'Failed to process message: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+
+async def handle_websocket_get_history(websocket: WebSocket, user_id: str):
+    """
+    Handle request for chat history via WebSocket
+    """
+    try:
+        messages = db_manager.get_chat_history(user_id, limit=20)
+        
+        await websocket_manager.send_personal_message({
+            'type': 'chat_history',
+            'messages': messages,
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+        
+    except Exception as e:
+        logger.error(f"Error getting chat history: {e}")
+        await websocket_manager.send_personal_message({
+            'type': 'error',
+            'message': f'Failed to get chat history: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+
+# 📊 PERFORMANCE AND MONITORING ENDPOINTS
+@app.get("/performance/cache")
+async def get_cache_performance():
+    """Get cache performance statistics"""
+    return {
+        "response_cache": response_cache.get_stats(),
+        "model_cache": model_manager.get_model_info()["cache_info"] if "cache_info" in model_manager.get_model_info() else {},
+        "popular_queries": response_cache.get_popular_entries(10)
+    }
+
+@app.post("/performance/cache/clear")
+async def clear_caches():
+    """Clear all caches for performance testing"""
+    response_cache.clear()
+    model_manager.clear_caches()
+    
+    return {
+        "message": "All caches cleared",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+@app.get("/performance/database")
+async def get_database_performance():
+    """Get database performance statistics"""
+    return db_manager.get_stats()
+
+@app.get("/performance/websockets")
+async def get_websocket_performance():
+    """Get WebSocket connection statistics"""
+    return websocket_manager.get_connection_stats()
 
 if __name__ == "__main__":
     import uvicorn
