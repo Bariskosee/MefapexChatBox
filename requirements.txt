@@ -1,0 +1,21 @@
+# MEFAPEX Turkish AI Chatbot - Python Dependencies
+# Successfully tested on Python 3.13.3
+
+fastapi==0.116.1
+uvicorn==0.35.0
+openai==1.98.0
+qdrant-client==1.15.1
+python-dotenv==1.1.1
+mysql-connector-python==9.4.0
+numpy==2.3.2
+requests==2.32.4
+sentence-transformers>=2.3.0
+torch>=2.6.0
+transformers>=4.40.0
+accelerate>=0.21.0
+
+# Additional dependencies (automatically installed)
+pydantic>=2.11.0
+starlette>=0.47.0
+typing-extensions>=4.14.0
+
