@@ -1,13 +1,14 @@
 from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 import openai
 import os
+import time
 from dotenv import load_dotenv
 import logging
 from typing import Optional, List, Dict
@@ -24,17 +25,65 @@ from model_manager import model_manager
 from response_cache import response_cache
 from websocket_manager import websocket_manager, message_handler
 
+# Import production monitoring (conditionally)
+try:
+    from memory_monitor import memory_monitor, setup_memory_monitoring
+    MEMORY_MONITORING_AVAILABLE = True
+except ImportError:
+    MEMORY_MONITORING_AVAILABLE = False
+    logger.warning("Memory monitoring not available - install psutil for production monitoring")
+
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# 🔒 PRODUCTION SECURITY CONFIGURATION
+DEBUG_MODE = os.getenv("DEBUG", "False").lower() == "true"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Configure logging based on environment
+if ENVIRONMENT == "production":
+    logging.basicConfig(
+        level=logging.WARNING,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('/var/log/mefapex/app.log'),
+            logging.StreamHandler()
+        ]
+    )
+else:
+    logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 # 🔐 AUTHENTICATION CONFIGURATION
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# 🎯 HYBRID CONFIGURATION
+USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
+USE_HUGGINGFACE = os.getenv("USE_HUGGINGFACE", "true").lower() == "true"
+
+# Security check for production
+if ENVIRONMENT == "production" and DEBUG_MODE:
+    logger.error("🚨 SECURITY ALERT: DEBUG mode is enabled in production!")
+    raise RuntimeError(
+        "DEBUG mode must be disabled in production. Set DEBUG=False in environment variables."
+    )
+
+# Additional production checks
+if ENVIRONMENT == "production":
+    if SECRET_KEY == "your-secret-key-change-this-in-production":
+        logger.error("🚨 SECURITY ALERT: Default SECRET_KEY detected in production!")
+        raise RuntimeError(
+            "Default SECRET_KEY must be changed in production. Set a secure SECRET_KEY in environment variables."
+        )
+    
+    if not os.getenv("OPENAI_API_KEY") and USE_OPENAI:
+        logger.warning("⚠️ OpenAI API key not set in production environment")
+
+logger.info(f"🔧 Environment: {ENVIRONMENT}")
+logger.info(f"🐛 Debug mode: {'ENABLED' if DEBUG_MODE else 'DISABLED'}")
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -49,13 +98,32 @@ db_manager = DatabaseManager()
 
 app = FastAPI(title="MEFAPEX Chatbot API")
 
-# Configure CORS
+# 🔒 PRODUCTION CORS CONFIGURATION
+# Get allowed origins from environment with secure defaults
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS", 
+    "http://localhost:3000,http://localhost:8000,https://yourdomain.com"
+).split(",")
+
+# Environment-based CORS configuration
+if os.getenv("ENVIRONMENT", "development") == "production":
+    # Strict CORS for production
+    cors_origins = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
+    cors_methods = ["GET", "POST", "PUT", "DELETE"]
+    cors_headers = ["accept", "authorization", "content-type", "x-csrf-token"]
+else:
+    # Relaxed CORS for development
+    cors_origins = ["*"]
+    cors_methods = ["*"] 
+    cors_headers = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=cors_methods,
+    allow_headers=cors_headers,
+    expose_headers=["*"] if os.getenv("ENVIRONMENT") != "production" else [],
 )
 
 # Mount static files
@@ -73,11 +141,15 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"⚠️ Startup warmup failed: {e}")
     
+    # Start memory monitoring if available
+    if MEMORY_MONITORING_AVAILABLE and ENVIRONMENT == "production":
+        try:
+            setup_memory_monitoring()
+            logger.info("🧠 Memory monitoring started")
+        except Exception as e:
+            logger.warning(f"⚠️ Memory monitoring setup failed: {e}")
+    
     logger.info("🔥 MEFAPEX API ready for requests")
-
-# 🎯 HYBRID CONFIGURATION
-USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
-USE_HUGGINGFACE = os.getenv("USE_HUGGINGFACE", "true").lower() == "true"
 
 logger.info(f"🤖 OpenAI enabled: {USE_OPENAI}")
 logger.info(f"🆓 Hugging Face enabled: {USE_HUGGINGFACE}")
@@ -99,6 +171,13 @@ qdrant_client = QdrantClient(
 
 # Warm up models on startup for better first-request performance
 async def startup_warmup():
+    """Warm up models during application startup"""
+    logger.info("🔥 Starting model warmup...")
+    try:
+        model_manager.warmup_models()
+        logger.info("✅ Model warmup completed")
+    except Exception as e:
+        logger.warning(f"⚠️ Model warmup failed: {e}")
     """Warm up models during application startup"""
     logger.info("🔥 Starting model warmup...")
     try:
@@ -355,6 +434,7 @@ async def login_legacy(request: LoginRequest):
 
 @app.get("/health")
 async def health_check():
+    """Basic health check endpoint"""
     try:
         # Check Qdrant connection
         collections = qdrant_client.get_collections()
@@ -367,6 +447,255 @@ async def health_check():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+@app.get("/health/comprehensive")
+async def comprehensive_health_check():
+    """
+    🏥 Comprehensive health check endpoint for production monitoring
+    Checks: CPU, Memory, Disk Space, Database, External Services, Cache
+    """
+    try:
+        from memory_monitor import memory_monitor
+        import psutil
+        import shutil
+        
+        health_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "status": "healthy",
+            "checks": {},
+            "metrics": {},
+            "alerts": []
+        }
+        
+        # 1. 🧠 Memory Check
+        try:
+            memory_stats = memory_monitor.get_stats() if hasattr(memory_monitor, 'get_stats') else {}
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            
+            memory_mb = memory_info.rss / 1024 / 1024
+            memory_percent = process.memory_percent()
+            
+            health_data["checks"]["memory"] = {
+                "status": "healthy" if memory_mb < 1000 else "warning" if memory_mb < 2000 else "critical",
+                "usage_mb": round(memory_mb, 2),
+                "usage_percent": round(memory_percent, 2),
+                "threshold_mb": 1000,
+                "details": memory_stats
+            }
+            
+            if memory_mb > 1500:
+                health_data["alerts"].append(f"High memory usage: {memory_mb:.1f}MB")
+                
+        except Exception as e:
+            health_data["checks"]["memory"] = {"status": "error", "error": str(e)}
+            
+        # 2. 🖥️ CPU Check
+        try:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_count = psutil.cpu_count()
+            load_avg = psutil.getloadavg() if hasattr(psutil, 'getloadavg') else (0, 0, 0)
+            
+            health_data["checks"]["cpu"] = {
+                "status": "healthy" if cpu_percent < 70 else "warning" if cpu_percent < 90 else "critical",
+                "usage_percent": cpu_percent,
+                "core_count": cpu_count,
+                "load_average": {
+                    "1min": load_avg[0],
+                    "5min": load_avg[1], 
+                    "15min": load_avg[2]
+                }
+            }
+            
+            if cpu_percent > 85:
+                health_data["alerts"].append(f"High CPU usage: {cpu_percent}%")
+                
+        except Exception as e:
+            health_data["checks"]["cpu"] = {"status": "error", "error": str(e)}
+            
+        # 3. 💾 Disk Space Check
+        try:
+            disk_usage = shutil.disk_usage("/")
+            total_gb = disk_usage.total / (1024**3)
+            free_gb = disk_usage.free / (1024**3)
+            used_gb = (disk_usage.total - disk_usage.free) / (1024**3)
+            usage_percent = (used_gb / total_gb) * 100
+            
+            health_data["checks"]["disk"] = {
+                "status": "healthy" if usage_percent < 80 else "warning" if usage_percent < 95 else "critical",
+                "total_gb": round(total_gb, 2),
+                "used_gb": round(used_gb, 2),
+                "free_gb": round(free_gb, 2),
+                "usage_percent": round(usage_percent, 2)
+            }
+            
+            if usage_percent > 90:
+                health_data["alerts"].append(f"Low disk space: {usage_percent:.1f}% used")
+                
+        except Exception as e:
+            health_data["checks"]["disk"] = {"status": "error", "error": str(e)}
+            
+        # 4. 🗄️ Database Connectivity Check
+        try:
+            start_time = time.time()
+            db_stats = db_manager.get_stats()
+            
+            # Test database query
+            test_query_start = time.time()
+            db_manager.get_or_create_session("health_check_user")
+            query_time = time.time() - test_query_start
+            
+            health_data["checks"]["database"] = {
+                "status": "healthy" if query_time < 1.0 else "warning" if query_time < 5.0 else "critical",
+                "response_time_ms": round(query_time * 1000, 2),
+                "connection_pool": db_stats.get("pool_stats", {}),
+                "total_sessions": db_stats.get("total_sessions", 0),
+                "total_messages": db_stats.get("total_messages", 0)
+            }
+            
+            if query_time > 2.0:
+                health_data["alerts"].append(f"Slow database response: {query_time*1000:.1f}ms")
+                
+        except Exception as e:
+            health_data["checks"]["database"] = {"status": "error", "error": str(e)}
+            
+        # 5. 🤖 AI Services Check
+        try:
+            ai_status = {"openai": "disabled", "huggingface": "disabled", "qdrant": "unknown"}
+            
+            # Check OpenAI
+            if USE_OPENAI:
+                try:
+                    # Simple test - just check if API key is set
+                    if os.getenv("OPENAI_API_KEY"):
+                        ai_status["openai"] = "configured"
+                    else:
+                        ai_status["openai"] = "no_api_key"
+                except Exception:
+                    ai_status["openai"] = "error"
+                    
+            # Check Hugging Face models
+            if USE_HUGGINGFACE:
+                try:
+                    model_info = model_manager.get_model_info()
+                    ai_status["huggingface"] = "loaded" if model_info.get("models_loaded", 0) > 0 else "not_loaded"
+                except Exception:
+                    ai_status["huggingface"] = "error"
+                    
+            # Check Qdrant
+            try:
+                collections = qdrant_client.get_collections()
+                ai_status["qdrant"] = "connected"
+                collection_count = len(collections.collections)
+            except Exception as e:
+                ai_status["qdrant"] = "disconnected"
+                collection_count = 0
+                
+            health_data["checks"]["ai_services"] = {
+                "status": "healthy" if ai_status["qdrant"] == "connected" else "warning",
+                "services": ai_status,
+                "qdrant_collections": collection_count
+            }
+            
+        except Exception as e:
+            health_data["checks"]["ai_services"] = {"status": "error", "error": str(e)}
+            
+        # 6. 📊 Cache Performance Check
+        try:
+            cache_stats = response_cache.get_stats()
+            hit_rate = (cache_stats.get("hits", 0) / max(cache_stats.get("total_requests", 1), 1)) * 100
+            
+            health_data["checks"]["cache"] = {
+                "status": "healthy" if hit_rate > 30 else "warning" if hit_rate > 10 else "poor",
+                "hit_rate_percent": round(hit_rate, 2),
+                "total_entries": cache_stats.get("total_entries", 0),
+                "memory_usage_mb": cache_stats.get("memory_usage_mb", 0)
+            }
+            
+        except Exception as e:
+            health_data["checks"]["cache"] = {"status": "error", "error": str(e)}
+            
+        # 7. 🔌 WebSocket Connections Check
+        try:
+            ws_stats = websocket_manager.get_connection_stats()
+            active_connections = ws_stats.get("active_connections", 0)
+            
+            health_data["checks"]["websockets"] = {
+                "status": "healthy" if active_connections < 100 else "warning",
+                "active_connections": active_connections,
+                "total_connections": ws_stats.get("total_connections", 0)
+            }
+            
+        except Exception as e:
+            health_data["checks"]["websockets"] = {"status": "error", "error": str(e)}
+            
+        # 8. 🔐 Security Check
+        try:
+            security_checks = {
+                "debug_mode": not DEBUG_MODE,
+                "secure_secret_key": SECRET_KEY != "your-secret-key-change-this-in-production",
+                "environment": ENVIRONMENT,
+                "cors_configured": len(cors_origins) > 0 and "*" not in cors_origins
+            }
+            
+            security_issues = [k for k, v in security_checks.items() if not v]
+            
+            health_data["checks"]["security"] = {
+                "status": "healthy" if not security_issues else "warning",
+                "checks": security_checks,
+                "issues": security_issues
+            }
+            
+        except Exception as e:
+            health_data["checks"]["security"] = {"status": "error", "error": str(e)}
+            
+        # Overall Status Calculation
+        check_statuses = [check.get("status", "error") for check in health_data["checks"].values()]
+        
+        if "critical" in check_statuses:
+            health_data["status"] = "critical"
+        elif "error" in check_statuses:
+            health_data["status"] = "error"  
+        elif "warning" in check_statuses:
+            health_data["status"] = "warning"
+        else:
+            health_data["status"] = "healthy"
+            
+        # Add summary metrics
+        health_data["metrics"] = {
+            "uptime_seconds": (datetime.utcnow() - db_manager.created_at).total_seconds() if hasattr(db_manager, 'created_at') else 0,
+            "total_checks": len(health_data["checks"]),
+            "healthy_checks": len([s for s in check_statuses if s == "healthy"]),
+            "warning_checks": len([s for s in check_statuses if s == "warning"]),
+            "critical_checks": len([s for s in check_statuses if s == "critical"]),
+            "error_checks": len([s for s in check_statuses if s == "error"])
+        }
+        
+        # Return appropriate HTTP status
+        if health_data["status"] in ["critical", "error"]:
+            return JSONResponse(
+                status_code=503,  # Service Unavailable
+                content=health_data
+            )
+        elif health_data["status"] == "warning":
+            return JSONResponse(
+                status_code=200,  # OK but with warnings
+                content=health_data
+            )
+        else:
+            return health_data
+            
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "error",
+                "error": str(e),
+                "checks": {}
+            }
+        )
 
 def generate_embedding(text: str) -> list:
     """Generate embedding using ModelManager with caching"""
