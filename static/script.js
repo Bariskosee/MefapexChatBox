@@ -417,3 +417,155 @@ testConnection().then(isHealthy => {
         console.warn('Backend connection may be unavailable');
     }
 });
+
+// JWT management for MEFAPEX Chatbot
+let authToken = null;
+
+async function loginWithJWT(username, password) {
+    const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+    });
+    
+    if (response.ok) {
+        const data = await response.json();
+        authToken = data.access_token;
+        localStorage.setItem('authToken', authToken);
+    }
+}
+
+async function fetchAndDisplayChatHistory() {
+    if (!authToken) {
+        alert('Önce giriş yapmalısınız.');
+        return;
+    }
+    try {
+        // Get current user info to obtain user_id
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!meResp.ok) throw new Error('Kullanıcı bilgisi alınamadı');
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+
+        // Fetch chat history
+        const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!histResp.ok) throw new Error('Geçmiş alınamadı');
+        const histData = await histResp.json();
+        const messages = histData.messages || [];
+
+        // Clear chat window
+        chatMessages.innerHTML = '';
+        if (messages.length === 0) {
+            chatMessages.innerHTML = '<div class="welcome-message">Hiç mesaj geçmişiniz yok.</div>';
+        } else {
+            messages.forEach(msg => {
+                addMessage(msg.user_message, 'user');
+                addMessage(msg.bot_response, 'bot');
+            });
+        }
+        scrollToBottom();
+    } catch (err) {
+        alert('Geçmiş yüklenemedi: ' + err.message);
+    }
+}
+
+// Make available globally for button
+window.fetchAndDisplayChatHistory = fetchAndDisplayChatHistory;
+
+// Sidebar open/close logic
+function openChatHistorySidebar() {
+    document.getElementById('chatHistorySidebar').style.transform = 'translateX(0)';
+    fetchAndDisplayChatHistorySidebar();
+}
+function closeChatHistorySidebar() {
+    document.getElementById('chatHistorySidebar').style.transform = 'translateX(-100%)';
+}
+
+async function fetchAndDisplayChatHistorySidebar() {
+    if (!authToken) {
+        document.getElementById('chatHistoryList').innerHTML = '<li style="padding:20px; color:#ccc;">Giriş yapmalısınız.</li>';
+        return;
+    }
+    try {
+        // Get user_id
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!meResp.ok) throw new Error('Kullanıcı bilgisi alınamadı');
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+        // Fetch chat history
+        const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!histResp.ok) throw new Error('Geçmiş alınamadı');
+        const histData = await histResp.json();
+        const messages = histData.messages || [];
+        // Only show user questions (last 20)
+        const list = document.getElementById('chatHistoryList');
+        list.innerHTML = '';
+        if (messages.length === 0) {
+            list.innerHTML = '<li style="padding:20px; color:#ccc;">Hiç geçmiş yok.</li>';
+        } else {
+            messages.forEach((msg, idx) => {
+                const li = document.createElement('li');
+                li.style.padding = '16px 20px';
+                li.style.borderBottom = '1px solid #444';
+                li.style.cursor = 'pointer';
+                li.style.whiteSpace = 'nowrap';
+                li.style.overflow = 'hidden';
+                li.style.textOverflow = 'ellipsis';
+                li.title = msg.user_message;
+                li.innerHTML = `<span style='color:#ffd700;'>${idx+1}.</span> ${msg.user_message}`;
+                li.onclick = () => loadHistoryConversation(idx, messages);
+                list.appendChild(li);
+            });
+        }
+    } catch (err) {
+        document.getElementById('chatHistoryList').innerHTML = '<li style="padding:20px; color:#fcc;">Geçmiş yüklenemedi.</li>';
+    }
+}
+
+function loadHistoryConversation(idx, messages) {
+    // Show only the selected Q&A in the chat window
+    const msg = messages[idx];
+    chatMessages.innerHTML = '';
+    addMessage(msg.user_message, 'user');
+    addMessage(msg.bot_response, 'bot');
+    closeChatHistorySidebar();
+    scrollToBottom();
+}
+
+// Expose for HTML
+window.openChatHistorySidebar = openChatHistorySidebar;
+window.closeChatHistorySidebar = closeChatHistorySidebar;
+
+// Show/hide history button based on login state
+function updateHistoryButtonVisibility() {
+    const btn = document.getElementById('openHistoryBtn');
+    if (isLoggedIn) {
+        btn.style.display = 'block';
+    } else {
+        btn.style.display = 'none';
+        closeChatHistorySidebar();
+    }
+}
+
+// Call on page load
+window.addEventListener('DOMContentLoaded', updateHistoryButtonVisibility);
+
+// Patch login/logout to update button
+const originalLogin = window.login;
+window.login = async function() {
+    await originalLogin();
+    updateHistoryButtonVisibility();
+};
+const originalLogout = window.logout;
+window.logout = function() {
+    originalLogout();
+    updateHistoryButtonVisibility();
+};

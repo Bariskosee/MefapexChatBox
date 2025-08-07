@@ -19,6 +19,7 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 import uuid
 import json
+from database_manager import DatabaseManager
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +40,9 @@ security = HTTPBearer()
 # In-memory storage (replace with database in production)
 users_db = {}
 chat_sessions = {}
+
+# Initialize database manager
+db_manager = DatabaseManager()
 
 app = FastAPI(title="MEFAPEX Chatbot API")
 
@@ -83,28 +87,26 @@ if USE_HUGGINGFACE:
         
         # Get model from environment or use default
         model_name = os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-small")
-        
-        # Available free models (user can change in .env):
-        # "microsoft/DialoGPT-small"       # 117M params - Fast, good for conversations
-        # "microsoft/DialoGPT-medium"      # 354M params - Better quality, slower
-        # "facebook/blenderbot_small-90M"  # 90M params - Good for chatbots
-        # "gpt2"                          # 124M params - General text generation
-        # "google/flan-t5-small"          # 80M params - Instruction following
-        
         logger.info(f"🤖 Loading model: {model_name}")
         
-        text_generator = pipeline(
-            "text-generation",
-            model=model_name,
-            tokenizer=model_name,
-            device=0 if device == "cuda" else -1,
-            max_length=150,
-            do_sample=True,
-            temperature=0.7,
-            pad_token_id=50256
-        )
-        logger.info(f"✅ Text generation model loaded: {model_name}")
-        
+        try:
+            text_generator = pipeline(
+                "text-generation",
+                model=model_name,
+                tokenizer=model_name,
+                device=0 if device == "cuda" else -1,
+                max_length=150,
+                do_sample=True,
+                temperature=0.7,
+                pad_token_id=50256
+            )
+            logger.info(f"✅ Text generation model loaded: {model_name}")
+        except OSError as e:
+            logger.error(f"Model loading failed: {e}")
+            USE_HUGGINGFACE = False
+        except ImportError as e:
+            logger.error(f"Missing dependencies: {e}")
+            USE_HUGGINGFACE = False
     except Exception as e:
         logger.warning(f"⚠️ Advanced Hugging Face initialization failed: {e}")
         # Fallback to sentence transformer only
@@ -121,7 +123,7 @@ qdrant_client = QdrantClient(
     port=int(os.getenv("QDRANT_PORT", 6333))
 )
 
-# �️ DATA MODELS
+#️ DATA MODELS
 class ChatMessage(BaseModel):
     message: str
 
@@ -171,7 +173,7 @@ class ChatHistoryResponse(BaseModel):
     messages: List[Dict]
     total_messages: int
 
-# �🔐 AUTHENTICATION UTILITIES
+# 🔐 AUTHENTICATION UTILITIES
 def verify_password(plain_password, hashed_password):
     """Verify a password against its hash"""
     return pwd_context.verify(plain_password, hashed_password)
@@ -239,36 +241,16 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise credentials_exception
     return user
 
-def get_user_session(user_id: str) -> Optional[str]:
-    """Get or create user session ID"""
-    for session_id, session in chat_sessions.items():
-        if session["user_id"] == user_id:
-            return session_id
-    
-    # Create new session
-    session_id = str(uuid.uuid4())
-    chat_sessions[session_id] = {
-        "session_id": session_id,
-        "user_id": user_id,
-        "messages": [],
-        "created_at": datetime.utcnow()
-    }
-    return session_id
+def get_user_session(user_id: str) -> str:
+    """Get or create user session ID (persistent)"""
+    return db_manager.get_or_create_session(user_id)
 
-def add_message_to_session(session_id: str, user_message: str, bot_response: str, source: str):
-    """Add message to chat session"""
-    if session_id in chat_sessions:
-        message_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "user_message": user_message,
-            "bot_response": bot_response,
-            "source": source
-        }
-        chat_sessions[session_id]["messages"].append(message_entry)
-        
-        # Keep only last 100 messages per session
-        if len(chat_sessions[session_id]["messages"]) > 100:
-            chat_sessions[session_id]["messages"] = chat_sessions[session_id]["messages"][-100:]
+def add_message_to_session(session_id: str, user_message: str, bot_response: str, source: str, user_id: str = None):
+    """Add message to chat session (persistent)"""
+    if user_id is None:
+        # Try to infer user_id from session (legacy fallback)
+        user_id = None
+    db_manager.add_message(session_id, user_id, user_message, bot_response, source)
 
 @app.get("/")
 async def read_root():
@@ -447,45 +429,262 @@ def generate_response_openai(context: str, user_message: str) -> str:
         raise
 
 def generate_response_huggingface(context: str, user_message: str) -> str:
-    """Generate response using Hugging Face with AI capabilities"""
-    if context:
-        # Extract answer from context
+    """Generate response using Hugging Face with improved AI capabilities"""
+    
+    # Eğer veritabanında context varsa kullan
+    if context and "Answer:" in context:
         lines = context.split('\n')
         for line in lines:
-            if 'Answer:' in line or 'answer' in line.lower():
+            if 'Answer:' in line:
                 answer = line.split(':', 1)[-1].strip()
                 if answer:
                     return f"📋 {answer}\n\n💡 Bu bilgi MEFAPEX fabrika veritabanından alınmıştır."
-        
-        # If no clear answer found, return the context
-        return f"📋 {context.strip()}\n\n💡 Bu bilgi MEFAPEX fabrika veritabanından alınmıştır."
+    
+    # Veritabanında bilgi yoksa, genel AI yanıtı üret
+    user_lower = user_message.lower().strip()
+    
+    # MEFAPEX soruları için öncelikli kontrol
+    if any(word in user_lower for word in ["mefapex", "nedir", "ne", "what"]) and "mefapex" in user_lower:
+        return """🏭 **MEFAPEX Fabrikası Hakkında**
+
+MEFAPEX, Türkiye'de faaliyet gösteren modern bir üretim fabrikasıdır.
+
+**Fabrika Özellikleri:**
+• 🏗️ **Modern Üretim**: En son teknoloji ile donatılmış tesisler
+• 🛡️ **Güvenlik Odaklı**: Çalışan güvenliği birinci öncelik
+• 🌟 **Kalite**: Uluslararası standartlarda üretim
+• 👥 **İnsan Kaynakları**: Deneyimli ve eğitimli çalışan kadrosu
+• 🌱 **Sürdürülebilirlik**: Çevre dostu üretim süreçleri
+
+**Faaliyet Alanları:**
+• Endüstriyel üretim ve imalat
+• Kalite kontrol ve test süreçleri
+• Ar-Ge ve inovasyon çalışmaları
+• İş güvenliği ve çalışan eğitimleri
+
+**Misyonumuz:**
+Yüksek kaliteli ürünlerle hem yerel hem de global pazarda güvenilir bir üretici olmak.
+
+Size MEFAPEX hakkında başka hangi konularda bilgi verebilirim? 🤝"""
+    
+    # AI/IA hakkında sorular
+    if any(word in user_lower for word in ["ia", "ai", "yapay zeka", "artificial intelligence", "IA nedir"]):
+        return """🤖 **IA (Intelligence Artificielle) / Yapay Zeka Nedir?**
+
+IA veya AI (Artificial Intelligence), makinelerin insan benzeri zeka göstermesini sağlayan teknolojilerin genel adıdır.
+
+**Temel Özellikler:**
+• Öğrenme ve adaptasyon yeteneği
+• Problem çözme ve karar verme
+• Doğal dil işleme ve anlama
+• Görüntü ve ses tanıma
+• Otonom hareket ve planlama
+
+**Kullanım Alanları:**
+• Sağlık: Hastalık teşhisi, ilaç keşfi
+• Finans: Risk analizi, dolandırıcılık tespiti
+• Üretim: Kalite kontrol, tahmine dayalı bakım
+• Eğitim: Kişiselleştirilmiş öğrenme
+• Günlük hayat: Sesli asistanlar, öneri sistemleri
+
+Ben de bir AI asistanıyım ve size MEFAPEX fabrikası hakkında yardımcı olmak için buradayım! 🎯"""
+
+    # ChatGPT hakkında sorular
+    elif any(word in user_lower for word in ["chatgpt", "gpt", "openai"]):
+        return """💬 **ChatGPT Nedir?**
+
+ChatGPT, OpenAI tarafından geliştirilen gelişmiş bir dil modelidir. GPT (Generative Pre-trained Transformer) teknolojisini kullanır.
+
+**Yetenekleri:**
+• Doğal dil anlama ve üretme
+• Çok dilli destek (100+ dil)
+• Kod yazma ve debugging
+• Yaratıcı içerik üretimi
+• Analiz ve problem çözme
+
+**Nasıl Çalışır:**
+• Milyarlarca parametreli sinir ağı
+• Transformer mimarisi
+• Bağlamsal anlama ve tahmin
+• Sürekli öğrenme ve gelişme
+
+Ben de benzer teknolojiler kullanıyorum! Size nasıl yardımcı olabilirim? 🚀"""
+
+    # Python hakkında sorular
+    elif any(word in user_lower for word in ["python", "programlama", "kod", "yazılım"]):
+        return """🐍 **Python Programlama Dili**
+
+Python, yüksek seviyeli, yorumlanabilir ve çok amaçlı bir programlama dilidir.
+
+**Özellikleri:**
+• Kolay ve okunabilir sözdizimi
+• Geniş kütüphane desteği
+• Platform bağımsız
+• Açık kaynak ve ücretsiz
+• Dinamik tip sistemi
+
+**Kullanım Alanları:**
+• Web geliştirme (Django, Flask)
+• Veri bilimi (Pandas, NumPy)
+• Yapay zeka (TensorFlow, PyTorch)
+• Otomasyon ve scripting
+• Oyun geliştirme
+
+Bu chatbot da Python ile geliştirilmiştir! 🎯"""
+
+    # Teknoloji genel soruları
+    elif any(word in user_lower for word in ["teknoloji", "bilgisayar", "internet", "dijital"]):
+        return """💻 **Teknoloji ve Dijital Dönüşüm**
+
+Modern teknoloji, hayatımızın her alanını dönüştürüyor.
+
+**Önemli Teknoloji Trendleri:**
+• Yapay Zeka ve Makine Öğrenmesi
+• Bulut Bilişim (Cloud Computing)
+• Nesnelerin İnterneti (IoT)
+• Blockchain ve Kripto
+• 5G ve Bağlantı Teknolojileri
+• Sanal ve Artırılmış Gerçeklik
+
+**Fabrikada Teknoloji:**
+MEFAPEX fabrikamız da modern teknolojileri kullanarak üretim verimliliğini artırıyor.
+
+Teknoloji hakkında spesifik sorularınız varsa, sormaktan çekinmeyin! 🚀"""
+
+    # Matematik/Hesaplama soruları
+    elif any(word in user_lower for word in ["hesapla", "matematik", "toplam", "çarp", "böl", "eksi", "artı"]):
+        return """🔢 **Matematik ve Hesaplama**
+
+Matematik sorunuz için size yardımcı olmaya çalışayım!
+
+Basit hesaplamalar yapabilirim:
+• Toplama, çıkarma, çarpma, bölme
+• Yüzde hesaplamaları
+• Oran ve orantı
+• Basit denklemler
+
+Lütfen hesaplamanızı net bir şekilde yazın. Örnek:
+- "15 + 27 kaç eder?"
+- "120'nin %15'i nedir?"
+- "8 x 12 = ?"
+
+Not: Karmaşık hesaplamalar için hesap makinesi kullanmanızı öneririm. 📊"""
+
+    # Genel selamlama
+    elif any(word in user_lower for word in ["merhaba", "selam", "günaydın", "iyi günler", "hey", "hello"]):
+        return """👋 **Merhaba! Hoş geldiniz!**
+
+Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
+
+**Size yardımcı olabileceğim konular:**
+• Fabrika ile ilgili sorular (çalışma saatleri, kurallar vb.)
+• Genel bilgi soruları
+• Teknoloji ve AI konuları
+• Basit hesaplamalar
+• Ve daha fazlası...
+
+Nasıl yardımcı olabilirim? 😊"""
+
+    # Teşekkür mesajları
+    elif any(word in user_lower for word in ["teşekkür", "sağol", "eyvallah", "thanks"]):
+        return """� **Rica ederim!**
+
+Yardımcı olabildiysem ne mutlu bana! 
+
+Başka sorularınız olursa her zaman buradayım. Size yardımcı olmak benim için bir zevk.
+
+İyi günler dilerim! 🌟"""
+
+    # Veda mesajları
+    elif any(word in user_lower for word in ["görüşürüz", "hoşçakal", "bye", "iyi akşamlar", "iyi geceler"]):
+        return """👋 **Görüşmek üzere!**
+
+Size yardımcı olabildiğim için mutluyum. 
+
+Tekrar görüşmek üzere! Başka sorularınız olduğunda ben burada olacağım.
+
+İyi günler dilerim! 🌟"""
+
+    # Fabrika dışı genel sorular için
     else:
-        # Try advanced AI generation first, then fallback to local AI
-        try:
-            if text_generator is not None:
-                response = generate_advanced_ai_response(user_message)
-                return f"🤖 {response}\n\n💡 Bu yanıt gelişmiş AI modeli tarafından üretilmiştir."
-            else:
-                response = generate_ai_response_local(user_message)
-                return f"🤖 {response}\n\n💡 Bu yanıt AI tarafından üretilmiştir."
-        except:
-            # Final fallback to rule-based responses
-            return generate_rule_based_response(user_message)
+        # Önce gelişmiş AI response'u dene
+        if text_generator is not None:
+            try:
+                ai_response = generate_advanced_ai_response(user_message)
+                if ai_response and len(ai_response) > 20:
+                    return f"🤖 {ai_response}\n\n💡 Bu yanıt AI tarafından üretilmiştir."
+            except Exception as e:
+                logger.warning(f"Advanced AI response failed: {e}")
+        
+        # Fallback: Basit text generation
+        if text_generator is not None:
+            try:
+                # Türkçe prompt
+                prompt = f"Soru: {user_message}\nYanıt:"
+                
+                # Model ile yanıt üret - eski API uyumlu
+                result = text_generator(
+                    prompt,
+                    max_length=min(len(prompt) + 80, 200),
+                    num_return_sequences=1,
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=text_generator.tokenizer.eos_token_id
+                )
+                
+                generated = result[0]['generated_text']
+                # Sadece yanıt kısmını al
+                if "Yanıt:" in generated:
+                    response = generated.split("Yanıt:")[-1].strip()
+                else:
+                    response = generated[len(prompt):].strip()
+                
+                # Response'u temizle
+                response = response.split('\n')[0].strip()
+                response = response.split('Soru:')[0].strip()
+                
+                if len(response) > 15:  # Yeterince uzun bir cevap üretildiyse
+                    return f"🤖 {response}\n\n💡 Bu yanıt AI tarafından üretilmiştir."
+            except Exception as e:
+                logger.warning(f"Basic text generation failed: {e}")
+        
+        # Fallback: Genel yardımcı yanıt
+        return f"""🤖 **'{user_message}' hakkında:**
+
+Bu konu hakkında size yardımcı olmaya çalışıyorum. 
+
+Sorunuz fabrika veritabanımızda bulunmamakla birlikte, genel bilgilerimle yanıt vermeye çalışabilirim.
+
+**Daha iyi yardım için:**
+• Sorunuzu daha detaylı yazabilirsiniz
+• Fabrika ile ilgili konularda daha spesifik sorular sorabilirsiniz
+• Veya farklı bir konu hakkında soru sorabilirsiniz
+
+Size başka nasıl yardımcı olabilirim? 💭"""
 
 def generate_advanced_ai_response(user_message: str) -> str:
     """Generate response using advanced Hugging Face text generation model"""
     try:
-        # Create a conversational prompt
-        prompt = f"MEFAPEX fabrika asistanı olarak, kullanıcının sorusuna Türkçe ve yardımcı bir şekilde yanıt ver.\n\nKullanıcı: {user_message}\nAsistan:"
+        if text_generator is None:
+            raise Exception("Text generator not loaded")
         
-        # Generate response
+        # DialoGPT için konuşma formatında prompt
+        # Model konuşma tarzında eğitilmiş, bu yüzden diyalog formatı kullanmalıyız
+        conversation_prompt = f"Kullanıcı: {user_message}\nAsistan:"
+        
+        # Generate response - DialoGPT için optimize edilmiş
         outputs = text_generator(
-            prompt,
-            max_length=len(prompt.split()) + 50,
+            conversation_prompt,
+            max_length=min(len(conversation_prompt) + 80, 200),
             num_return_sequences=1,
-            temperature=0.7,
+            temperature=0.8,
             do_sample=True,
-            pad_token_id=text_generator.tokenizer.eos_token_id
+            top_p=0.9,
+            top_k=50,
+            pad_token_id=text_generator.tokenizer.eos_token_id,
+            eos_token_id=text_generator.tokenizer.eos_token_id,
+            no_repeat_ngram_size=2,
+            repetition_penalty=1.2
         )
         
         # Extract the generated text
@@ -495,73 +694,334 @@ def generate_advanced_ai_response(user_message: str) -> str:
         if "Asistan:" in generated_text:
             response = generated_text.split("Asistan:")[-1].strip()
         else:
-            response = generated_text[len(prompt):].strip()
+            response = generated_text[len(conversation_prompt):].strip()
         
         # Clean up the response
         response = response.replace("\\n", " ").strip()
+        response = response.replace("  ", " ").strip()
         
-        # If response is too short or empty, fallback
-        if len(response) < 10:
-            raise Exception("Generated response too short")
+        # Remove unwanted patterns
+        response = response.split("Kullanıcı:")[0].strip()  # Stop at next user input
+        response = response.split("\n")[0].strip()  # Take first line
         
-        return response
+        # DialoGPT sometimes generates very short responses, which is normal
+        # But we want at least some meaningful content
+        if len(response) < 5:
+            raise Exception(f"Generated response too short: '{response}'")
+        
+        # Check for garbled/meaningless output (common with DialoGPT)
+        # Look for repetitive patterns or non-Turkish characters
+        words = response.split()
+        if len(words) > 0:
+            # Check for too much repetition
+            unique_words = set(words)
+            if len(unique_words) < len(words) / 2 and len(words) > 3:
+                raise Exception(f"Generated response too repetitive: '{response}'")
+            
+            # Check for meaningless patterns
+            meaningless_patterns = ['malaziz', 'nazir', 'aksine', 'kelar', 'bajkim']
+            if any(pattern in response.lower() for pattern in meaningless_patterns):
+                raise Exception(f"Generated response contains meaningless patterns: '{response}'")
+        
+        # Limit response length
+        if len(response) > 150:
+            # Find last complete word or sentence
+            response = response[:150]
+            last_space = response.rfind(' ')
+            if last_space > 100:
+                response = response[:last_space]
+        
+        # Post-process for better Turkish responses
+        if response and len(response) >= 5:
+            # Add contextual enhancement for Turkish
+            if any(word in user_message.lower() for word in ['nedir', 'ne', 'nasıl', 'neden']):
+                if not any(char in response for char in '.!?'):
+                    response += "."
+            return response
+        else:
+            raise Exception("Generated response not meaningful")
         
     except Exception as e:
         logger.warning(f"Advanced AI generation failed: {e}")
-        # Fallback to local AI
+        # Fallback to local AI with more intelligent responses
         return generate_ai_response_local(user_message)
 
 def generate_ai_response_local(user_message: str) -> str:
-    """Generate AI response using local models/logic"""
+    """Generate AI response using enhanced local intelligence"""
     # Convert to lowercase for analysis
     msg_lower = user_message.lower().strip()
     
-    # Greetings - Check first for better matching
-    greetings = ["merhaba", "selam", "hi", "hello", "hey", "nasılsın", "nasıl gidiyor"]
-    if any(greeting in msg_lower for greeting in greetings) or len(msg_lower.split()) <= 2:
-        if any(greeting in msg_lower for greeting in ["merhaba", "selam", "hi", "hello", "hey"]):
-            return "👋 Merhaba! MEFAPEX fabrika asistanınızım. Size nasıl yardımcı olabilirim?"
-    
-    # Thank you responses
-    if any(word in msg_lower for word in ["teşekkür", "thanks", "sağol", "eyvallah"]):
-        return "Rica ederim! Başka sorularınız olursa çekinmeden sorabilirsiniz."
-    
-    # Who are you questions
-    if any(word in msg_lower for word in ["kim", "who", "kimsin", "sen kim"]):
-        return "Ben MEFAPEX fabrikasının AI asistanıyım. Fabrika çalışanlarına yardımcı olmak ve sorularını yanıtlamak için buradayım."
-    
-    # Factory-related intelligent responses
-    if any(word in msg_lower for word in ["mefapex", "fabrika", "factory"]):
-        return "MEFAPEX Türkiye'nin önde gelen üretim fabrikalarından biridir. Kaliteli ürünler ve modern teknoloji ile hizmet vermektedir."
-    
-    if any(word in msg_lower for word in ["nedir", "ne", "what", "hangi"]) and "mefapex" in msg_lower:
-        return "MEFAPEX, endüstriyel üretim alanında faaliyet gösteren bir fabrikadır. Çalışan hakları, güvenlik protokolleri ve kaliteli üretim prensiplerine bağlı olarak çalışır."
-    
-    if any(word in msg_lower for word in ["yardım", "help", "nasıl yardımcı"]):
-        return "Size yardımcı olmaktan mutluluk duyarım! Fabrika ile ilgili çalışma saatleri, güvenlik kuralları, izin prosedürleri, vardiya değişiklikleri gibi konularda sorularınızı sorabilirsiniz."
-    
-    # Time-related queries
-    if any(word in msg_lower for word in ["saat", "zaman", "time", "ne zaman"]):
-        return "Zaman ile ilgili sorularınız için, lütfen daha spesifik olun. Çalışma saatleri, mola saatleri veya vardiya saatleri hakkında sormak istiyorsanız belirtin."
-    
-    # General work-related queries
-    if any(word in msg_lower for word in ["çalışma", "iş", "work", "job"]):
-        return "Çalışma hayatı ile ilgili sorularınızı yanıtlamaya hazırım. İzinler, vardiyalar, güvenlik kuralları gibi konularda detaylı bilgi verebilirim."
-    
-    # Safety-related
-    if any(word in msg_lower for word in ["güvenlik", "safety", "emniyet"]):
-        return "Güvenlik fabrikamızın önceliğidir. Kask, güvenlik ayakkabısı ve koruyucu ekipman kullanımı zorunludur. Detaylı güvenlik kuralları için spesifik sorularınızı sorabilirsiniz."
-    
-    # Food/meal related
-    if any(word in msg_lower for word in ["yemek", "food", "meal", "lunch", "öğle"]):
-        return "Yemek ve mola saatleri ile ilgili sorularınız için 'yemek saatleri' şeklinde sorabilirsiniz. Genel olarak fabrikada yemek servisi ve mola düzenlemeleri mevcuttur."
-    
-    # Weather (unrelated to factory)
-    if any(word in msg_lower for word in ["hava", "weather", "yağmur", "güneş"]):
-        return "Hava durumu ile ilgili bilgilere fabrika sistemi üzerinden erişemem. Ancak fabrika ile ilgili diğer konularda size yardımcı olabilirim."
-    
-    # Default intelligent response
-    return f"'{user_message}' konusunda size yardımcı olmaya çalışıyorum. Bu konuda fabrika veritabanımızda spesifik bilgi bulamadım, ancak genel olarak yardımcı olabilirim. Sorunuzu daha detaylandırabilir misiniz?"
+    # Python ve Programlama Soruları
+    if any(word in msg_lower for word in ["python", "programlama", "kod", "yazılım", "programming"]):
+        return """🐍 **Python ve Programlama Hakkında**
+
+Python, öğrenmesi kolay ve güçlü bir programlama dilidir.
+
+**Başlangıç için öneriler:**
+• Python.org'dan ücretsiz indirebilirsiniz
+• Online kurslar: Codecademy, Python.org tutorials
+• Temel konular: değişkenler, döngüler, fonksiyonlar
+• Pratik projeler yaparak öğrenin
+
+**Kullanım alanları:**
+• Web geliştirme (Django, Flask)
+• Veri analizi (Pandas, NumPy)
+• Yapay zeka (TensorFlow, scikit-learn)
+• Otomasyon ve scripting
+
+Hangi alanda odaklanmak istiyorsunuz? 🚀"""
+
+    # Yapay Zeka Soruları
+    elif any(word in msg_lower for word in ["yapay zeka", "ai", "artificial intelligence", "makine öğrenmesi", "machine learning"]):
+        return """🤖 **Yapay Zeka Hakkında**
+
+Yapay zeka, makinelerin insan benzeri zeka göstermesini sağlar.
+
+**Temel Kavramlar:**
+• **Makine Öğrenmesi**: Verilerden öğrenme
+• **Derin Öğrenme**: Sinir ağları ile karmaşık pattern'ler
+• **Doğal Dil İşleme**: Metinleri anlama ve üretme
+• **Bilgisayarla Görme**: Görüntü tanıma ve analiz
+
+**Günlük Hayatta AI:**
+• Sesli asistanlar (Siri, Alexa)
+• Öneri sistemleri (Netflix, YouTube)
+• Çeviri servisleri (Google Translate)
+• Otomatik araçlar
+
+Ben de bir AI asistanıyım! Spesifik bir AI konusu merak ediyor musunuz? 🎯"""
+
+    # Teknoloji Genel
+    elif any(word in msg_lower for word in ["teknoloji", "bilgisayar", "internet", "dijital", "technology"]):
+        return """💻 **Modern Teknoloji**
+
+Teknoloji hayatımızı sürekli şekillendiriyor.
+
+**Güncel Trendler:**
+• **Bulut Bilişim**: Her yerden erişilebilir veriler
+• **Mobil Teknolojiler**: Akıllı telefonlar ve uygulamalar
+• **Nesnelerin İnterneti (IoT)**: Bağlı cihazlar
+• **Siber Güvenlik**: Dijital koruma
+• **Blockchain**: Güvenli veri paylaşımı
+
+**Öğrenme Kaynakları:**
+• Online platformlar (Coursera, Udemy)
+• YouTube eğitim kanalları
+• Teknoloji blogları ve podcastler
+
+Hangi teknoloji alanı sizi ilgilendiriyor? 🌐"""
+
+    # Öğrenme ve Eğitim
+    elif any(word in msg_lower for word in ["öğren", "eğitim", "ders", "kurs", "learn", "study"]):
+        return """📚 **Öğrenme ve Gelişim**
+
+Sürekli öğrenmek modern dünyanın anahtarıdır.
+
+**Etkili Öğrenme Yöntemleri:**
+• **Aktif Öğrenme**: Sadece okumak değil, pratik yapmak
+• **Proje Tabanlı**: Gerçek projelerle öğrenmek
+• **Topluluk**: Online forumlar ve gruplar
+• **Düzenli Tekrar**: Spaced repetition tekniği
+
+**Ücretsiz Kaynaklar:**
+• Khan Academy, Coursera (audit)
+• YouTube eğitim kanalları
+• GitHub açık kaynak projeleri
+• Stack Overflow (programlama)
+
+Hangi konuda gelişmek istiyorsunuz? 🎓"""
+
+    # İş ve Kariyer
+    elif any(word in msg_lower for word in ["iş", "kariyer", "job", "career", "work", "meslek"]):
+        return """💼 **Kariyer ve İş Dünyası**
+
+Modern iş dünyası sürekli değişiyor.
+
+**Gelecekteki Beceriler:**
+• **Dijital Okuryazarlık**: Teknoloji kullanımı
+• **Problem Çözme**: Analitik düşünme
+• **İletişim**: Hem yazılı hem sözlü
+• **Uyum Yeteneği**: Değişime açık olma
+• **İşbirliği**: Takım çalışması
+
+**Kariyer Tavsiyeleri:**
+• LinkedIn profilinizi güncel tutun
+• Sürekli yeni beceriler edinin
+• Network oluşturun ve güçlendirin
+• Kişisel projeler geliştirin
+
+Hangi sektörde çalışmayı hedefliyorsunuz? 🚀"""
+
+    # Sağlık ve Yaşam
+    elif any(word in msg_lower for word in ["sağlık", "health", "yaşam", "life", "beslenme", "spor"]):
+        return """🏥 **Sağlık ve Yaşam Kalitesi**
+
+Sağlıklı yaşam, hem fiziksel hem mental iyilik hali gerektirir.
+
+**Temel Prensipler:**
+• **Dengeli Beslenme**: Çeşitli besin grupları
+• **Düzenli Egzersiz**: Haftada en az 150 dakika
+• **Yeterli Uyku**: 7-9 saat kaliteli uyku
+• **Stres Yönetimi**: Meditasyon, hobi aktiviteleri
+• **Sosyal Bağlantılar**: Aile ve arkadaş ilişkileri
+
+**Dijital Sağlık:**
+• Sağlık uygulamaları kullanın
+• Düzenli kontroller yaptırın
+• Güvenilir kaynaklardan bilgi alın
+
+Not: Sağlık konularında mutlaka uzman görüşü alın! 🌟"""
+
+    # Genel selamlama ve tanışma
+    elif any(word in msg_lower for word in ["merhaba", "selam", "hi", "hello", "hey", "nasılsın", "kimsin", "sen kim"]):
+        return """👋 **Merhaba! Tanışmak güzel!**
+
+Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmak için buradayım!
+
+**Size yardımcı olabileceğim konular:**
+• 🏭 Fabrika ile ilgili sorular
+• 💻 Teknoloji ve programlama
+• 🤖 Yapay zeka ve AI
+• 📚 Öğrenme ve gelişim tavsiyeleri
+• 💼 Kariyer ve iş dünyası
+• 🔢 Basit matematik hesaplamaları
+
+**Nasıl çalışırım:**
+• Sorularınızı anlayıp uygun yanıtlar vermeye çalışırım
+• Fabrika veritabanını tarayabilir, genel bilgilerimi kullanabilirim
+• Sürekli öğrenmeye ve gelişmeye odaklıyım
+
+Hangi konuda size yardımcı olabilirim? 😊"""
+
+    # Teşekkür ve veda
+    elif any(word in msg_lower for word in ["teşekkür", "thanks", "sağol", "görüşürüz", "bye", "hoşça kal"]):
+        return """🙏 **Rica ederim!**
+
+Size yardımcı olabildiysem ne mutlu bana! 
+
+**Unutmayın:**
+• Her zaman burada olmaya devam edeceğim
+• Yeni sorularınız için sormaktan çekinmeyin
+• Sürekli öğrenmeye devam edin
+
+İyi günler dilerim! Tekrar görüşmek üzere! 🌟"""
+
+    # Fabrika ve MEFAPEX
+    elif any(word in msg_lower for word in ["mefapex", "fabrika", "factory", "üretim", "işçi", "çalışan"]):
+        return """🏭 **MEFAPEX Fabrikası**
+
+MEFAPEX, modern üretim teknolojileri ile kaliteli ürünler üreten bir fabrikadır.
+
+**Fabrika Değerleri:**
+• 🛡️ **Güvenlik**: Çalışan güvenliği öncelik
+• 🌟 **Kalite**: Yüksek standartlarda üretim
+• 🌱 **Sürdürülebilirlik**: Çevreye duyarlı üretim
+• 👥 **İnsan Odaklı**: Çalışan refahı önemli
+• 🔧 **İnovasyon**: Sürekli gelişim ve teknoloji
+
+**Size yardımcı olabileceğim fabrika konuları:**
+• Çalışma saatleri ve vardiyalar
+• Güvenlik kuralları ve prosedürler
+• İzin ve tatil prosedürleri
+• Genel fabrika bilgileri
+
+Spesifik bir konu hakkında soru sormak ister misiniz? 🤝"""
+
+    # Zamana dayalı sorular
+    elif any(word in msg_lower for word in ["saat", "zaman", "time", "ne zaman", "when"]):
+        return """⏰ **Zaman ve Zamanlama**
+
+Zamanlama konularında size yardımcı olmaya çalışayım.
+
+**Genel Zaman Bilgileri:**
+• Standart çalışma saatleri: Genellikle 08:00-17:00
+• Mola saatleri: Öğle arası ve çay molaları
+• Vardiya sistemleri: Bazı bölümlerde 24 saat üretim
+
+**Daha spesifik bilgi için şunları sorabilirsiniz:**
+• "Çalışma saatleri nedir?"
+• "Mola saatleri ne zaman?"
+• "Vardiya değişim saatleri nedir?"
+• "Fabrika ne zaman açık?"
+
+Hangi zaman konusunda bilgi almak istiyorsunuz? 📅"""
+
+    # Matematiksel sorular
+    elif any(word in msg_lower for word in ["hesapla", "matematik", "math", "sayı", "number", "hesap"]):
+        return """🔢 **Matematik ve Hesaplama**
+
+Basit matematik işlemlerinde size yardımcı olabilirim!
+
+**Yapabileceğim hesaplamalar:**
+• ➕ Toplama: "15 + 27"
+• ➖ Çıkarma: "100 - 35" 
+• ✖️ Çarpma: "8 × 12" veya "8 x 12"
+• ➗ Bölme: "144 ÷ 12"
+• 📊 Yüzde: "200'nin %15'i"
+
+**Örnek kullanım:**
+• "25 + 17 kaç eder?"
+• "120'nin %20'si nedir?"
+• "15 x 8 = ?"
+
+Hesaplamanızı yukarıdaki formatlardan birinde yazabilir misiniz? 📱"""
+
+    # Yardım ve rehberlik
+    elif any(word in msg_lower for word in ["yardım", "help", "nasıl", "how", "rehber"]):
+        return """🆘 **Yardım ve Rehberlik**
+
+Size en iyi şekilde yardımcı olmak istiyorum!
+
+**Bana şunları sorabilirsiniz:**
+• 🏭 **Fabrika konuları**: Çalışma saatleri, kurallar, prosedürler
+• 💻 **Teknoloji**: Python, AI, programlama, bilgisayar
+• 📚 **Öğrenme**: Eğitim kaynakları, beceri geliştirme
+• 🔢 **Hesaplama**: Basit matematik işlemleri
+• 💼 **Kariyer**: İş dünyası, beceriler, tavsiyelr
+
+**Daha iyi yanıt almak için:**
+• Sorularınızı net ve açık yazın
+• Spesifik konular belirtin
+• Örnek vererek detaylandırın
+
+Hangi konuda yardıma ihtiyacınız var? 💪"""
+
+    # Default: Akıllı genel yanıt
+    else:
+        # Soru tipini analiz et
+        question_words = ["ne", "nedir", "nasıl", "neden", "niçin", "hangi", "kim", "where", "what", "how", "why", "which", "who"]
+        is_question = any(word in msg_lower for word in question_words) or "?" in user_message
+        
+        if is_question:
+            return f"""🤔 **'{user_message}' hakkında...**
+
+Bu konuda size yardımcı olmaya çalışıyorum. Fabrika veritabanımızda spesifik bilgi bulamadım, ancak genel bilgilerimle destekleyebilirim.
+
+**Daha iyi yardım için şunları deneyebilirsiniz:**
+• Soruyu daha detaylandırın
+• Hangi alanda bilgi istediğinizi belirtin
+• Fabrika ile ilgili sorular için spesifik konular sorun
+
+**Popüler konularım:**
+• 🏭 Fabrika operasyonları • 💻 Teknoloji ve AI • 📚 Öğrenme tavsiyeleri
+• 🔢 Matematik hesaplamaları • 💼 Kariyer rehberliği
+
+Size başka nasıl yardımcı olabilirim? 💭"""
+        else:
+            return f"""💬 **'{user_message}' konusunda...**
+
+Bu konuyu anlıyorum ve size yardımcı olmaya çalışıyorum. 
+
+**Size şunları önerebilirim:**
+• Bu konuda daha spesifik sorular sorabilirsiniz
+• Hangi açıdan yaklaşmak istediğinizi belirtebilirsiniz
+• İlgili diğer konular hakkında soru sorabilirsiniz
+
+**Ben şu konularda uzmanım:**
+• 🏭 MEFAPEX fabrika bilgileri • 💻 Teknoloji ve programlama 
+• 🤖 Yapay zeka • 📚 Eğitim ve öğrenme • 🔢 Matematik
+
+Hangi açıdan size yardımcı olabilirim? 🎯"""
 
 def generate_rule_based_response(user_message: str) -> str:
     """Fallback rule-based responses"""
@@ -583,35 +1043,20 @@ def generate_rule_based_response(user_message: str) -> str:
 # 🆕 CHAT HISTORY ENDPOINTS
 @app.get("/chat/history/{user_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(user_id: str, current_user: dict = Depends(get_current_user)):
-    """Get chat history for a user (last 20 messages)"""
+    """Get chat history for a user (last 20 messages, persistent)"""
     try:
-        # Verify user can access this history (either their own or admin)
         if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied"
             )
-        
-        # Find user's session
-        session_id = None
-        messages = []
-        
-        for sid, session in chat_sessions.items():
-            if session["user_id"] == user_id:
-                session_id = sid
-                messages = session["messages"][-20:]  # Last 20 messages
-                break
-        
-        if not session_id:
-            # Create empty session if none exists
-            session_id = get_user_session(user_id)
-        
+        session_id = db_manager.get_or_create_session(user_id)
+        messages = db_manager.get_chat_history(user_id, limit=20)
         return ChatHistoryResponse(
             session_id=session_id,
             messages=messages,
             total_messages=len(messages)
         )
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -623,23 +1068,15 @@ async def get_chat_history(user_id: str, current_user: dict = Depends(get_curren
 
 @app.delete("/chat/history/{user_id}")
 async def clear_chat_history(user_id: str, current_user: dict = Depends(get_current_user)):
-    """Clear chat history for a user"""
+    """Clear chat history for a user (persistent)"""
     try:
-        # Verify user can clear this history (either their own or admin)
         if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied"
             )
-        
-        # Find and clear user's session
-        for sid, session in chat_sessions.items():
-            if session["user_id"] == user_id:
-                chat_sessions[sid]["messages"] = []
-                break
-        
+        db_manager.clear_chat_history(user_id)
         return {"success": True, "message": "Chat history cleared"}
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -783,7 +1220,7 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
             logger.error(f"Embedding generation failed: {e}")
             response_text = "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
             source = "error"
-            add_message_to_session(session_id, user_message, response_text, source)
+            add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
             return ChatResponse(response=response_text, source=source)
         
         # Search in Qdrant
@@ -847,7 +1284,7 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
                 source = "error"
         
         # Save to session
-        add_message_to_session(session_id, user_message, response_text, source)
+        add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
         
         return ChatResponse(response=response_text, source=source)
         
@@ -859,7 +1296,7 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
         # Try to save to session even on error
         try:
             session_id = get_user_session(current_user["user_id"])
-            add_message_to_session(session_id, user_message, response_text, source)
+            add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
         except:
             pass
             

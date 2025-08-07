@@ -25,3 +25,6 @@ pydantic>=2.11.0
 starlette>=0.47.0
 typing-extensions>=4.14.0
 
+email-validator>=2.0.0
+pydantic[email]>=2.11.0
+

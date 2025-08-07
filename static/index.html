@@ -303,6 +303,9 @@
 
         <!-- Chat Container -->
         <div class="chat-container" id="chatContainer">
+            <div style="display: flex; justify-content: flex-end; padding: 10px 20px 0 20px;">
+                <button onclick="fetchAndDisplayChatHistory()" style="background: #764ba2; color: white; border: none; border-radius: 5px; padding: 8px 16px; cursor: pointer; margin-bottom: 8px;">Geçmişi Göster</button>
+            </div>
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-message">
                     👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
@@ -329,6 +332,15 @@
             </div>
         </div>
     </div>
+
+    <div id="chatHistorySidebar" style="position: fixed; left: 0; top: 0; height: 100vh; width: 300px; background: #2c3e50; color: white; z-index: 2000; box-shadow: 2px 0 10px rgba(0,0,0,0.2); transform: translateX(-100%); transition: transform 0.3s; overflow-y: auto;">
+        <div style="padding: 20px; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 20px; font-weight: bold;">🕑 Geçmiş</span>
+            <button onclick="closeChatHistorySidebar()" style="background: none; border: none; color: white; font-size: 22px; cursor: pointer;">&times;</button>
+        </div>
+        <ul id="chatHistoryList" style="list-style: none; padding: 0; margin: 0;"></ul>
+    </div>
+    <button id="openHistoryBtn" onclick="openChatHistorySidebar()" style="position: absolute; left: 10px; top: 100px; background: #764ba2; color: white; border: none; border-radius: 8px; padding: 10px 18px; font-size: 16px; cursor: pointer; z-index: 1100;">🕑 Geçmiş</button>
 
     <script src="static/script.js"></script>
 </body>
