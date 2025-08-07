@@ -121,7 +121,57 @@ qdrant_client = QdrantClient(
     port=int(os.getenv("QDRANT_PORT", 6333))
 )
 
-# 🔐 AUTHENTICATION UTILITIES
+# �️ DATA MODELS
+class ChatMessage(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    response: str
+    source: str  # "openai", "huggingface", or "database"
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    success: bool
+    message: str
+
+# 🆕 NEW MODELS FOR ENHANCED FEATURES
+class UserRegister(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
+
+class UserInDB(BaseModel):
+    user_id: str
+    username: str
+    email: str
+    hashed_password: str
+    full_name: Optional[str] = None
+    created_at: datetime
+    is_active: bool = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class ChatSession(BaseModel):
+    session_id: str
+    user_id: str
+    messages: List[Dict]
+    created_at: datetime
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: List[Dict]
+    total_messages: int
+
+# �🔐 AUTHENTICATION UTILITIES
 def verify_password(plain_password, hashed_password):
     """Verify a password against its hash"""
     return pwd_context.verify(plain_password, hashed_password)
@@ -292,55 +342,6 @@ async def login_legacy(request: LoginRequest):
         return LoginResponse(success=True, message="Giriş başarılı")
     else:
         return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
-
-class ChatMessage(BaseModel):
-    message: str
-
-class ChatResponse(BaseModel):
-    response: str
-    source: str  # "openai", "huggingface", or "database"
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class LoginResponse(BaseModel):
-    success: bool
-    message: str
-
-# 🆕 NEW MODELS FOR ENHANCED FEATURES
-class UserRegister(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-    full_name: Optional[str] = None
-
-class UserInDB(BaseModel):
-    user_id: str
-    username: str
-    email: str
-    hashed_password: str
-    full_name: Optional[str] = None
-    created_at: datetime
-    is_active: bool = True
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class TokenData(BaseModel):
-    username: Optional[str] = None
-
-class ChatSession(BaseModel):
-    session_id: str
-    user_id: str
-    messages: List[Dict]
-    created_at: datetime
-
-class ChatHistoryResponse(BaseModel):
-    session_id: str
-    messages: List[Dict]
-    total_messages: int
 
 @app.get("/health")
 async def health_check():
