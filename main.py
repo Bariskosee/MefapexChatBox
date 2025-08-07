@@ -9,6 +9,9 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 import openai
 import os
 import time
+import uuid
+import shutil
+import psutil
 from dotenv import load_dotenv
 import logging
 from typing import Optional, List, Dict
@@ -25,6 +28,13 @@ from model_manager import model_manager
 from response_cache import response_cache
 from websocket_manager import websocket_manager, message_handler
 
+# Load environment variables
+load_dotenv()
+
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Import production monitoring (conditionally)
 try:
     from memory_monitor import memory_monitor, setup_memory_monitoring
@@ -32,9 +42,6 @@ try:
 except ImportError:
     MEMORY_MONITORING_AVAILABLE = False
     logger.warning("Memory monitoring not available - install psutil for production monitoring")
-
-# Load environment variables
-load_dotenv()
 
 # 🔒 PRODUCTION SECURITY CONFIGURATION
 DEBUG_MODE = os.getenv("DEBUG", "False").lower() == "true"
@@ -1808,6 +1815,10 @@ async def handle_websocket_chat_message(websocket: WebSocket, user_id: str, mess
                 if best_score > 0.85:
                     best_match = search_results[0].payload
                     context = f"Question: {best_match['question']}\nAnswer: {best_match['answer']}"
+                else:
+                    context = ""
+            else:
+                context = ""
         except Exception as e:
             logger.error(f"Qdrant search error: {e}")
         
@@ -1854,6 +1865,29 @@ async def handle_websocket_chat_message(websocket: WebSocket, user_id: str, mess
         await websocket_manager.send_personal_message({
             'type': 'error',
             'message': f'Failed to process message: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+
+async def handle_websocket_get_history(websocket: WebSocket, user_id: str):
+    """
+    Handle request to get chat history via WebSocket
+    """
+    try:
+        # Get last 10 messages from database
+        messages = db_manager.get_chat_history(user_id, limit=10)
+        
+        await websocket_manager.send_personal_message({
+            'type': 'chat_history',
+            'messages': messages,
+            'total_messages': len(messages),
+            'timestamp': datetime.utcnow().isoformat()
+        }, websocket)
+        
+    except Exception as e:
+        logger.error(f"Error getting chat history: {e}")
+        await websocket_manager.send_personal_message({
+            'type': 'error',
+            'message': f'Failed to get chat history: {str(e)}',
             'timestamp': datetime.utcnow().isoformat()
         }, websocket)
 
