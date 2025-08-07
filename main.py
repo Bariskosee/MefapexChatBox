@@ -220,6 +220,20 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
+    
+    # Handle demo user
+    if token_data.username == "demo":
+        return {
+            "user_id": "demo-user-id",
+            "username": "demo",
+            "email": "demo@mefapex.com",
+            "full_name": "Demo User",
+            "created_at": datetime.utcnow(),
+            "is_active": True,
+            "is_demo": True
+        }
+    
+    # Handle regular users
     user = get_user(username=token_data.username)
     if user is None:
         raise credentials_exception
@@ -311,10 +325,26 @@ async def register_user(user: UserRegister):
             detail="Registration failed"
         )
 
-# 🆕 USER LOGIN WITH JWT
+# 🆕 USER LOGIN WITH JWT (supports demo user)
 @app.post("/login", response_model=Token)
 async def login_for_access_token(form_data: LoginRequest):
     """Authenticate user and return access token"""
+    # Check for demo user first
+    if form_data.username == "demo" and form_data.password == "1234":
+        # Create a temporary demo user entry for JWT
+        demo_user = {
+            "user_id": "demo-user-id",
+            "username": "demo",
+            "email": "demo@mefapex.com",
+            "is_demo": True
+        }
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": "demo"}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    
+    # Check regular users
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -342,6 +372,8 @@ async def login_legacy(request: LoginRequest):
         return LoginResponse(success=True, message="Giriş başarılı")
     else:
         return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
+
+@app.get("/health")
 
 @app.get("/health")
 async def health_check():
