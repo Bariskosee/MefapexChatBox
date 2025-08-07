@@ -14,6 +14,12 @@ torch>=2.6.0
 transformers>=4.40.0
 accelerate>=0.21.0
 
+# Authentication and Session Management
+passlib==1.7.4
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+bcrypt==4.0.1
+
 # Additional dependencies (automatically installed)
 pydantic>=2.11.0
 starlette>=0.47.0

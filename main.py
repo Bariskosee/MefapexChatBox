@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from sentence_transformers import SentenceTransformer
@@ -12,7 +13,12 @@ import openai
 import os
 from dotenv import load_dotenv
 import logging
-from typing import Optional
+from typing import Optional, List, Dict
+from datetime import datetime, timedelta
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+import uuid
+import json
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +26,19 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# 🔐 AUTHENTICATION CONFIGURATION
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+
+# In-memory storage (replace with database in production)
+users_db = {}
+chat_sessions = {}
 
 app = FastAPI(title="MEFAPEX Chatbot API")
 
@@ -102,6 +121,178 @@ qdrant_client = QdrantClient(
     port=int(os.getenv("QDRANT_PORT", 6333))
 )
 
+# 🔐 AUTHENTICATION UTILITIES
+def verify_password(plain_password, hashed_password):
+    """Verify a password against its hash"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    """Hash a password"""
+    return pwd_context.hash(password)
+
+def get_user(username: str):
+    """Get user from database"""
+    return users_db.get(username)
+
+def authenticate_user(username: str, password: str):
+    """Authenticate user credentials"""
+    user = get_user(username)
+    if not user:
+        return False
+    if not verify_password(password, user["hashed_password"]):
+        return False
+    return user
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create JWT access token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current authenticated user"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    user = get_user(username=token_data.username)
+    if user is None:
+        raise credentials_exception
+    return user
+
+def get_user_session(user_id: str) -> Optional[str]:
+    """Get or create user session ID"""
+    for session_id, session in chat_sessions.items():
+        if session["user_id"] == user_id:
+            return session_id
+    
+    # Create new session
+    session_id = str(uuid.uuid4())
+    chat_sessions[session_id] = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "messages": [],
+        "created_at": datetime.utcnow()
+    }
+    return session_id
+
+def add_message_to_session(session_id: str, user_message: str, bot_response: str, source: str):
+    """Add message to chat session"""
+    if session_id in chat_sessions:
+        message_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_message": user_message,
+            "bot_response": bot_response,
+            "source": source
+        }
+        chat_sessions[session_id]["messages"].append(message_entry)
+        
+        # Keep only last 100 messages per session
+        if len(chat_sessions[session_id]["messages"]) > 100:
+            chat_sessions[session_id]["messages"] = chat_sessions[session_id]["messages"][-100:]
+
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")
+
+# 🆕 USER REGISTRATION
+@app.post("/register", response_model=dict)
+async def register_user(user: UserRegister):
+    """Register a new user"""
+    try:
+        # Check if user already exists
+        if user.username in users_db:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered"
+            )
+        
+        # Check if email already exists
+        for existing_user in users_db.values():
+            if existing_user["email"] == user.email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already registered"
+                )
+        
+        # Create new user
+        user_id = str(uuid.uuid4())
+        hashed_password = get_password_hash(user.password)
+        
+        users_db[user.username] = {
+            "user_id": user_id,
+            "username": user.username,
+            "email": user.email,
+            "hashed_password": hashed_password,
+            "full_name": user.full_name,
+            "created_at": datetime.utcnow(),
+            "is_active": True
+        }
+        
+        logger.info(f"✅ New user registered: {user.username}")
+        
+        return {
+            "success": True,
+            "message": "User registered successfully",
+            "user_id": user_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed"
+        )
+
+# 🆕 USER LOGIN WITH JWT
+@app.post("/login", response_model=Token)
+async def login_for_access_token(form_data: LoginRequest):
+    """Authenticate user and return access token"""
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# 🆕 LEGACY LOGIN (for backward compatibility)
+@app.post("/login-legacy", response_model=LoginResponse)
+async def login_legacy(request: LoginRequest):
+    """Legacy login endpoint for demo purposes"""
+    # Keep demo login for testing
+    if request.username == "demo" and request.password == "1234":
+        return LoginResponse(success=True, message="Giriş başarılı")
+    
+    # Check real users
+    user = authenticate_user(request.username, request.password)
+    if user:
+        return LoginResponse(success=True, message="Giriş başarılı")
+    else:
+        return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -117,17 +308,39 @@ class LoginResponse(BaseModel):
     success: bool
     message: str
 
-@app.get("/")
-async def read_root():
-    return FileResponse("static/index.html")
+# 🆕 NEW MODELS FOR ENHANCED FEATURES
+class UserRegister(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
 
-@app.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest):
-    # Simple authentication
-    if request.username == "demo" and request.password == "1234":
-        return LoginResponse(success=True, message="Giriş başarılı")
-    else:
-        return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
+class UserInDB(BaseModel):
+    user_id: str
+    username: str
+    email: str
+    hashed_password: str
+    full_name: Optional[str] = None
+    created_at: datetime
+    is_active: bool = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class ChatSession(BaseModel):
+    session_id: str
+    user_id: str
+    messages: List[Dict]
+    created_at: datetime
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: List[Dict]
+    total_messages: int
 
 @app.get("/health")
 async def health_check():
@@ -336,6 +549,86 @@ def generate_rule_based_response(user_message: str) -> str:
     # Default response
     return "🤖 Bu konuda detaylı bilgim bulunmuyor, ancak size yardımcı olmaya çalışabilirim. Sorunuzu biraz daha detaylandırabilir misiniz? Veya fabrika ile ilgili spesifik bir konu hakkında soru sorabilirsiniz."
 
+# 🆕 CHAT HISTORY ENDPOINTS
+@app.get("/chat/history/{user_id}", response_model=ChatHistoryResponse)
+async def get_chat_history(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Get chat history for a user (last 20 messages)"""
+    try:
+        # Verify user can access this history (either their own or admin)
+        if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        # Find user's session
+        session_id = None
+        messages = []
+        
+        for sid, session in chat_sessions.items():
+            if session["user_id"] == user_id:
+                session_id = sid
+                messages = session["messages"][-20:]  # Last 20 messages
+                break
+        
+        if not session_id:
+            # Create empty session if none exists
+            session_id = get_user_session(user_id)
+        
+        return ChatHistoryResponse(
+            session_id=session_id,
+            messages=messages,
+            total_messages=len(messages)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching chat history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch chat history"
+        )
+
+@app.delete("/chat/history/{user_id}")
+async def clear_chat_history(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Clear chat history for a user"""
+    try:
+        # Verify user can clear this history (either their own or admin)
+        if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        # Find and clear user's session
+        for sid, session in chat_sessions.items():
+            if session["user_id"] == user_id:
+                chat_sessions[sid]["messages"] = []
+                break
+        
+        return {"success": True, "message": "Chat history cleared"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error clearing chat history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear chat history"
+        )
+
+@app.get("/me")
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """Get current user information"""
+    return {
+        "user_id": current_user["user_id"],
+        "username": current_user["username"],
+        "email": current_user["email"],
+        "full_name": current_user.get("full_name"),
+        "created_at": current_user["created_at"].isoformat() if isinstance(current_user["created_at"], datetime) else current_user["created_at"]
+    }
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
     """
@@ -430,6 +723,116 @@ async def chat(message: ChatMessage):
             response="🤖 Bir hata oluştu. Lütfen tekrar deneyin.",
             source="error"
         )
+
+# 🆕 AUTHENTICATED CHAT WITH SESSION MANAGEMENT
+@app.post("/chat/authenticated", response_model=ChatResponse)
+async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(get_current_user)):
+    """
+    Authenticated chat endpoint with session management:
+    1. Search in Qdrant database using available embedding method
+    2. Generate response using OpenAI or Hugging Face
+    3. Save to user's chat session
+    4. Fallback mechanism for reliability
+    """
+    try:
+        user_message = message.message.strip()
+        
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
+        
+        logger.info(f"User {current_user['username']} message: {user_message}")
+        
+        # Get or create user session
+        session_id = get_user_session(current_user["user_id"])
+        
+        # Generate embedding for search
+        try:
+            user_embedding = generate_embedding(user_message)
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {e}")
+            response_text = "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
+            source = "error"
+            add_message_to_session(session_id, user_message, response_text, source)
+            return ChatResponse(response=response_text, source=source)
+        
+        # Search in Qdrant
+        try:
+            search_results = qdrant_client.search(
+                collection_name="mefapex_faq",
+                query_vector=user_embedding,
+                limit=3,
+                with_payload=True
+            )
+            
+            # Process search results
+            best_match = None
+            if search_results and len(search_results) > 0:
+                best_score = search_results[0].score
+                logger.info(f"Best match score: {best_score}")
+                
+                if best_score > 0.75:  # Higher confidence threshold for exact matches
+                    best_match = search_results[0].payload
+                    context = f"Question: {best_match['question']}\nAnswer: {best_match['answer']}"
+                    logger.info(f"Using database context with score: {best_score}")
+                else:
+                    context = ""
+                    logger.info("No relevant database context found")
+            else:
+                context = ""
+                logger.info("No search results found")
+                
+        except Exception as e:
+            logger.error(f"Qdrant search error: {e}")
+            context = ""
+        
+        # Generate response using available method
+        try:
+            if USE_OPENAI:
+                response_text = generate_response_openai(context, user_message)
+                source = "openai"
+                logger.info("Response generated using OpenAI")
+            elif USE_HUGGINGFACE:
+                response_text = generate_response_huggingface(context, user_message)
+                source = "huggingface"
+                logger.info("Response generated using Hugging Face")
+            else:
+                response_text = "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
+                source = "error"
+                
+        except Exception as e:
+            logger.error(f"Response generation failed: {e}")
+            # Fallback to alternative method
+            try:
+                if USE_HUGGINGFACE and source != "huggingface":
+                    response_text = generate_response_huggingface(context, user_message)
+                    source = "huggingface_fallback"
+                    logger.info("Using Hugging Face as fallback")
+                else:
+                    response_text = "🤖 Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin."
+                    source = "error"
+            except Exception as fallback_error:
+                logger.error(f"Fallback also failed: {fallback_error}")
+                response_text = "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
+                source = "error"
+        
+        # Save to session
+        add_message_to_session(session_id, user_message, response_text, source)
+        
+        return ChatResponse(response=response_text, source=source)
+        
+    except Exception as e:
+        logger.error(f"Authenticated chat endpoint error: {e}")
+        response_text = "🤖 Bir hata oluştu. Lütfen tekrar deneyin."
+        source = "error"
+        
+        # Try to save to session even on error
+        try:
+            session_id = get_user_session(current_user["user_id"])
+            add_message_to_session(session_id, user_message, response_text, source)
+        except:
+            pass
+            
+        return ChatResponse(response=response_text, source=source)
 
 @app.get("/system/status")
 async def system_status():
