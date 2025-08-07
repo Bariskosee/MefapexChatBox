@@ -134,31 +134,67 @@ class DatabaseManager:
             conn.commit()
             logger.info("✅ Database initialized with optimizations")
     
-    def get_or_create_session(self, user_id: str) -> str:
-        """Get existing session or create new one with optimized query"""
+    def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
+        """Get existing session or create new one with session limits"""
         with self.pool.get_connection() as conn:
             cur = conn.cursor()
             
-            # Try to get existing session (most recent)
-            cur.execute("""
-                SELECT session_id FROM chat_sessions 
-                WHERE user_id = ? 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """, (user_id,))
-            
-            row = cur.fetchone()
-            if row:
-                return row[0]
+            if not force_new:
+                # Try to get the most recent session that has messages in the last 30 minutes
+                # This creates natural session boundaries based on activity
+                cur.execute("""
+                    SELECT s.session_id 
+                    FROM chat_sessions s
+                    LEFT JOIN chat_messages m ON s.session_id = m.session_id
+                    WHERE s.user_id = ? 
+                    AND (m.timestamp IS NULL OR m.timestamp >= datetime('now', '-30 minutes'))
+                    ORDER BY s.created_at DESC 
+                    LIMIT 1
+                """, (user_id,))
+                
+                row = cur.fetchone()
+                if row:
+                    return row[0]
             
             # Create new session
             import uuid
             session_id = str(uuid.uuid4())
+            
+            # Before creating, check if we need to clean up old sessions
+            # Limit to 15 sessions per user (keep most recent 15)
+            cur.execute("""
+                SELECT COUNT(*) FROM chat_sessions WHERE user_id = ?
+            """, (user_id,))
+            
+            session_count = cur.fetchone()[0]
+            
+            if session_count >= 15:
+                # Delete oldest sessions and their messages to maintain limit
+                cur.execute("""
+                    DELETE FROM chat_messages WHERE session_id IN (
+                        SELECT session_id FROM chat_sessions 
+                        WHERE user_id = ? 
+                        ORDER BY created_at ASC 
+                        LIMIT ?
+                    )
+                """, (user_id, session_count - 14))  # Keep 14, add 1 new = 15 total
+                
+                cur.execute("""
+                    DELETE FROM chat_sessions WHERE session_id IN (
+                        SELECT session_id FROM chat_sessions 
+                        WHERE user_id = ? 
+                        ORDER BY created_at ASC 
+                        LIMIT ?
+                    )
+                """, (user_id, session_count - 14))
+            
+            # Create the new session
             cur.execute(
                 "INSERT INTO chat_sessions (session_id, user_id) VALUES (?, ?)", 
                 (session_id, user_id)
             )
             conn.commit()
+            logger.info(f"Created new session {session_id} for user {user_id}")
             return session_id
     
     def add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
@@ -196,6 +232,96 @@ class DatabaseManager:
                 }
                 for row in reversed(rows)
             ]
+    
+    def get_chat_sessions_with_history(self, user_id: str, limit: int = 15) -> List[Dict]:
+        """Get chat sessions with their messages (session-based history)"""
+        with self.pool.get_connection() as conn:
+            cur = conn.cursor()
+            
+            # Get sessions ordered by most recent activity
+            cur.execute("""
+                SELECT DISTINCT s.session_id, s.created_at,
+                       COUNT(m.id) as message_count,
+                       MAX(m.timestamp) as last_message_time,
+                       MIN(m.timestamp) as first_message_time
+                FROM chat_sessions s
+                LEFT JOIN chat_messages m ON s.session_id = m.session_id
+                WHERE s.user_id = ?
+                GROUP BY s.session_id, s.created_at
+                HAVING message_count > 0
+                ORDER BY COALESCE(last_message_time, s.created_at) DESC
+                LIMIT ?
+            """, (user_id, limit))
+            
+            sessions = cur.fetchall()
+            result = []
+            
+            for session in sessions:
+                session_id, created_at, message_count, last_message_time, first_message_time = session
+                
+                # Get messages for this session
+                cur.execute("""
+                    SELECT user_message, bot_response, source, timestamp
+                    FROM chat_messages
+                    WHERE session_id = ?
+                    ORDER BY timestamp ASC
+                """, (session_id,))
+                
+                messages = [
+                    {
+                        "user_message": row[0],
+                        "bot_response": row[1],
+                        "source": row[2],
+                        "timestamp": row[3]
+                    }
+                    for row in cur.fetchall()
+                ]
+                
+                # Create session summary with first message as preview
+                session_summary = {
+                    "session_id": session_id,
+                    "created_at": created_at,
+                    "message_count": message_count,
+                    "last_message_time": last_message_time,
+                    "first_message_time": first_message_time,
+                    "messages": messages,
+                    "preview": messages[0]["user_message"] if messages else "Empty session"
+                }
+                
+                result.append(session_summary)
+            
+            return result
+    
+    def start_new_session(self, user_id: str) -> str:
+        """Force creation of a new session for the user"""
+        return self.get_or_create_session(user_id, force_new=True)
+    
+    def get_session_info(self, session_id: str) -> Optional[Dict]:
+        """Get information about a specific session"""
+        with self.pool.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT s.session_id, s.user_id, s.created_at,
+                       COUNT(m.id) as message_count,
+                       MIN(m.timestamp) as first_message_time,
+                       MAX(m.timestamp) as last_message_time
+                FROM chat_sessions s
+                LEFT JOIN chat_messages m ON s.session_id = m.session_id
+                WHERE s.session_id = ?
+                GROUP BY s.session_id, s.user_id, s.created_at
+            """, (session_id,))
+            
+            row = cur.fetchone()
+            if row:
+                return {
+                    "session_id": row[0],
+                    "user_id": row[1],
+                    "created_at": row[2],
+                    "message_count": row[3],
+                    "first_message_time": row[4],
+                    "last_message_time": row[5]
+                }
+            return None
     
     def get_chat_sessions(self, user_id: str, limit: int = 10) -> List[Dict]:
         """Get recent chat sessions for user"""

@@ -68,10 +68,10 @@ async def startup_event():
     logger.info("🚀 Starting MEFAPEX Chatbot API")
     try:
         # Warm up models for better first-request performance
-        model_manager.warmup_models()
-        logger.info("✅ Model warmup completed")
+        await startup_warmup()
+        logger.info("✅ Startup warmup completed")
     except Exception as e:
-        logger.warning(f"⚠️ Model warmup failed: {e}")
+        logger.warning(f"⚠️ Startup warmup failed: {e}")
     
     logger.info("🔥 MEFAPEX API ready for requests")
 
@@ -106,9 +106,6 @@ async def startup_warmup():
         logger.info("✅ Model warmup completed")
     except Exception as e:
         logger.warning(f"⚠️ Model warmup failed: {e}")
-
-# Will be called during app startup
-asyncio.create_task(startup_warmup())
 
 #️ DATA MODELS
 class ChatMessage(BaseModel):
@@ -159,6 +156,20 @@ class ChatHistoryResponse(BaseModel):
     session_id: str
     messages: List[Dict]
     total_messages: int
+
+class ChatSessionResponse(BaseModel):
+    session_id: str
+    created_at: str
+    message_count: int
+    last_message_time: str
+    first_message_time: str
+    messages: List[Dict]
+    preview: str
+
+class ChatSessionsResponse(BaseModel):
+    user_id: str
+    sessions: List[ChatSessionResponse]
+    total_sessions: int
 
 # 🔐 AUTHENTICATION UTILITIES
 def verify_password(plain_password, hashed_password):
@@ -228,9 +239,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise credentials_exception
     return user
 
-def get_user_session(user_id: str) -> str:
-    """Get or create user session ID (persistent)"""
-    return db_manager.get_or_create_session(user_id)
+def get_user_session(user_id: str, force_new: bool = False) -> str:
+    """Get or create user session ID (persistent) with session management"""
+    return db_manager.get_or_create_session(user_id, force_new=force_new)
 
 def add_message_to_session(session_id: str, user_message: str, bot_response: str, source: str, user_id: str = None):
     """Add message to chat session (persistent)"""
@@ -1009,6 +1020,83 @@ async def clear_chat_history(user_id: str, current_user: dict = Depends(get_curr
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to clear chat history"
+        )
+
+# 🆕 NEW SESSION-BASED HISTORY ENDPOINTS
+@app.get("/chat/sessions/{user_id}")
+async def get_chat_sessions(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Get chat sessions with history (max 15 sessions per user)"""
+    try:
+        if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        sessions = db_manager.get_chat_sessions_with_history(user_id, limit=15)
+        return {
+            "user_id": user_id,
+            "sessions": sessions,
+            "total_sessions": len(sessions)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching chat sessions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch chat sessions"
+        )
+
+@app.post("/chat/sessions/{user_id}/new")
+async def start_new_chat_session(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Start a new chat session for the user"""
+    try:
+        if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        new_session_id = db_manager.start_new_session(user_id)
+        return {
+            "success": True,
+            "message": "New chat session started",
+            "session_id": new_session_id
+        }
+    except Exception as e:
+        logger.error(f"Error starting new session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start new session"
+        )
+
+@app.get("/chat/sessions/info/{session_id}")
+async def get_session_info(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Get information about a specific session"""
+    try:
+        session_info = db_manager.get_session_info(session_id)
+        if not session_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        # Check if user owns this session
+        if session_info["user_id"] != current_user["user_id"] and not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        return session_info
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching session info: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch session info"
         )
 
 @app.get("/me")

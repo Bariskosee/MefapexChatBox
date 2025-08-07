@@ -94,8 +94,8 @@ async function verifyTokenAndAutoLogin() {
             // Focus message input
             messageInput.focus();
             
-            // Start a new chat session instead of loading old history
-            startNewChatSession();
+            // Automatically create a new session for this app visit/reload
+            await createNewSessionOnLogin();
             
             // Update history button visibility
             updateHistoryButtonVisibility();
@@ -182,8 +182,8 @@ async function login() {
             hideLoginError();
             try {
                 await loginWithJWT(username, password);
-                // Start a new chat session instead of loading old history
-                startNewChatSession();
+                // Automatically create a new session for each app visit/reload
+                await createNewSessionOnLogin();
             } catch (err) {
                 console.warn('JWT login failed but legacy succeeded:', err);
                 // Still start new session even if JWT fails
@@ -669,64 +669,29 @@ async function fetchAndDisplayChatHistory() {
 // Make available globally for button
 window.fetchAndDisplayChatHistory = fetchAndDisplayChatHistory;
 
-// Auto-load chat history on login (without replacing current chat)
-async function loadChatHistoryOnLogin() {
+// Auto-create new session on login (instead of loading history)
+async function createNewSessionOnLogin() {
     if (!authToken) {
-        console.log('No auth token for history loading');
+        console.log('No auth token for session creation');
         return;
     }
     
     try {
-        console.log('🔄 Loading chat history on login...');
+        console.log('🆕 Creating new session on login...');
         
-        // Get current user info to obtain user_id
-        const meResp = await fetch(`${API_BASE_URL}/me`, {
-            headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (!meResp.ok) {
-            console.warn('Failed to get user info for history loading');
-            return;
-        }
+        // Automatically create a new session for this app visit/login
+        const newSessionId = await createNewSessionAutomatically();
         
-        const meData = await meResp.json();
-        const userId = meData.user_id;
-
-        // Fetch chat history
-        const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
-            headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (!histResp.ok) {
-            console.warn('Failed to fetch chat history');
-            return;
-        }
-        
-        const histData = await histResp.json();
-        const messages = histData.messages || [];
-
-        // Only load history if chat is currently empty or shows welcome message
-        const currentMessages = chatMessages.querySelectorAll('.message');
-        const hasWelcomeMessage = chatMessages.querySelector('.welcome-message');
-        
-        if (messages.length > 0 && (currentMessages.length === 0 || hasWelcomeMessage)) {
-            console.log(`📚 Loading ${messages.length} messages from history`);
-            
-            // Clear current content
-            chatMessages.innerHTML = '';
-            
-            // Load messages from history
-            messages.forEach(msg => {
-                addMessage(msg.user_message, 'user');
-                addMessage(msg.bot_response, 'bot');
-            });
-            
-            scrollToBottom();
-            console.log('✅ Chat history loaded successfully');
+        if (newSessionId) {
+            console.log('✅ New session created successfully on login:', newSessionId);
         } else {
-            console.log('📝 Keeping current chat session, history available in sidebar');
+            console.log('� Using local session as fallback');
         }
         
     } catch (err) {
-        console.warn('Failed to load chat history:', err);
+        console.warn('Failed to create new session on login:', err);
+        // Fallback to local session
+        startNewChatSession();
     }
 }
 
@@ -792,16 +757,13 @@ async function fetchAndDisplayChatHistorySidebar() {
         const meData = await meResp.json();
         const userId = meData.user_id;
         
-        // Fetch chat history
-        const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
+        // Fetch session-based chat history (NEW API)
+        const sessionsResp = await fetch(`${API_BASE_URL}/chat/sessions/${userId}`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        if (!histResp.ok) throw new Error('Geçmiş alınamadı');
-        const histData = await histResp.json();
-        const messages = histData.messages || [];
-        
-        // Group messages by sessions (simulate sessions by time gaps)
-        const sessions = groupMessagesBySessions(messages);
+        if (!sessionsResp.ok) throw new Error('Oturum geçmişi alınamadı');
+        const sessionsData = await sessionsResp.json();
+        const sessions = sessionsData.sessions || [];
         
         // Display session previews
         const list = document.getElementById('chatHistoryList');
@@ -829,16 +791,15 @@ async function fetchAndDisplayChatHistorySidebar() {
                 list.appendChild(currentSessionLi);
             }
             
-            // Show previous sessions (last 20)
-            sessions.slice(0, 20).forEach((session, idx) => {
+            // Show previous sessions (up to 15)
+            sessions.forEach((session, idx) => {
                 const li = document.createElement('li');
                 li.style.cssText = 'padding:16px 20px; border-bottom:1px solid #444; cursor:pointer; transition:background 0.3s;';
                 li.onmouseenter = () => li.style.background = 'rgba(255,255,255,0.05)';
                 li.onmouseleave = () => li.style.background = 'transparent';
                 
-                const firstMessage = session.messages[0];
-                const messageCount = session.messages.length;
-                const sessionDate = new Date(firstMessage.timestamp || Date.now());
+                const messageCount = session.message_count;
+                const sessionDate = new Date(session.first_message_time || session.created_at);
                 const timeAgo = getTimeAgo(sessionDate);
                 
                 li.innerHTML = `
@@ -846,8 +807,8 @@ async function fetchAndDisplayChatHistorySidebar() {
                         <span style="color:#ffd700; font-weight:500;">💬 Oturum ${idx + 1}</span>
                         <span style="color:#999; font-size:12px;">${messageCount} mesaj</span>
                     </div>
-                    <div style="color:#ccc; font-size:13px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${firstMessage.user_message}">
-                        "${firstMessage.user_message}"
+                    <div style="color:#ccc; font-size:13px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${session.preview}">
+                        "${session.preview}"
                     </div>
                     <div style="color:#888; font-size:11px; margin-top:2px;">${timeAgo}</div>
                 `;
@@ -857,6 +818,7 @@ async function fetchAndDisplayChatHistorySidebar() {
             });
         }
     } catch (err) {
+        console.error('Error fetching session history:', err);
         document.getElementById('chatHistoryList').innerHTML = '<li style="padding:20px; color:#fcc;">Geçmiş yüklenemedi.</li>';
     }
 }
@@ -934,14 +896,52 @@ function loadHistorySession(session) {
 function returnToCurrentSession() {
     console.log('🔄 Returning to current session');
     
-    // Clear chat and show welcome message if no current messages
-    if (!hasCurrentSessionMessages()) {
+    // Close the history sidebar if it's open
+    closeChatHistorySidebar();
+    
+    // Check if we have any current session data stored locally
+    try {
+        const currentSessionData = localStorage.getItem('currentSession');
+        if (currentSessionData) {
+            // We have current session data, restore it
+            const sessionData = JSON.parse(currentSessionData);
+            console.log('📱 Restoring current session:', sessionData.sessionId);
+            
+            // Clear chat area and restore current session messages
+            chatMessages.innerHTML = '';
+            
+            // Restore session info
+            currentSessionId = sessionData.sessionId;
+            sessionStartTime = sessionData.startTime;
+            
+            // Restore messages if any
+            if (sessionData.messages && sessionData.messages.length > 0) {
+                sessionData.messages.forEach(msg => {
+                    addMessageWithoutSaving(msg.user_message, 'user');
+                    addMessageWithoutSaving(msg.bot_response, 'bot');
+                });
+                console.log(`📚 Restored ${sessionData.messages.length} current session messages`);
+            } else {
+                // No messages in current session, show welcome
+                chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+            }
+        } else {
+            // No current session data, show fresh session
+            console.log('📝 No current session data, showing fresh session');
+            chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+        }
+    } catch (error) {
+        console.warn('Error restoring current session:', error);
+        // Fallback to fresh session
         chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
-    } else {
-        // Reload current session from localStorage backup
-        loadChatFromLocalStorage();
     }
     
+    // Focus on the message input for user convenience
+    if (messageInput) {
+        messageInput.focus();
+    }
+    
+    console.log('✅ Returned to current session successfully');
     scrollToBottom();
 }
 
@@ -983,16 +983,64 @@ window.closeChatHistorySidebar = closeChatHistorySidebar;
 
 // Show/hide history button based on login state
 function updateHistoryButtonVisibility() {
-    const btn = document.getElementById('openHistoryBtn');
-    if (btn) {
+    const historyBtn = document.getElementById('openHistoryBtn');
+    
+    if (historyBtn) {
         if (isLoggedIn) {
-            btn.style.display = 'block';
+            historyBtn.style.display = 'block';
         } else {
-            btn.style.display = 'none';
+            historyBtn.style.display = 'none';
             closeChatHistorySidebar();
         }
     }
 }
 
+// 🆕 AUTOMATIC SESSION MANAGEMENT
+
+async function createNewSessionAutomatically() {
+    if (!authToken) {
+        console.log('No auth token for automatic session creation');
+        return null;
+    }
+    
+    try {
+        // Get user info
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!meResp.ok) throw new Error('Kullanıcı bilgisi alınamadı');
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+        
+        // Start new session on backend automatically
+        const newSessionResp = await fetch(`${API_BASE_URL}/chat/sessions/${userId}/new`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!newSessionResp.ok) throw new Error('Otomatik oturum başlatılamadı');
+        const newSessionData = await newSessionResp.json();
+        
+        // Clear current chat and start fresh silently
+        chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+        
+        // Generate new session info
+        currentSessionId = newSessionData.session_id;
+        sessionStartTime = new Date().toISOString();
+        
+        console.log('✅ Automatic new session started:', newSessionData.session_id);
+        return newSessionData.session_id;
+        
+    } catch (error) {
+        console.error('Error creating automatic session:', error);
+        // Fallback to local session if API fails
+        startNewChatSession();
+        return currentSessionId;
+    }
+}
+
 // Call on page load
-window.addEventListener('DOMContentLoaded', updateHistoryButtonVisibility);
+window.addEventListener('DOMContentLoaded', function() {
+    updateHistoryButtonVisibility();
+    // Note: Auto-session creation is handled by verifyTokenAndAutoLogin() and login() functions
+});
