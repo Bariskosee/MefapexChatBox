@@ -1,84 +1,97 @@
 # 🏭 MEFAPEX Turkish AI Chatbot
 
-> Fabrika çalışanları için Türkçe AI destekli soru-cevap sistemi
+> Fabrika çalışanları için Türkçe AI destekli soru-cevap sistemi - Modern Dark Theme ile
 
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--3.5-orange.svg)](https://openai.com)
+[![Hugging Face](https://img.shields.io/badge/HuggingFace-Transformers-yellow.svg)](https://huggingface.co)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-MEFAPEX fabrikası için geliştirilmiş Türkçe AI chatbot prototipi. Çalışanların fabrika ile ilgili sorularına hızlı ve doğru yanıtlar vermek için tasarlanmıştır.
+MEFAPEX fabrikası için geliştirilmiş Türkçe AI chatbot sistemi. Çalışanların fabrika ile ilgili sorularına hızlı ve doğru yanıtlar vermek için tasarlanmıştır.
 
 ## 🚀 Özellikler
 
-- **Türkçe Dil Desteği**: Tamamen Türkçe soru-cevap sistemi
-- **Vector Search**: Qdrant ile benzerlik tabanlı arama
-- **AI Destekli Yanıtlar**: OpenAI GPT-3.5 Turbo ile akıllı yanıt üretimi
-- **Basit Kimlik Doğrulama**: Demo amaçlı sabit kullanıcı girişi
-- **Modern Web Arayüzü**: HTML/CSS/JavaScript ile responsive tasarım
-- **FastAPI Backend**: Yüksek performanslı REST API
+- **🌙 Modern Dark Theme**: Göz dostu koyu tema tasarımı
+- **🇹🇷 Türkçe Dil Desteği**: Tamamen Türkçe soru-cevap sistemi
+- **🔍 Vector Search**: Qdrant ile benzerlik tabanlı arama
+- **🤖 Hybrid AI**: OpenAI + Hugging Face ile çoklu AI desteği
+- **👤 Kimlik Doğrulama**: JWT tabanlı güvenli giriş sistemi
+- **📱 Responsive Tasarım**: Mobil uyumlu modern web arayüzü
+- **📊 Chat Geçmişi**: Kullanıcı bazlı oturum yönetimi
+- **🚀 FastAPI Backend**: Yüksek performanslı REST API
+- **🔄 WebSocket Desteği**: Gerçek zamanlı mesajlaşma
+- **🧠 Akıllı Önbellekleme**: Hızlı yanıt için gelişmiş caching
 
 ## 🛠️ Teknolojiler
 
-- **Backend**: Python + FastAPI
-- **Frontend**: HTML + JavaScript
-- **Veritabanı**: MySQL (kullanıcı verileri)
+- **Backend**: Python + FastAPI + WebSockets
+- **Frontend**: HTML + JavaScript + Modern CSS (Dark Theme)
+- **Veritabanı**: SQLite (chat geçmişi ve kullanıcı verileri)
 - **Vector Veritabanı**: Qdrant (döküman embeddings)
-- **AI API**: OpenAI GPT-3.5 Turbo
-- **Embedding**: OpenAI text-embedding-ada-002
+- **AI Engines**: 
+  - OpenAI GPT-3.5 Turbo (opsiyonel)
+  - Hugging Face Transformers (varsayılan)
+- **Embedding**: Sentence Transformers
+- **Authentication**: JWT Token sistemi
+- **Caching**: Memory-based response caching
 
 ## 📋 Gereksinimler
 
 - Python 3.8+
-- MySQL Server
-- Qdrant Server
-- OpenAI API Key
+- Qdrant Server (opsiyonel - vector search için)
+- OpenAI API Key (opsiyonel - OpenAI kullanımı için)
 
 ## 🔧 Kurulum
 
-### 1. Bağımlılıkları Yükleyin
+### 1. Repository'yi Klonlayın
+
+```bash
+git clone https://github.com/Bariskosee/MefapexChatBox.git
+cd MefapexChatBox
+```
+
+### 2. Bağımlılıkları Yükleyin
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Çevre Değişkenlerini Ayarlayın
+### 3. Çevre Değişkenlerini Ayarlayın (Opsiyonel)
 
-`.env` dosyasını düzenleyin:
+`.env` dosyası oluşturun:
 
 ```env
+# OpenAI (Opsiyonel - daha gelişmiş AI için)
 OPENAI_API_KEY=your_openai_api_key_here
+USE_OPENAI=false
+
+# Hugging Face (Varsayılan)
+USE_HUGGINGFACE=true
+
+# Qdrant (Opsiyonel - vector search için)
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=mefapex_chatbot
+
+# Güvenlik (Prodüksiyon için değiştirin)
+SECRET_KEY=your-secret-key-change-this-in-production
+ENVIRONMENT=development
+DEBUG=true
 ```
 
-### 3. Qdrant Sunucusunu Başlatın
+### 4. Qdrant Sunucusunu Başlatın (Opsiyonel)
 
-Docker ile:
+Vector search özelliği için:
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-### 4. MySQL Veritabanını Oluşturun
+### 5. Uygulamayı Başlatın
 
 ```bash
-mysql -u root -p < database.sql
-```
+# Geliştirme modu
+uvicorn main:app --reload --port 8000
 
-### 5. Vector Verilerini Yükleyin
-
-```bash
-python embedding_loader.py
-```
-
-### 6. Uygulamayı Başlatın
-
-```bash
+# Veya basit başlatma
 python main.py
 ```
 
@@ -87,11 +100,13 @@ Uygulama `http://localhost:8000` adresinde çalışacaktır.
 ## 💡 Kullanım
 
 1. Tarayıcıda `http://localhost:8000` adresine gidin
-2. Demo bilgileri ile giriş yapın:
+2. Modern dark theme ile karşılaşacaksınız
+3. Demo bilgileri ile giriş yapın:
    - **Kullanıcı Adı**: demo
    - **Şifre**: 1234
-3. Chat arayüzünde Türkçe sorularınızı yazın
-4. AI asistandan anında yanıt alın
+4. Chat arayüzünde Türkçe sorularınızı yazın
+5. AI asistandan anında yanıt alın
+6. Chat geçmişiniz otomatik olarak kaydedilir
 
 ## 📝 Örnek Sorular
 
@@ -99,29 +114,43 @@ Uygulama `http://localhost:8000` adresinde çalışacaktır.
 - "İzin başvurusu nasıl yapılır?"
 - "Güvenlik kuralları nelerdir?"
 - "Vardiya değişiklikleri nasıl yapılır?"
-- "Güncel üretim çıktısı nedir?"
+- "Python nedir?"
+- "Yapay zeka hakkında bilgi ver"
+- "15 + 27 kaç eder?"
 
 ## 🏗️ Proje Yapısı
 
 ```
-mefapex/
-├── main.py                 # FastAPI backend
-├── embedding_loader.py     # Vector veri yükleme scripti
-├── requirements.txt        # Python bağımlılıkları
-├── .env                   # Çevre değişkenleri
-├── database.sql           # MySQL veritabanı şeması
+MefapexChatBox/
+├── main.py                     # FastAPI backend
+├── database_manager.py         # Veritabanı yönetimi
+├── model_manager.py           # AI model yönetimi
+├── response_cache.py          # Yanıt önbellekleme
+├── websocket_manager.py       # WebSocket yönetimi
+├── embedding_loader.py        # Vector veri yükleme
+├── requirements.txt           # Python bağımlılıkları
+├── .env                      # Çevre değişkenleri (opsiyonel)
+├── mefapex.db               # SQLite veritabanı
 ├── static/
-│   ├── index.html         # Ana web sayfası
-│   └── script.js          # Frontend JavaScript
-└── README.md              # Bu dosya
+│   ├── index.html           # Ana web sayfası (Dark Theme)
+│   ├── script.js           # Frontend JavaScript
+│   └── websocket_client.js # WebSocket istemcisi
+└── README.md               # Bu dosya
 ```
 
 ## 🔍 API Endpoints
 
-- `GET /` - Ana sayfa
-- `POST /login` - Kullanıcı girişi
-- `POST /chat` - Chat mesajı gönderme
+- `GET /` - Ana sayfa (Dark Theme)
+- `POST /login` - JWT tabanlı kullanıcı girişi
+- `POST /chat` - Chat mesajı gönderme (anonim)
+- `POST /chat/authenticated` - Kimlik doğrulamalı chat
+- `GET /chat/history/{user_id}` - Chat geçmişi
+- `GET /chat/sessions/{user_id}` - Chat oturumları
+- `POST /chat/sessions/{user_id}/new` - Yeni chat oturumu
 - `GET /health` - Sistem sağlık kontrolü
+- `GET /health/comprehensive` - Detaylı sistem durumu
+- `GET /system/status` - Sistem konfigürasyonu
+- `WebSocket /ws/{user_id}` - Gerçek zamanlı chat
 
 ## 🧪 Test
 
@@ -139,15 +168,42 @@ curl -X POST "http://localhost:8000/chat" \
      -d '{"message": "Çalışma saatleri nelerdir?"}'
 ```
 
-## 🚧 Geliştirme Notları
+Sistem durumunu görmek için:
 
-Bu bir prototiptir ve aşağıdaki özellikler henüz implementasyona dahil değildir:
+```bash
+curl http://localhost:8000/system/status
+```
 
-- TESLA/LOGO ERP entegrasyonu
-- Gerçek kullanıcı yönetimi
-- Session yönetimi
-- Chat geçmişi saklama
-- Canlı veri sorguları (sadece simüle edilmiş)
+## ⚙️ Konfigürasyon
+
+### AI Motor Seçimi
+- `USE_OPENAI=true` - OpenAI GPT-3.5 kullan (API key gerekli)
+- `USE_HUGGINGFACE=true` - Hugging Face modellerini kullan (varsayılan)
+
+### Güvenlik Ayarları
+- `SECRET_KEY` - JWT token için güvenlik anahtarı
+- `ENVIRONMENT` - production/development modu
+- `DEBUG` - Debug modunu aç/kapat
+
+## 🚧 Özellikler
+
+### ✅ Mevcut Özellikler
+- ✅ Dark theme modern arayüz
+- ✅ JWT tabanlı kimlik doğrulama
+- ✅ Chat geçmişi ve oturum yönetimi
+- ✅ Hybrid AI desteği (OpenAI + Hugging Face)
+- ✅ WebSocket gerçek zamanlı mesajlaşma
+- ✅ Akıllı önbellekleme sistemi
+- ✅ Responsive mobile uyumlu tasarım
+- ✅ Kapsamlı sistem monitoring
+
+### 🔄 Geliştirilecek Özellikler
+- 🔄 TESLA/LOGO ERP entegrasyonu
+- 🔄 Çoklu kullanıcı yönetimi
+- 🔄 Admin paneli
+- 🔄 Dosya yükleme desteği
+- 🔄 Çoklu dil desteği
+- 🔄 Voice chat desteği
 
 ## 🐛 Sorun Giderme
 
@@ -160,15 +216,38 @@ curl http://localhost:6333/health
 ### OpenAI API Hatası
 - `.env` dosyasında API anahtarınızı kontrol edin
 - API kotanızı kontrol edin
+- `USE_OPENAI=false` yaparak Hugging Face kullanın
 
-### MySQL Bağlantı Hatası
-- MySQL servisinin çalıştığını kontrol edin
-- Veritabanı bilgilerini `.env` dosyasında kontrol edin
+### Model Yükleme Hatası
+```bash
+# Hugging Face modellerini manuel yükleyin
+python -c "from model_manager import model_manager; model_manager.warmup_models()"
+```
+
+### Port Çakışması
+```bash
+# Farklı port kullanın
+uvicorn main:app --port 8001
+```
+
+## 🌟 Katkıda Bulunma
+
+1. Repository'yi fork edin
+2. Feature branch oluşturun (`git checkout -b feature/amazing-feature`)
+3. Değişikliklerinizi commit edin (`git commit -m 'Add amazing feature'`)
+4. Branch'inizi push edin (`git push origin feature/amazing-feature`)
+5. Pull Request açın
 
 ## 📞 Destek
 
-Herhangi bir sorun için proje geliştiricisi ile iletişime geçin.
+Herhangi bir sorun için:
+- Issue açın: [GitHub Issues](https://github.com/Bariskosee/MefapexChatBox/issues)
+- Proje geliştiricisi ile iletişime geçin
 
 ## 📄 Lisans
 
-Bu proje MEFAPEX için geliştirilmiş bir prototiptir.
+Bu proje MEFAPEX için geliştirilmiş bir sistemdir.
+
+---
+
+**Made with ❤️ for MEFAPEX Factory Workers**
