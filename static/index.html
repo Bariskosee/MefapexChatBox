@@ -13,7 +13,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
             height: 100vh;
             margin: 0;
                        .history-button-topLeft {
@@ -34,9 +34,9 @@
         }
 
         .container {
-            background: white;
+            background: #2c3e50;
             border-radius: 20px;
-            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.5);
             width: 95%;
             max-width: 900px;
             height: 85vh;
@@ -47,7 +47,7 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            background: linear-gradient(135deg, #1a252f 0%, #2c3e50 100%);
             color: white;
             padding: 25px 30px;
             text-align: center;
@@ -74,23 +74,23 @@
             align-items: center;
             flex: 1;
             padding: 50px 40px;
-            background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%);
+            background: linear-gradient(145deg, #34495e 0%, #2c3e50 100%);
         }
 
         .login-form {
-            background: white;
+            background: #3a4a5c;
             padding: 40px;
             border-radius: 15px;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
             width: 100%;
             max-width: 350px;
-            border: 1px solid rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
         .login-form h2 {
             text-align: center;
             margin-bottom: 25px;
-            color: #2c3e50;
+            color: #ecf0f1;
             font-size: 24px;
             font-weight: 600;
         }
@@ -99,17 +99,24 @@
             width: 100%;
             padding: 15px 18px;
             margin-bottom: 18px;
-            border: 2px solid #e9ecef;
+            border: 2px solid #4a5a6b;
             border-radius: 10px;
             font-size: 16px;
             transition: all 0.3s ease;
             box-sizing: border-box;
+            background: #34495e;
+            color: #ecf0f1;
+        }
+
+        .login-form input::placeholder {
+            color: #bdc3c7;
         }
 
         .login-form input:focus {
             outline: none;
-            border-color: #3498db;
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            border-color: #5dade2;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
+            background: #3a4a5c;
         }
 
         .login-form button {
@@ -140,14 +147,14 @@
             flex-direction: column;
             flex: 1;
             position: relative;
-            background: #f8f9fa;
+            background: #34495e;
         }
 
         .history-button-topLeft {
             position: fixed;
             top: 20px;
             left: 20px;
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
             color: white;
             border: none;
             border-radius: 12px;
@@ -156,14 +163,14 @@
             font-weight: 600;
             cursor: pointer;
             z-index: 1100;
-            box-shadow: 0 4px 15px rgba(118, 75, 162, 0.3);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
             transition: all 0.3s ease;
             display: none;
         }
 
         .history-button-topLeft:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(118, 75, 162, 0.4);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
         }
 
         .history-button-topLeft:active {
@@ -203,7 +210,7 @@
             overflow-y: auto;
             overflow-x: hidden;
             padding: 25px;
-            background: #ffffff;
+            background: #3a4a5c;
             scroll-behavior: smooth;
             max-height: calc(85vh - 220px);
         }
@@ -213,17 +220,17 @@
         }
 
         .chat-messages::-webkit-scrollbar-track {
-            background: #f1f3f4;
+            background: #2c3e50;
             border-radius: 4px;
         }
 
         .chat-messages::-webkit-scrollbar-thumb {
-            background: linear-gradient(135deg, #c1c1c1 0%, #a8a8a8 100%);
+            background: linear-gradient(135deg, #5a6b7d 0%, #4a5a6b 100%);
             border-radius: 4px;
         }
 
         .chat-messages::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(135deg, #a8a8a8 0%, #909090 100%);
+            background: linear-gradient(135deg, #6b7d8f 0%, #5a6b7d 100%);
         }
 
         .message {
@@ -269,18 +276,18 @@
         }
 
         .message.bot .message-bubble {
-            background: white;
-            color: #2c3e50;
-            border: 2px solid #e9ecef;
+            background: #4a5a6b;
+            color: #ecf0f1;
+            border: 2px solid #5a6b7d;
             border-bottom-left-radius: 6px;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
         }
 
         .chat-input-container {
             display: flex;
             padding: 25px;
-            background: white;
-            border-top: 2px solid #e9ecef;
+            background: #2c3e50;
+            border-top: 2px solid #4a5a6b;
             align-items: center;
             gap: 15px;
         }
@@ -288,18 +295,23 @@
         .chat-input {
             flex: 1;
             padding: 15px 20px;
-            border: 2px solid #e9ecef;
+            border: 2px solid #4a5a6b;
             border-radius: 25px;
             outline: none;
             font-size: 16px;
             transition: all 0.3s ease;
-            background: #f8f9fa;
+            background: #34495e;
+            color: #ecf0f1;
+        }
+
+        .chat-input::placeholder {
+            color: #bdc3c7;
         }
 
         .chat-input:focus {
-            border-color: #3498db;
-            background: white;
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            border-color: #5dade2;
+            background: #3a4a5c;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
         }
 
         .send-button {
@@ -353,7 +365,7 @@
 
         .welcome-message {
             text-align: center;
-            color: #7f8c8d;
+            color: #bdc3c7;
             padding: 50px 30px;
             font-style: italic;
             font-size: 16px;
@@ -546,12 +558,9 @@
             <div class="login-form">
                 <h2>Giriş Yap</h2>
                 <div id="loginError" class="error-message" style="display: none;"></div>
-                <input type="text" id="username" placeholder="Kullanıcı Adı" value="demo">
-                <input type="password" id="password" placeholder="Şifre" value="1234">
+                <input type="text" id="username" placeholder="Kullanıcı Adı" value="">
+                <input type="password" id="password" placeholder="Şifre" value="">
                 <button onclick="login()">Giriş Yap</button>
-                <div style="margin-top: 15px; font-size: 12px; color: #7f8c8d; text-align: center;">
-                    Demo: kullanıcı adı "demo", şifre "1234"
-                </div>
             </div>
         </div>
 
