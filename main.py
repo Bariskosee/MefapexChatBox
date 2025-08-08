@@ -729,22 +729,26 @@ def generate_response_openai(context: str, user_message: str) -> str:
     try:
         if context:
             # Use context from database
-            system_prompt = """Sen MEFAPEX fabrikasının yardımcı asistanısın. 
+            system_prompt = """Sen MEFAPEX fabrikasının Türkçe AI asistanısın. 
+            ÖNEMLI: Sadece Türkçe yanıt ver, asla İngilizce kullanma.
             Verilen bilgileri kullanarak Türkçe, kısa ve net cevaplar ver.
-            Bilgileri doğru bir şekilde kullan ve kullanıcıya yardımcı ol."""
+            Bilgileri doğru bir şekilde kullan ve kullanıcıya Türkçe yardımcı ol.
+            Tüm yanıtların Türkiye Türkçesi ile olmalıdır."""
             
             user_prompt = f"Bağlam: {context}\n\nSoru: {user_message}"
         else:
             # No context found - use general knowledge
-            system_prompt = """Sen MEFAPEX fabrikasının AI asistanısın. Türkçe yanıt ver.
+            system_prompt = """Sen MEFAPEX fabrikasının Türkçe AI asistanısın. 
+            ÖNEMLI: Sadece Türkçe yanıt ver, hiç İngilizce kelime kullanma.
             
-            Fabrika ile ilgili genel sorulara yardımcı ol. Eğer spesifik fabrika verisi gerekmiyorsa,
-            genel bilginle yanıt verebilirsin. Yanıtını kısa ve yararlı tut.
+            Fabrika ile ilgili genel sorulara Türkçe yardımcı ol. Eğer spesifik fabrika verisi gerekmiyorsa,
+            genel bilginle Türkçe yanıt verebilirsin. Yanıtını kısa, yararlı ve tamamen Türkçe tut.
             
             MEFAPEX hakkında genel bilgi: Türkiye'deki bir üretim fabrikası, çalışan hakları ve 
             güvenlik kurallarına önem verir.
             
-            Eğer fabrika-spesifik veri gerekliyse, kullanıcıyı yönetime yönlendir."""
+            Eğer fabrika-spesifik veri gerekliyse, kullanıcıyı yönetime yönlendir.
+            Tüm yanıtların Türkiye Türkçesi ile olmalıdır."""
             
             user_prompt = f"Soru: {user_message}\n\nBu konuda fabrika veritabanında spesifik bilgi bulunamadı. Genel bilginle yardımcı olabilir misin?"
         
@@ -801,8 +805,16 @@ Yüksek kaliteli ürünlerle hem yerel hem de global pazarda güvenilir bir üre
 
 Size MEFAPEX hakkında başka hangi konularda bilgi verebilirim? 🤝"""
     
-    # AI/IA hakkında sorular
-    if any(word in user_lower for word in ["ia", "ai", "yapay zeka", "artificial intelligence", "IA nedir"]):
+    # Yapay Zeka Soruları - Türkçe öncelikli
+    turkish_ai_terms = [
+        "yapay zeka", "yapay zekâ", "makine öğrenmesi", "makine öğrenimi",
+        "derin öğrenme", "sinir ağları", "algoritma", "robot", "otomasyon",
+        "akıllı sistem", "veri bilimi", "büyük veri", "analitik",
+        # İngilizce ve diğer diller (düşük öncelik)
+        "ia", "ai", "artificial intelligence", "IA nedir"
+    ]
+    
+    if any(word in user_lower for word in turkish_ai_terms):
         return """🤖 **IA (Intelligence Artificielle) / Yapay Zeka Nedir?**
 
 IA veya AI (Artificial Intelligence), makinelerin insan benzeri zeka göstermesini sağlayan teknolojilerin genel adıdır.
@@ -1004,8 +1016,17 @@ def generate_ai_response_local(user_message: str) -> str:
     # Convert to lowercase for analysis
     msg_lower = user_message.lower().strip()
     
-    # Greeting responses - Selamlama ve basit sorular
-    if any(word in msg_lower for word in ["merhaba", "selam", "hello", "hi", "hey", "nasılsın", "nasilsin", "naber", "nasıl gidiyor"]):
+    # Türkçe öncelikli selamlama ve basit sorular
+    turkish_greetings = [
+        "merhaba", "selam", "selamun aleyküm", "selamünaleyküm", 
+        "günaydın", "iyi günler", "iyi akşamlar", "iyi geceler",
+        "nasılsın", "nasilsin", "nasıl gidiyor", "naber", "ne haber",
+        "hoş geldin", "hoşgeldin", "selam olsun",
+        # İngilizce selamlamalar (düşük öncelik)
+        "hello", "hi", "hey"
+    ]
+    
+    if any(word in msg_lower for word in turkish_greetings):
         return """👋 **Merhaba! Hoş geldiniz!**
 
 Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
@@ -1019,8 +1040,16 @@ Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk d
 
 Nasıl yardımcı olabilirim? 😊"""
     
-    # Python ve Programlama Soruları
-    if any(word in msg_lower for word in ["python", "programlama", "kod", "yazılım", "programming"]):
+    # Python ve Programlama Soruları - Türkçe öncelikli
+    turkish_programming_terms = [
+        "python", "programlama", "kod", "yazılım", "kodlama", "yazılım geliştirme",
+        "bilgisayar programcılığı", "uygulama geliştirme", "web geliştirme",
+        "mobil uygulama", "veri tabanı", "algoritma", "değişken", "fonksiyon",
+        # İngilizce terimler (düşük öncelik)
+        "programming", "coding", "software", "development"
+    ]
+    
+    if any(word in msg_lower for word in turkish_programming_terms):
         return """🐍 **Python ve Programlama Hakkında**
 
 Python, öğrenmesi kolay ve güçlü bir programlama dilidir.
@@ -1039,28 +1068,15 @@ Python, öğrenmesi kolay ve güçlü bir programlama dilidir.
 
 Hangi alanda odaklanmak istiyorsunuz? 🚀"""
 
-    # Yapay Zeka Soruları
-    elif any(word in msg_lower for word in ["yapay zeka", "ai", "artificial intelligence", "makine öğrenmesi", "machine learning"]):
-        return """🤖 **Yapay Zeka Hakkında**
-
-Yapay zeka, makinelerin insan benzeri zeka göstermesini sağlar.
-
-**Temel Kavramlar:**
-• **Makine Öğrenmesi**: Verilerden öğrenme
-• **Derin Öğrenme**: Sinir ağları ile karmaşık pattern'ler
-• **Doğal Dil İşleme**: Metinleri anlama ve üretme
-• **Bilgisayarla Görme**: Görüntü tanıma ve analiz
-
-**Günlük Hayatta AI:**
-• Sesli asistanlar (Siri, Alexa)
-• Öneri sistemleri (Netflix, YouTube)
-• Çeviri servisleri (Google Translate)
-• Otomatik araçlar
-
-Ben de bir AI asistanıyım! Spesifik bir AI konusu merak ediyor musunuz? 🎯"""
-
-    # Teknoloji Genel
-    elif any(word in msg_lower for word in ["teknoloji", "bilgisayar", "internet", "dijital", "technology"]):
+    # Teknoloji Genel - Türkçe öncelikli
+    elif any(word in msg_lower for word in [
+        "teknoloji", "bilgisayar", "internet", "dijital", "elektronik",
+        "yazılım", "donanım", "ağ", "wifi", "bluetooth", "akıllı telefon",
+        "tablet", "laptop", "masaüstü", "veri", "bulut", "siber güvenlik",
+        "mobil", "uygulama", "web sitesi", "sosyal medya",
+        # İngilizce terimler (düşük öncelik)
+        "technology", "computer", "software", "hardware"
+    ]):
         return """💻 **Modern Teknoloji**
 
 Teknoloji hayatımızı sürekli şekillendiriyor.
@@ -1256,25 +1272,38 @@ Hangi konuda yardıma ihtiyacınız var? 💪"""
 
     # Default: Akıllı genel yanıt
     else:
-        # Soru tipini analiz et
-        question_words = ["ne", "nedir", "nasıl", "neden", "niçin", "hangi", "kim", "where", "what", "how", "why", "which", "who"]
-        is_question = any(word in msg_lower for word in question_words) or "?" in user_message
+        # Türkçe öncelikli soru kelimesi tespiti
+        turkish_question_words = [
+            # Temel Türkçe soru kelimeleri
+            "ne", "nedir", "nesi", "neyi", "neye", "neden", "nedeni",
+            "nasıl", "nasıl", "niçin", "niye", "neden dolayı",
+            "hangi", "hangisi", "hangisini", "hangisine",
+            "kim", "kimi", "kimin", "kimle", "kimden",
+            "nerede", "neresi", "nereye", "nereden",
+            "ne zaman", "nezaman", "kaçta", "saat kaçta",
+            "kaç", "kaçar", "kaç tane", "ne kadar",
+            "var mı", "mevcut mu", "bulunuyor mu",
+            # Ek Türkçe soru kalıpları
+            "acaba", "yoksa", "şu an", "şimdi",
+            "bugün", "yarın", "dün", "hafta",
+            # İngilizce soru kelimeler (düşük öncelik)
+            "what", "how", "when", "where", "why", "which", "who"
+        ]
+        is_question = any(word in msg_lower for word in turkish_question_words) or "?" in user_message
         
         if is_question:
-            return f"""🤔 **'{user_message}' hakkında...**
-
-Bu konuda size yardımcı olmaya çalışıyorum. Fabrika veritabanımızda spesifik bilgi bulamadım, ancak genel bilgilerimle destekleyebilirim.
+            return f"""🤔 **'{user_message}' hakkında Mefapex bilgi tabanımızda hazır bir kayıt bulamadım.**
 
 **Daha iyi yardım için şunları deneyebilirsiniz:**
 • Soruyu daha detaylandırın
 • Hangi alanda bilgi istediğinizi belirtin
 • Fabrika ile ilgili sorular için spesifik konular sorun
 
-**Popüler konularım:**
-• 🏭 Fabrika operasyonları • 💻 Teknoloji ve AI • 📚 Öğrenme tavsiyeleri
-• 🔢 Matematik hesaplamaları • 💼 Kariyer rehberliği
-
-Size başka nasıl yardımcı olabilirim? 💭"""
+**Daha hızlı ilerlemek için şunları paylaşabilirsiniz:**
+• **Konu:** üretim hattı / ekipman / yazılım / sipariş / kalite
+• **Hangi hat veya ekipman etkilendi?**
+• **Kısa açıklama** veya varsa hata kodu/ekran görüntüsü
+• **Tesis adı ve tarih/saat**"""
         else:
             return f"""💬 **'{user_message}' konusunda...**
 
