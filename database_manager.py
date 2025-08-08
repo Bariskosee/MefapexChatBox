@@ -335,28 +335,29 @@ class DatabaseManager:
             return result
 
     def get_chat_messages(self, session_id: str) -> List[Dict]:
-        """Get all messages for a specific session"""
+        """Get all messages for a specific session with optimization"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 cur = conn.cursor()
                 
+                # Optimized query with LIMIT to prevent large result sets
                 cur.execute("""
                     SELECT user_message, bot_response, source, timestamp
                     FROM chat_messages
                     WHERE session_id = ?
                     ORDER BY timestamp ASC
+                    LIMIT 1000
                 """, (session_id,))
                 
-                messages = []
-                for row in cur.fetchall():
-                    messages.append({
+                return [
+                    {
                         "user_message": row[0],
                         "bot_response": row[1],
                         "source": row[2],
                         "timestamp": row[3]
-                    })
-                
-                return messages
+                    }
+                    for row in cur.fetchall()
+                ]
                 
         except Exception as e:
             logger.error(f"Error getting chat messages: {e}")
@@ -483,12 +484,12 @@ class DatabaseManager:
                 "pool_max_connections": self.pool.max_connections
             }
     def save_chat_session(self, user_id: str, session_id: str, started_at: str, message_count: int):
-        """Save a chat session record"""
+        """Save a chat session record with optimization"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 cur = conn.cursor()
                 
-                # Insert or update session record
+                # Use pool connection instead of creating new one
                 cur.execute("""
                     INSERT OR REPLACE INTO chat_sessions 
                     (session_id, user_id, created_at, updated_at, message_count, is_active)
@@ -503,12 +504,12 @@ class DatabaseManager:
             raise
     
     def trim_user_sessions(self, user_id: str, max_sessions: int = 15):
-        """Keep only the most recent max_sessions for a user"""
+        """Keep only the most recent max_sessions for a user with optimization"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.pool.get_connection() as conn:
                 cur = conn.cursor()
                 
-                # Get sessions ordered by creation date (newest first)
+                # Use connection pool and optimize query
                 cur.execute("""
                     SELECT session_id FROM chat_sessions 
                     WHERE user_id = ? 
@@ -520,17 +521,19 @@ class DatabaseManager:
                 
                 if old_sessions:
                     old_session_ids = [row[0] for row in old_sessions]
+                    
+                    # Use batch delete for better performance
                     placeholders = ','.join(['?' for _ in old_session_ids])
+                    
+                    # Delete associated messages first (referential integrity)
+                    cur.execute(f"""
+                        DELETE FROM chat_messages 
+                        WHERE session_id IN ({placeholders})
+                    """, old_session_ids)
                     
                     # Delete old session records
                     cur.execute(f"""
                         DELETE FROM chat_sessions 
-                        WHERE session_id IN ({placeholders})
-                    """, old_session_ids)
-                    
-                    # Delete associated messages
-                    cur.execute(f"""
-                        DELETE FROM chat_messages 
                         WHERE session_id IN ({placeholders})
                     """, old_session_ids)
                     
@@ -540,4 +543,19 @@ class DatabaseManager:
                 
         except Exception as e:
             logger.error(f"Failed to trim user sessions: {e}")
-            raise
+
+# Global database manager instance
+db_manager = None
+
+def init_database_manager():
+    """Initialize global database manager"""
+    global db_manager
+    db_manager = DatabaseManager()
+    return db_manager
+
+def get_database_manager() -> DatabaseManager:
+    """Get global database manager instance"""
+    global db_manager
+    if db_manager is None:
+        db_manager = DatabaseManager()
+    return db_manager
