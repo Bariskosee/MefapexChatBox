@@ -134,29 +134,38 @@ class DatabaseManager:
             conn.commit()
             logger.info("✅ Database initialized with optimizations")
     
+    def get_current_session(self, user_id: str) -> Optional[str]:
+        """Get current active session without creating a new one"""
+        with self.pool.get_connection() as conn:
+            cur = conn.cursor()
+            
+            # Get the most recent session that has recent activity (last 30 minutes)
+            cur.execute("""
+                SELECT s.session_id 
+                FROM chat_sessions s
+                LEFT JOIN chat_messages m ON s.session_id = m.session_id
+                WHERE s.user_id = ? 
+                AND (m.timestamp IS NULL OR m.timestamp >= datetime('now', '-30 minutes'))
+                ORDER BY s.created_at DESC 
+                LIMIT 1
+            """, (user_id,))
+            
+            row = cur.fetchone()
+            return row[0] if row else None
+    
     def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
-        """Get existing session or create new one with session limits"""
+        """Get existing session or create new one with enhanced session management"""
         with self.pool.get_connection() as conn:
             cur = conn.cursor()
             
             if not force_new:
-                # Try to get the most recent session that has messages in the last 30 minutes
-                # This creates natural session boundaries based on activity
-                cur.execute("""
-                    SELECT s.session_id 
-                    FROM chat_sessions s
-                    LEFT JOIN chat_messages m ON s.session_id = m.session_id
-                    WHERE s.user_id = ? 
-                    AND (m.timestamp IS NULL OR m.timestamp >= datetime('now', '-30 minutes'))
-                    ORDER BY s.created_at DESC 
-                    LIMIT 1
-                """, (user_id,))
-                
-                row = cur.fetchone()
-                if row:
-                    return row[0]
+                # Use the get_current_session method for consistency
+                existing_session = self.get_current_session(user_id)
+                if existing_session:
+                    logger.debug(f"Using existing session {existing_session} for user {user_id}")
+                    return existing_session
             
-            # Create new session
+            # Create new session with enhanced logging
             import uuid
             session_id = str(uuid.uuid4())
             
@@ -187,26 +196,56 @@ class DatabaseManager:
                         LIMIT ?
                     )
                 """, (user_id, session_count - 14))
+                
+                logger.debug(f"Cleaned up old sessions for user {user_id}, keeping limit at 15")
             
             # Create the new session
-            cur.execute(
-                "INSERT INTO chat_sessions (session_id, user_id) VALUES (?, ?)", 
-                (session_id, user_id)
-            )
-            conn.commit()
-            logger.info(f"Created new session {session_id} for user {user_id}")
-            return session_id
+            try:
+                cur.execute(
+                    "INSERT INTO chat_sessions (session_id, user_id) VALUES (?, ?)", 
+                    (session_id, user_id)
+                )
+                conn.commit()
+                logger.info(f"✅ Created new session {session_id} for user {user_id}")
+                return session_id
+            except Exception as e:
+                logger.error(f"Failed to create session for user {user_id}: {e}")
+                conn.rollback()
+                raise
     
     def add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
-        """Add message with optimized insert"""
-        with self.pool.get_connection() as conn:
-            conn.execute(
-                """INSERT INTO chat_messages 
-                   (session_id, user_id, user_message, bot_response, source) 
-                   VALUES (?, ?, ?, ?, ?)""",
-                (session_id, user_id, user_message, bot_response, source)
-            )
-            conn.commit()
+        """Add message with enhanced error handling and validation"""
+        try:
+            # Validate inputs
+            if not session_id or not user_message or not bot_response:
+                raise ValueError("session_id, user_message, and bot_response are required")
+            
+            with self.pool.get_connection() as conn:
+                # Verify session exists
+                cur = conn.cursor()
+                cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = ?", (session_id,))
+                if not cur.fetchone():
+                    logger.warning(f"Session {session_id} not found, creating it for user {user_id}")
+                    # Auto-create session if it doesn't exist
+                    if user_id:
+                        cur.execute(
+                            "INSERT OR IGNORE INTO chat_sessions (session_id, user_id) VALUES (?, ?)", 
+                            (session_id, user_id)
+                        )
+                
+                # Insert message
+                conn.execute(
+                    """INSERT INTO chat_messages 
+                       (session_id, user_id, user_message, bot_response, source) 
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (session_id, user_id, user_message, bot_response, source)
+                )
+                conn.commit()
+                logger.debug(f"Message added to session {session_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to add message to session {session_id}: {e}")
+            raise
     
     def get_chat_history(self, user_id: str, limit: int = 20) -> List[Dict]:
         """Get chat history with optimized query and pagination"""
@@ -291,6 +330,53 @@ class DatabaseManager:
                 result.append(session_summary)
             
             return result
+
+    def get_chat_messages(self, session_id: str) -> List[Dict]:
+        """Get all messages for a specific session"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                
+                cur.execute("""
+                    SELECT user_message, bot_response, source, timestamp
+                    FROM chat_messages
+                    WHERE session_id = ?
+                    ORDER BY timestamp ASC
+                """, (session_id,))
+                
+                messages = []
+                for row in cur.fetchall():
+                    messages.append({
+                        "user_message": row[0],
+                        "bot_response": row[1],
+                        "source": row[2],
+                        "timestamp": row[3]
+                    })
+                
+                return messages
+                
+        except Exception as e:
+            logger.error(f"Error getting chat messages: {e}")
+            return [] 
+
+    def save_chat_session_emergency(self, user_id: str, session_id: str):
+        """Emergency save for session during page unload"""
+        try:
+            with self.pool.get_connection() as conn:
+                cur = conn.cursor()
+                
+                # Update session as saved
+                cur.execute("""
+                    UPDATE chat_sessions 
+                    SET updated_at = ?, is_active = 0
+                    WHERE session_id = ? AND user_id = ?
+                """, (datetime.now().isoformat(), session_id, user_id))
+                
+                conn.commit()
+                logger.info(f"🚨 Emergency session save completed for {session_id[:8]}...")
+                
+        except Exception as e:
+            logger.error(f"Emergency session save failed: {e}")
     
     def start_new_session(self, user_id: str) -> str:
         """Force creation of a new session for the user"""
@@ -387,3 +473,81 @@ class DatabaseManager:
                 "pool_active_connections": self.pool._active_connections,
                 "pool_max_connections": self.pool.max_connections
             } 
+
+    def save_chat_session_emergency(self, user_id: str, session_id: str):
+        """Emergency save for session during page unload"""
+        try:
+            with self.pool.get_connection() as conn:
+                cur = conn.cursor()
+                
+                # Update session as saved
+                cur.execute("""
+                    UPDATE chat_sessions 
+                    SET updated_at = ?, is_active = 0
+                    WHERE session_id = ? AND user_id = ?
+                """, (datetime.now().isoformat(), session_id, user_id))
+                
+                conn.commit()
+                logger.info(f"🚨 Emergency session save completed for {session_id[:8]}...")
+                
+        except Exception as e:
+            logger.error(f"Emergency session save failed: {e}") 
+    def save_chat_session(self, user_id: str, session_id: str, started_at: str, message_count: int):
+        """Save a chat session record"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                
+                # Insert or update session record
+                cur.execute("""
+                    INSERT OR REPLACE INTO chat_sessions 
+                    (session_id, user_id, created_at, updated_at, message_count, is_active)
+                    VALUES (?, ?, ?, ?, ?, 0)
+                """, (session_id, user_id, started_at, datetime.now().isoformat(), message_count))
+                
+                conn.commit()
+                logger.info(f"💾 Session record saved: {session_id} ({message_count} messages)")
+                
+        except Exception as e:
+            logger.error(f"Failed to save session record: {e}")
+            raise
+    
+    def trim_user_sessions(self, user_id: str, max_sessions: int = 15):
+        """Keep only the most recent max_sessions for a user"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                
+                # Get sessions ordered by creation date (newest first)
+                cur.execute("""
+                    SELECT session_id FROM chat_sessions 
+                    WHERE user_id = ? 
+                    ORDER BY created_at DESC
+                    LIMIT -1 OFFSET ?
+                """, (user_id, max_sessions))
+                
+                old_sessions = cur.fetchall()
+                
+                if old_sessions:
+                    old_session_ids = [row[0] for row in old_sessions]
+                    placeholders = ','.join(['?' for _ in old_session_ids])
+                    
+                    # Delete old session records
+                    cur.execute(f"""
+                        DELETE FROM chat_sessions 
+                        WHERE session_id IN ({placeholders})
+                    """, old_session_ids)
+                    
+                    # Delete associated messages
+                    cur.execute(f"""
+                        DELETE FROM chat_messages 
+                        WHERE session_id IN ({placeholders})
+                    """, old_session_ids)
+                    
+                    conn.commit()
+                    
+                    logger.info(f"🗑️ Trimmed {len(old_session_ids)} old sessions for user {user_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to trim user sessions: {e}")
+            raise

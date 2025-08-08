@@ -272,7 +272,6 @@ async function loginLegacyFallback(username, password) {
         showLoginError('Giriş başarısız. Kullanıcı adı ve şifreyi kontrol edin.');
     }
 }
-
 // Make login function available globally
 window.login = login;
 
@@ -299,7 +298,7 @@ async function logout() {
     // Clear chat window and show updated welcome message
     chatMessages.innerHTML = `
         <div class="welcome-message">
-            👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
+            👋 MEFAPEX AI asistanına hoş geldiniz.<br>
             ${saveResult.reason === 'saved' ? 'Oturumunuz geçmişe kaydedildi.' : 'Yeni oturuma hazırsınız.'}<br>
             Size nasıl yardımcı olabilirim?
         </div>
@@ -461,6 +460,108 @@ function addMessage(text, sender) {
     scrollToBottom();
 }
 
+// Save current chat to localStorage as backup
+function saveChatToLocalStorage() {
+    try {
+        if (!currentSessionId) {
+            console.log('No current session ID, skipping localStorage save');
+            return false;
+        }
+        
+        const messages = [];
+        const messageElements = chatMessages.querySelectorAll('.message');
+        
+        for (let i = 0; i < messageElements.length; i += 2) {
+            const userMsg = messageElements[i];
+            const botMsg = messageElements[i + 1];
+            
+            if (userMsg && botMsg) {
+                const userBubble = userMsg.querySelector('.message-bubble');
+                const botBubble = botMsg.querySelector('.message-bubble');
+                
+                if (userBubble && botBubble) {
+                    messages.push({
+                        user_message: userBubble.textContent || '',
+                        bot_response: botBubble.innerHTML || '',
+                        timestamp: new Date().toISOString(),
+                        session_id: currentSessionId
+                    });
+                }
+            }
+        }
+        
+        const sessionData = {
+            sessionId: currentSessionId,
+            startTime: sessionStartTime || new Date().toISOString(),
+            messages: messages,
+            lastUpdate: new Date().toISOString(),
+            messageCount: messages.length,
+            savedOnLogout: true
+        };
+        
+        localStorage.setItem('currentSession', JSON.stringify(sessionData));
+        console.log(`💾 Session saved to localStorage: ${currentSessionId} (${messages.length} messages)`);
+        return true;
+        
+    } catch (error) {
+        console.warn('Failed to save chat backup:', error);
+        return false;
+    }
+}
+
+// Load chat from localStorage backup
+function loadChatFromLocalStorage() {
+    try {
+        const sessionData = localStorage.getItem('currentSession');
+        if (sessionData) {
+            const session = JSON.parse(sessionData);
+            
+            // Only load if no current messages or we're loading the same session
+            const currentMessages = chatMessages.querySelectorAll('.message');
+            const hasWelcomeMessage = chatMessages.querySelector('.welcome-message');
+            
+            if (currentMessages.length === 0 || hasWelcomeMessage) {
+                chatMessages.innerHTML = '';
+                
+                // Restore session info
+                currentSessionId = session.sessionId;
+                sessionStartTime = session.startTime;
+                
+                session.messages.forEach(msg => {
+                    addMessageWithoutSaving(msg.user_message, 'user');
+                    addMessageWithoutSaving(msg.bot_response, 'bot');
+                });
+                
+                scrollToBottom();
+                console.log('📱 Loaded current session from localStorage:', currentSessionId);
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to load chat backup:', error);
+    }
+}
+
+// Add message without saving to localStorage (for loading from backup)
+function addMessageWithoutSaving(text, sender) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}`;
+    
+    const bubbleDiv = document.createElement('div');
+    bubbleDiv.className = 'message-bubble';
+    
+    const formattedText = sender === 'bot' ? text : formatMessage(text);
+    bubbleDiv.innerHTML = formattedText;
+    
+    messageDiv.appendChild(bubbleDiv);
+    
+    const welcomeMessage = chatMessages.querySelector('.welcome-message');
+    if (welcomeMessage) {
+        welcomeMessage.remove();
+    }
+    
+    chatMessages.appendChild(messageDiv);
+}
+
 // Format message text (basic markdown support)
 function formatMessage(text) {
     return text
@@ -488,6 +589,12 @@ function scrollToBottom() {
     }, 100);
 }
 
+// Check if user is near bottom of chat
+function isNearBottom() {
+    const threshold = 100;
+    return chatMessages.scrollHeight - chatMessages.clientHeight <= chatMessages.scrollTop + threshold;
+}
+
 // Show typing indicator
 function showTyping() {
     isTyping = true;
@@ -510,10 +617,211 @@ function hideTyping() {
     messageInput.focus();
 }
 
+// Sample questions for easy testing
+const sampleQuestions = [
+    "Çalışma saatleri nelerdir?",
+    "İzin nasıl alınır?",
+    "Güvenlik kuralları nelerdir?",
+    "Vardiya değişiklikleri nasıl yapılır?",
+    "Güncel üretim çıktısı nedir?"
+];
+
+// Add sample questions as buttons (optional feature)
+function addSampleQuestions() {
+    const sampleDiv = document.createElement('div');
+    sampleDiv.className = 'sample-questions';
+    sampleDiv.innerHTML = '<p>Örnek sorular:</p>';
+    
+    sampleQuestions.forEach(question => {
+        const button = document.createElement('button');
+        button.textContent = question;
+        button.className = 'sample-question-btn';
+        button.onclick = () => {
+            messageInput.value = question;
+            sendMessage();
+        };
+        sampleDiv.appendChild(button);
+    });
+    
+    chatMessages.appendChild(sampleDiv);
+}
+
 // Error handling for fetch requests
 window.addEventListener('unhandledrejection', function(event) {
     console.error('Unhandled promise rejection:', event.reason);
 });
+
+// JWT management for MEFAPEX Chatbot
+async function loginWithJWT(username, password) {
+    const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+    });
+    
+    if (response.ok) {
+        const data = await response.json();
+        authToken = data.access_token;
+        localStorage.setItem('authToken', authToken);
+        
+        // 🚀 OPTIMIZED: Immediately check session status after login
+        try {
+            const meResponse = await fetch(`${API_BASE_URL}/me`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (meResponse.ok) {
+                const userData = await meResponse.json();
+                if (userData.session_ready && userData.session_id) {
+                    currentSessionId = userData.session_id;
+                    console.log(`🎯 Session ready immediately after login: ${currentSessionId}`);
+                }
+            }
+        } catch (err) {
+            console.warn('Could not get session info after login:', err);
+        }
+    }
+}
+
+async function fetchAndDisplayChatHistory() {
+    if (!authToken) {
+        alert('Önce giriş yapmalısınız.');
+        return;
+    }
+    try {
+        // Get current user info to obtain user_id
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!meResp.ok) throw new Error('Kullanıcı bilgisi alınamadı');
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+
+        // Fetch chat history
+        const histResp = await fetch(`${API_BASE_URL}/chat/history/${userId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!histResp.ok) throw new Error('Geçmiş alınamadı');
+        const histData = await histResp.json();
+        const messages = histData.messages || [];
+
+        // Clear chat window
+        chatMessages.innerHTML = '';
+        if (messages.length === 0) {
+            chatMessages.innerHTML = '<div class="welcome-message">Hiç mesaj geçmişiniz yok.</div>';
+        } else {
+            messages.forEach(msg => {
+                addMessage(msg.user_message, 'user');
+                addMessage(msg.bot_response, 'bot');
+            });
+        }
+        scrollToBottom();
+    } catch (err) {
+        alert('Geçmiş yüklenemedi: ' + err.message);
+    }
+}
+
+// Make available globally for button
+window.fetchAndDisplayChatHistory = fetchAndDisplayChatHistory;
+
+// 🚀 OPTIMIZED: Ensure user has an active session (fast check)
+async function ensureActiveSession() {
+    if (!authToken) {
+        console.log('No auth token for session check');
+        return false;
+    }
+    
+    try {
+        console.log('🔍 Checking current session status...');
+        
+        // Fast check: Get current session info
+        const response = await fetch(`${API_BASE_URL}/chat/session/current`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+            const sessionData = await response.json();
+            if (sessionData.session_ready && sessionData.session_id) {
+                currentSessionId = sessionData.session_id;
+                sessionStartTime = new Date();
+                console.log(`✅ Active session confirmed: ${currentSessionId}`);
+                return true;
+            }
+        }
+        
+        // If no active session, create one
+        console.log('📝 No active session found, creating new one...');
+        return await createNewSessionAutomatically();
+        
+    } catch (err) {
+        console.warn('Session check failed, creating fallback session:', err);
+        return startNewChatSession();
+    }
+}
+
+// Auto-create new session on login (optimized)
+async function createNewSessionOnLogin() {
+    if (!authToken) {
+        console.log('No auth token for session creation');
+        return;
+    }
+    
+    try {
+        console.log('🆕 Creating new session on login...');
+        
+        // Automatically create a new session for this app visit/login
+        const newSessionId = await createNewSessionAutomatically();
+        
+        if (newSessionId) {
+            console.log('✅ New session created successfully on login:', newSessionId);
+        } else {
+            console.log('🔄 Using local session as fallback');
+        }
+        
+    } catch (err) {
+        console.warn('Failed to create new session on login:', err);
+        // Fallback to local session
+        startNewChatSession();
+    }
+}
+
+// 🆕 NEW SESSION MANAGEMENT FUNCTIONS
+
+// Start a new chat session (clean slate)
+function startNewChatSession() {
+    console.log('🆕 Starting new chat session...');
+    
+    // Generate a new session ID
+    currentSessionId = generateSessionId();
+    sessionStartTime = new Date().toISOString();
+    
+    // Clear chat messages and show welcome message
+    chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+    
+    // Clear localStorage backup for new session
+    localStorage.removeItem('chatBackup');
+    
+    console.log('✅ New chat session started:', currentSessionId);
+}
+
+// Generate unique session ID
+function generateSessionId() {
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Get current session info
+function getCurrentSessionInfo() {
+    return {
+        sessionId: currentSessionId,
+        startTime: sessionStartTime,
+        messageCount: chatMessages.querySelectorAll('.message').length
+    };
+}
+
+// Check if current session has messages
+function hasCurrentSessionMessages() {
+    const messages = chatMessages.querySelectorAll('.message');
+    return messages.length > 0;
+}
 
 // Sidebar open/close logic - Updated for session manager
 function openChatHistorySidebar() {
@@ -573,4 +881,148 @@ window.addEventListener('beforeunload', function(event) {
     }
 });
 
-console.log('✅ Main script loaded - session management ready');
+// 🆕 AUTOMATIC SESSION MANAGEMENT
+
+async function createNewSessionAutomatically() {
+    if (!authToken) {
+        console.log('No auth token for automatic session creation');
+        return null;
+    }
+    
+    try {
+        // Get user info
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!meResp.ok) throw new Error('Kullanıcı bilgisi alınamadı');
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+        
+        // Start new session on backend automatically
+        const newSessionResp = await fetch(`${API_BASE_URL}/chat/sessions/${userId}/new`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!newSessionResp.ok) throw new Error('Otomatik oturum başlatılamadı');
+        const newSessionData = await newSessionResp.json();
+        
+        // Clear current chat and start fresh silently
+        chatMessages.innerHTML = '<div class="welcome-message">👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>Size nasıl yardımcı olabilirim?</div>';
+        
+        // Generate new session info
+        currentSessionId = newSessionData.session_id;
+        sessionStartTime = new Date().toISOString();
+        
+        console.log('✅ Automatic new session started:', newSessionData.session_id);
+        return newSessionData.session_id;
+        
+    } catch (error) {
+        console.error('Error creating automatic session:', error);
+        // Fallback to local session if API fails
+        startNewChatSession();
+        return currentSessionId;
+    }
+}
+
+// 💾 AUTO-SAVE SESSION TO BACKEND
+async function saveSessionToBackend() {
+    if (!authToken || !currentSessionId) {
+        console.log('Cannot save to backend: missing auth token or session ID');
+        return false;
+    }
+    
+    try {
+        console.log('💾 Saving session to backend...', currentSessionId);
+        
+        // Get user info
+        const meResp = await fetch(`${API_BASE_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!meResp.ok) {
+            throw new Error('User info unavailable');
+        }
+        
+        const meData = await meResp.json();
+        const userId = meData.user_id;
+        
+        // Check if current session exists and has messages
+        const messages = chatMessages.querySelectorAll('.message');
+        if (messages.length === 0) {
+            console.log('No messages to save, skipping backend save');
+            return true;
+        }
+        
+        // Get session info to verify it exists
+        const sessionResp = await fetch(`${API_BASE_URL}/chat/sessions/info/${currentSessionId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (sessionResp.ok) {
+            console.log('✅ Session already exists on backend, messages are auto-saved');
+            return true;
+        } else {
+            console.log('⚠️ Session not found on backend, messages saved locally only');
+            return false;
+        }
+        
+    } catch (error) {
+        console.warn('Failed to save session to backend:', error);
+        return false;
+    }
+}
+
+// Call on page load
+window.addEventListener('DOMContentLoaded', function() {
+    updateHistoryButtonVisibility();
+    // Note: Auto-session creation is handled by verifyTokenAndAutoLogin() and login() functions
+});
+
+// 🚪 AUTO-SAVE ON PAGE CLOSE/REFRESH
+window.addEventListener('beforeunload', function(event) {
+    // Save session when user closes tab or refreshes page
+    if (isLoggedIn && currentSessionId && authToken) {
+        console.log('🚪 Page closing, saving session...');
+        
+        try {
+            // Save to localStorage (synchronous, always works)
+            saveChatToLocalStorage();
+            
+            // Try to save to backend (may not complete due to page closing)
+            // Use sendBeacon for better reliability during page unload
+            if (navigator.sendBeacon) {
+                saveSessionWithBeacon();
+            }
+            
+        } catch (error) {
+            console.warn('Error saving session on page close:', error);
+        }
+    }
+});
+
+// 📡 SAVE SESSION WITH BEACON (for page unload)
+function saveSessionWithBeacon() {
+    if (!authToken || !currentSessionId) return;
+    
+    try {
+        const sessionData = {
+            session_id: currentSessionId,
+            action: 'save_session',
+            timestamp: new Date().toISOString()
+        };
+        
+        // Use sendBeacon for reliable data sending during page unload
+        const success = navigator.sendBeacon(
+            `${API_BASE_URL}/chat/sessions/save-beacon`, 
+            JSON.stringify(sessionData)
+        );
+        
+        if (success) {
+            console.log('📡 Session save beacon sent successfully');
+        }
+        
+    } catch (error) {
+        console.warn('Failed to send session save beacon:', error);
+    }
+}

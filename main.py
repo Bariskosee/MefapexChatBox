@@ -113,14 +113,15 @@ chat_sessions = {}
 
 # Initialize database manager
 db_manager = DatabaseManager()
+db_manager.init_database()
 
 # 🔒 RATE LIMITING IMPLEMENTATION
 class RateLimiter:
     def __init__(self):
         self.requests = defaultdict(list)
         self.chat_requests = defaultdict(list)
-        self.max_requests_per_minute = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
-        self.max_chat_requests_per_minute = int(os.getenv("RATE_LIMIT_CHAT", "20"))
+        self.max_requests_per_minute = int(os.getenv("RATE_LIMIT_REQUESTS", "200"))
+        self.max_chat_requests_per_minute = int(os.getenv("RATE_LIMIT_CHAT", "100"))
         
     def is_allowed(self, client_ip: str, endpoint_type: str = "general") -> bool:
         """Check if request is allowed based on rate limits"""
@@ -576,20 +577,75 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         
     return user
 
-def get_user_session(user_id: str, force_new: bool = False) -> str:
-    """Get or create user session ID (persistent) with session management"""
-    return db_manager.get_or_create_session(user_id, force_new=force_new)
+def get_user_session(user_id: str, force_new: bool = False, auto_create: bool = True) -> str:
+    """
+    Get or create user session ID (persistent) with enhanced session management
+    
+    Args:
+        user_id: User identifier
+        force_new: Force creation of new session (default: False)
+        auto_create: Automatically create session if none exists (default: True)
+    
+    Returns:
+        session_id: Active session ID for the user
+    """
+    try:
+        if auto_create:
+            session_id = db_manager.get_or_create_session(user_id, force_new=force_new)
+            logger.debug(f"Session {'created' if force_new else 'retrieved'} for user {user_id}: {session_id}")
+            return session_id
+        else:
+            # Only get existing session, don't create
+            existing_session = db_manager.get_current_session(user_id)
+            if existing_session:
+                return existing_session
+            else:
+                logger.warning(f"No existing session found for user {user_id}")
+                return None
+    except Exception as e:
+        logger.error(f"Session management error for user {user_id}: {e}")
+        # Fallback: try to create a new session
+        try:
+            return db_manager.get_or_create_session(user_id, force_new=True)
+        except Exception as fallback_error:
+            logger.error(f"Fallback session creation failed for user {user_id}: {fallback_error}")
+            raise
 
 def add_message_to_session(session_id: str, user_message: str, bot_response: str, source: str, user_id: str = None):
-    """Add message to chat session (persistent)"""
-    if user_id is None:
-        # Try to infer user_id from session (legacy fallback)
-        user_id = None
-    db_manager.add_message(session_id, user_id, user_message, bot_response, source)
+    """
+    Add message to chat session (persistent) with enhanced error handling
+    
+    Args:
+        session_id: Session identifier
+        user_message: User's input message
+        bot_response: Bot's response
+        source: Response source (openai, huggingface, etc.)
+        user_id: User identifier (optional but recommended)
+    """
+    try:
+        if user_id is None:
+            # Try to infer user_id from session (legacy fallback)
+            logger.warning("user_id not provided to add_message_to_session, using None")
+        
+        # Ensure parameters are clean
+        session_id = str(session_id).strip()
+        user_message = str(user_message).strip()
+        bot_response = str(bot_response).strip()
+        source = str(source).strip()
+        
+        # Call database manager with enhanced logging
+        db_manager.add_message(session_id, user_id, user_message, bot_response, source)
+        logger.debug(f"Message added to session {session_id}: user='{user_message[:50]}...', bot='{bot_response[:50]}...', source={source}")
+        
+    except Exception as e:
+        logger.error(f"Failed to add message to session {session_id}: {e}")
+        logger.error(f"Message details: user_id={user_id}, user_msg='{user_message[:100] if user_message else 'None'}', source={source}")
+        # Re-raise to let caller handle the error
+        raise
 
 @app.get("/")
 async def read_root():
-    return FileResponse("static/index.html")
+    return FileResponse("static/index.html", media_type="text/html; charset=utf-8")
 
 # 🆕 USER REGISTRATION
 @app.post("/register", response_model=dict)
@@ -709,6 +765,15 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     # Check for demo user first (with rate limiting)
     if form_data.username == "demo" and form_data.password == "1234":
         brute_force_protection.record_successful_attempt(client_ip)
+        
+        # 🚀 NEW SESSION CREATION: Create new session on each login
+        demo_user_id = "demo-user-id"
+        try:
+            session_id = db_manager.get_or_create_session(demo_user_id, force_new=True)
+            logger.info(f"Demo user new session created: {session_id}")
+        except Exception as e:
+            logger.warning(f"Demo session creation issue: {e}")
+        
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": "demo", "ip": client_ip}, expires_delta=access_token_expires
@@ -744,6 +809,13 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     user["last_login"] = datetime.utcnow()
     user["last_login_ip"] = client_ip
     user["failed_login_attempts"] = 0
+    
+    # 🚀 NEW SESSION CREATION: Create new session on each login
+    try:
+        session_id = db_manager.get_or_create_session(user["user_id"], force_new=True)
+        logger.info(f"User {user['username']} new session created: {session_id}")
+    except Exception as e:
+        logger.warning(f"User session creation issue for {user['username']}: {e}")
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -1342,313 +1414,146 @@ def generate_advanced_ai_response(user_message: str) -> str:
         return response
 
 def generate_ai_response_local(user_message: str) -> str:
-    """Generate AI response using enhanced local intelligence"""
+    """Generate AI response using enhanced local intelligence - Factory focused fallback"""
     # Convert to lowercase for analysis
     msg_lower = user_message.lower().strip()
     
-    # Türkçe öncelikli selamlama ve basit sorular
-    turkish_greetings = [
+    # Temel selamlama kalıpları
+    greetings = [
         "merhaba", "selam", "selamun aleyküm", "selamünaleyküm", 
         "günaydın", "iyi günler", "iyi akşamlar", "iyi geceler",
         "nasılsın", "nasilsin", "nasıl gidiyor", "naber", "ne haber",
-        "hoş geldin", "hoşgeldin", "selam olsun",
-        # İngilizce selamlamalar (düşük öncelik)
-        "hello", "hi", "hey"
+        "hoş geldin", "hoşgeldin", "hello", "hi", "hey"
     ]
     
-    if any(word in msg_lower for word in turkish_greetings):
+    if any(word in msg_lower for word in greetings):
         return """👋 **Merhaba! Hoş geldiniz!**
 
 Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
 
 **Size yardımcı olabileceğim konular:**
-• Fabrika ile ilgili sorular (çalışma saatleri, kurallar vb.)
-• Genel bilgi soruları
-• Teknoloji ve AI konuları
-• Basit hesaplamalar
-• Ve daha fazlası...
+• 🏭 Fabrika operasyonları ve süreçleri
+• 🛡️ İş güvenliği kuralları
+• ⏰ Çalışma saatleri ve vardiyalar
+• 📋 Prosedürler ve yönergeler
+• 🔧 Genel fabrika bilgileri
 
 Nasıl yardımcı olabilirim? 😊"""
-    
-    # Python ve Programlama Soruları - Türkçe öncelikli
-    turkish_programming_terms = [
-        "python", "programlama", "kod", "yazılım", "kodlama", "yazılım geliştirme",
-        "bilgisayar programcılığı", "uygulama geliştirme", "web geliştirme",
-        "mobil uygulama", "veri tabanı", "algoritma", "değişken", "fonksiyon",
-        # İngilizce terimler (düşük öncelik)
-        "programming", "coding", "software", "development"
-    ]
-    
-    if any(word in msg_lower for word in turkish_programming_terms):
-        return """🐍 **Python ve Programlama Hakkında**
 
-Python, öğrenmesi kolay ve güçlü bir programlama dilidir.
-
-**Başlangıç için öneriler:**
-• Python.org'dan ücretsiz indirebilirsiniz
-• Online kurslar: Codecademy, Python.org tutorials
-• Temel konular: değişkenler, döngüler, fonksiyonlar
-• Pratik projeler yaparak öğrenin
-
-**Kullanım alanları:**
-• Web geliştirme (Django, Flask)
-• Veri analizi (Pandas, NumPy)
-• Yapay zeka (TensorFlow, scikit-learn)
-• Otomasyon ve scripting
-
-Hangi alanda odaklanmak istiyorsunuz? 🚀"""
-
-    # Teknoloji Genel - Türkçe öncelikli
-    elif any(word in msg_lower for word in [
-        "teknoloji", "bilgisayar", "internet", "dijital", "elektronik",
-        "yazılım", "donanım", "ağ", "wifi", "bluetooth", "akıllı telefon",
-        "tablet", "laptop", "masaüstü", "veri", "bulut", "siber güvenlik",
-        "mobil", "uygulama", "web sitesi", "sosyal medya",
-        # İngilizce terimler (düşük öncelik)
-        "technology", "computer", "software", "hardware"
-    ]):
-        return """💻 **Modern Teknoloji**
-
-Teknoloji hayatımızı sürekli şekillendiriyor.
-
-**Güncel Trendler:**
-• **Bulut Bilişim**: Her yerden erişilebilir veriler
-• **Mobil Teknolojiler**: Akıllı telefonlar ve uygulamalar
-• **Nesnelerin İnterneti (IoT)**: Bağlı cihazlar
-• **Siber Güvenlik**: Dijital koruma
-• **Blockchain**: Güvenli veri paylaşımı
-
-**Öğrenme Kaynakları:**
-• Online platformlar (Coursera, Udemy)
-• YouTube eğitim kanalları
-• Teknoloji blogları ve podcastler
-
-Hangi teknoloji alanı sizi ilgilendiriyor? 🌐"""
-
-    # Öğrenme ve Eğitim
-    elif any(word in msg_lower for word in ["öğren", "eğitim", "ders", "kurs", "learn", "study"]):
-        return """📚 **Öğrenme ve Gelişim**
-
-Sürekli öğrenmek modern dünyanın anahtarıdır.
-
-**Etkili Öğrenme Yöntemleri:**
-• **Aktif Öğrenme**: Sadece okumak değil, pratik yapmak
-• **Proje Tabanlı**: Gerçek projelerle öğrenmek
-• **Topluluk**: Online forumlar ve gruplar
-• **Düzenli Tekrar**: Spaced repetition tekniği
-
-**Ücretsiz Kaynaklar:**
-• Khan Academy, Coursera (audit)
-• YouTube eğitim kanalları
-• GitHub açık kaynak projeleri
-• Stack Overflow (programlama)
-
-Hangi konuda gelişmek istiyorsunuz? 🎓"""
-
-    # İş ve Kariyer
-    elif any(word in msg_lower for word in ["iş", "kariyer", "job", "career", "work", "meslek"]):
-        return """💼 **Kariyer ve İş Dünyası**
-
-Modern iş dünyası sürekli değişiyor.
-
-**Gelecekteki Beceriler:**
-• **Dijital Okuryazarlık**: Teknoloji kullanımı
-• **Problem Çözme**: Analitik düşünme
-• **İletişim**: Hem yazılı hem sözlü
-• **Uyum Yeteneği**: Değişime açık olma
-• **İşbirliği**: Takım çalışması
-
-**Kariyer Tavsiyeleri:**
-• LinkedIn profilinizi güncel tutun
-• Sürekli yeni beceriler edinin
-• Network oluşturun ve güçlendirin
-• Kişisel projeler geliştirin
-
-Hangi sektörde çalışmayı hedefliyorsunuz? 🚀"""
-
-    # Sağlık ve Yaşam
-    elif any(word in msg_lower for word in ["sağlık", "health", "yaşam", "life", "beslenme", "spor"]):
-        return """🏥 **Sağlık ve Yaşam Kalitesi**
-
-Sağlıklı yaşam, hem fiziksel hem mental iyilik hali gerektirir.
-
-**Temel Prensipler:**
-• **Dengeli Beslenme**: Çeşitli besin grupları
-• **Düzenli Egzersiz**: Haftada en az 150 dakika
-• **Yeterli Uyku**: 7-9 saat kaliteli uyku
-• **Stres Yönetimi**: Meditasyon, hobi aktiviteleri
-• **Sosyal Bağlantılar**: Aile ve arkadaş ilişkileri
-
-**Dijital Sağlık:**
-• Sağlık uygulamaları kullanın
-• Düzenli kontroller yaptırın
-• Güvenilir kaynaklardan bilgi alın
-
-Not: Sağlık konularında mutlaka uzman görüşü alın! 🌟"""
-
-    # Genel selamlama ve tanışma
-    elif any(word in msg_lower for word in ["merhaba", "selam", "hi", "hello", "hey", "nasılsın", "kimsin", "sen kim"]):
-        return """👋 **Merhaba! Tanışmak güzel!**
-
-Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmak için buradayım!
-
-**Size yardımcı olabileceğim konular:**
-• 🏭 Fabrika ile ilgili sorular
-• 💻 Teknoloji ve programlama
-• 🤖 Yapay zeka ve AI
-• 📚 Öğrenme ve gelişim tavsiyeleri
-• 💼 Kariyer ve iş dünyası
-• 🔢 Basit matematik hesaplamaları
-
-**Nasıl çalışırım:**
-• Sorularınızı anlayıp uygun yanıtlar vermeye çalışırım
-• Fabrika veritabanını tarayabilir, genel bilgilerimi kullanabilirim
-• Sürekli öğrenmeye ve gelişmeye odaklıyım
-
-Hangi konuda size yardımcı olabilirim? 😊"""
-
-    # Teşekkür ve veda
+    # Teşekkür ve veda mesajları
     elif any(word in msg_lower for word in ["teşekkür", "thanks", "sağol", "görüşürüz", "bye", "hoşça kal"]):
-        return """🙏 **Rica ederim!**
+        return """� **Rica ederim!**
 
 Size yardımcı olabildiysem ne mutlu bana! 
 
-**Unutmayın:**
-• Her zaman burada olmaya devam edeceğim
-• Yeni sorularınız için sormaktan çekinmeyin
-• Sürekli öğrenmeye devam edin
+Başka sorularınız olduğunda her zaman buradayım.
+İyi çalışmalar dilerim! 🌟"""
 
-İyi günler dilerim! Tekrar görüşmek üzere! 🌟"""
-
-    # Fabrika ve MEFAPEX
-    elif any(word in msg_lower for word in ["mefapex", "fabrika", "factory", "üretim", "işçi", "çalışan"]):
-        return """🏭 **MEFAPEX Fabrikası**
+    # MEFAPEX ve fabrika soruları
+    elif any(word in msg_lower for word in ["mefapex", "fabrika", "factory", "üretim", "işçi", "çalışan", "personel"]):
+        return """🏭 **MEFAPEX Fabrikası Hakkında**
 
 MEFAPEX, modern üretim teknolojileri ile kaliteli ürünler üreten bir fabrikadır.
 
-**Fabrika Değerleri:**
-• 🛡️ **Güvenlik**: Çalışan güvenliği öncelik
+**Temel Bilgiler:**
+• 🛡️ **Güvenlik**: Çalışan güvenliği birinci öncelik
 • 🌟 **Kalite**: Yüksek standartlarda üretim
-• 🌱 **Sürdürülebilirlik**: Çevreye duyarlı üretim
-• 👥 **İnsan Odaklı**: Çalışan refahı önemli
-• 🔧 **İnovasyon**: Sürekli gelişim ve teknoloji
+• � **İnsan Kaynakları**: Deneyimli çalışan kadrosu
+• 🔧 **Modern Teknoloji**: Güncel üretim sistemleri
 
-**Size yardımcı olabileceğim fabrika konuları:**
-• Çalışma saatleri ve vardiyalar
+**Detaylı bilgi için şunları sorabilirsiniz:**
+• Çalışma saatleri ve vardiya sistemi
 • Güvenlik kuralları ve prosedürler
-• İzin ve tatil prosedürleri
-• Genel fabrika bilgileri
+• İzin ve tatil düzenlemeleri
+• Departman yapısı ve organizasyon
 
-Spesifik bir konu hakkında soru sormak ister misiniz? 🤝"""
+Size hangi konuda yardımcı olabilirim? 🤝"""
 
-    # Zamana dayalı sorular
-    elif any(word in msg_lower for word in ["saat", "zaman", "time", "ne zaman", "when"]):
-        return """⏰ **Zaman ve Zamanlama**
+    # Zaman ve vardiya soruları
+    elif any(word in msg_lower for word in ["saat", "zaman", "vardiya", "mesai", "çalışma saati", "time", "ne zaman"]):
+        return """⏰ **Çalışma Saatleri ve Vardiya Bilgileri**
 
-Zamanlama konularında size yardımcı olmaya çalışayım.
+**Genel Çalışma Düzeni:**
+• Standart mesai: 08:00-17:00 (Pazartesi-Cuma)
+• Öğle molası: 12:00-13:00
+• Çay molaları: Sabah 10:00 ve öğleden sonra 15:00
 
-**Genel Zaman Bilgileri:**
-• Standart çalışma saatleri: Genellikle 08:00-17:00
-• Mola saatleri: Öğle arası ve çay molaları
-• Vardiya sistemleri: Bazı bölümlerde 24 saat üretim
+**Vardiya Sistemleri:**
+Bazı üretim hatlarında 24 saat sürekli üretim için vardiya sistemi uygulanmaktadır.
 
-**Daha spesifik bilgi için şunları sorabilirsiniz:**
-• "Çalışma saatleri nedir?"
-• "Mola saatleri ne zaman?"
-• "Vardiya değişim saatleri nedir?"
-• "Fabrika ne zaman açık?"
+**Detaylı bilgi için:**
+• İnsan Kaynakları departmanına başvurabilirsiniz
+• Vardiya programları departman bazında farklılık gösterebilir
 
-Hangi zaman konusunda bilgi almak istiyorsunuz? 📅"""
+Spesifik bir departman veya vardiya hakkında bilgi mi istiyorsunuz? �"""
 
-    # Matematiksel sorular
-    elif any(word in msg_lower for word in ["hesapla", "matematik", "math", "sayı", "number", "hesap"]):
-        return """🔢 **Matematik ve Hesaplama**
+    # Güvenlik kuralları
+    elif any(word in msg_lower for word in ["güvenlik", "kural", "prosedür", "safety", "regulation"]):
+        return """�️ **İş Güvenliği ve Kurallar**
 
-Basit matematik işlemlerinde size yardımcı olabilirim!
+**Temel Güvenlik Kuralları:**
+• Kişisel koruyucu ekipman kullanımı zorunludur
+• Güvenlik eğitimlerine katılım şarttır
+• Acil durum prosedürlerine uygun hareket edilmelidir
+• İş kazası veya yakın kaçış durumları rapor edilmelidir
 
-**Yapabileceğim hesaplamalar:**
-• ➕ Toplama: "15 + 27"
-• ➖ Çıkarma: "100 - 35" 
-• ✖️ Çarpma: "8 × 12" veya "8 x 12"
-• ➗ Bölme: "144 ÷ 12"
-• 📊 Yüzde: "200'nin %15'i"
+**Güvenlik Ekipmanları:**
+• Baret, güvenlik gözlüğü, eldiven
+• İş ayakkabısı ve reflektörlü yelek
+• Departmana özel koruyucu ekipmanlar
 
-**Örnek kullanım:**
-• "25 + 17 kaç eder?"
-• "120'nin %20'si nedir?"
-• "15 x 8 = ?"
+**Acil Durumlar:**
+• Acil çıkış yollarını bilin
+• Yangın alarm sistemlerine dikkat edin
+• İlk yardım noktalarının yerini öğrenin
 
-Hesaplamanızı yukarıdaki formatlardan birinde yazabilir misiniz? 📱"""
+Hangi güvenlik konusu hakkında detaylı bilgi almak istiyorsunuz? �"""
 
-    # Yardım ve rehberlik
-    elif any(word in msg_lower for word in ["yardım", "help", "nasıl", "how", "rehber"]):
-        return """🆘 **Yardım ve Rehberlik**
+    # İzin ve personel konuları
+    elif any(word in msg_lower for word in ["izin", "tatil", "rapor", "özür", "leave", "holiday"]):
+        return """� **İzin ve Personel İşlemleri**
 
-Size en iyi şekilde yardımcı olmak istiyorum!
+**İzin Türleri:**
+• Yıllık izin hakkı
+• Hastalık izni (rapor)
+• Mazeret izni
+• Doğum izni
+• Babalık izni
 
-**Bana şunları sorabilirsiniz:**
-• 🏭 **Fabrika konuları**: Çalışma saatleri, kurallar, prosedürler
-• 💻 **Teknoloji**: Python, AI, programlama, bilgisayar
-• 📚 **Öğrenme**: Eğitim kaynakları, beceri geliştirme
-• 🔢 **Hesaplama**: Basit matematik işlemleri
-• 💼 **Kariyer**: İş dünyası, beceriler, tavsiyelr
+**İzin Başvuru Süreci:**
+• Önceden üst yöneticinize bilgi verin
+• Resmi izin formunu doldurun
+• İnsan Kaynakları onayı alın
+• İş devrini düzenleyin
 
-**Daha iyi yanıt almak için:**
-• Sorularınızı net ve açık yazın
-• Spesifik konular belirtin
-• Örnek vererek detaylandırın
+**Önemli Notlar:**
+• Acil durumlar dışında izinler önceden planlanmalı
+• Uzun süreli izinler için erken başvuru gerekli
 
-Hangi konuda yardıma ihtiyacınız var? 💪"""
+İzin konusunda spesifik bir durumunuz mu var? """
 
-    # Default: Akıllı genel yanıt
+    # Akıllı AI yanıt sistemi - Otomatik analiz
     else:
-        # Türkçe öncelikli soru kelimesi tespiti
-        turkish_question_words = [
-            # Temel Türkçe soru kelimeleri
-            "ne", "nedir", "nesi", "neyi", "neye", "neden", "nedeni",
-            "nasıl", "nasıl", "niçin", "niye", "neden dolayı",
-            "hangi", "hangisi", "hangisini", "hangisine",
-            "kim", "kimi", "kimin", "kimle", "kimden",
-            "nerede", "neresi", "nereye", "nereden",
-            "ne zaman", "nezaman", "kaçta", "saat kaçta",
-            "kaç", "kaçar", "kaç tane", "ne kadar",
-            "var mı", "mevcut mu", "bulunuyor mu",
-            # Ek Türkçe soru kalıpları
-            "acaba", "yoksa", "şu an", "şimdi",
-            "bugün", "yarın", "dün", "hafta",
-            # İngilizce soru kelimeler (düşük öncelik)
-            "what", "how", "when", "where", "why", "which", "who"
-        ]
-        is_question = any(word in msg_lower for word in turkish_question_words) or "?" in user_message
-        
-        if is_question:
-            return f"""🤔 **'{user_message}' hakkında Mefapex bilgi tabanımızda hazır bir kayıt bulamadım.**
+        # Her durumda aynı standart fallback yanıtı
+        return f"""🤔 **'{user_message}' hakkında MEFAPEX bilgi tabanımızda hazır bir kayıt bulamadım.**
 
 **Daha iyi yardım için şunları deneyebilirsiniz:**
 • Soruyu daha detaylandırın
 • Hangi alanda bilgi istediğinizi belirtin
 • Fabrika ile ilgili sorular için spesifik konular sorun
 
-**Daha hızlı ilerlemek için şunları paylaşabilirsiniz:**
-• **Konu:** üretim hattı / ekipman / yazılım / sipariş / kalite
-• **Hangi hat veya ekipman etkilendi?**
-• **Kısa açıklama** veya varsa hata kodu/ekran görüntüsü
-• **Tesis adı ve tarih/saat**"""
-        else:
-            return f"""💬 **'{user_message}' konusunda...**
+**Hızlı erişim için:**
+• 📞 Santral: [Fabrika telefon numarası]
+• 📧 Genel bilgi: [İletişim e-posta]
+• 🏢 İnsan Kaynakları departmanı
 
-Bu konuyu anlıyorum ve size yardımcı olmaya çalışıyorum. 
+**Alternatif olarak şunları sorabilirsiniz:**
+• Çalışma saatleri ve vardiya bilgileri
+• Güvenlik kuralları ve prosedürler
+• İzin ve tatil işlemleri
+• Genel fabrika bilgileri
 
-**Size şunları önerebilirim:**
-• Bu konuda daha spesifik sorular sorabilirsiniz
-• Hangi açıdan yaklaşmak istediğinizi belirtebilirsiniz
-• İlgili diğer konular hakkında soru sorabilirsiniz
-
-**Ben şu konularda uzmanım:**
-• 🏭 MEFAPEX fabrika bilgileri • 💻 Teknoloji ve programlama 
-• 🤖 Yapay zeka • 📚 Eğitim ve öğrenme • 🔢 Matematik
-
-Hangi açıdan size yardımcı olabilirim? 🎯"""
+Size başka nasıl yardımcı olabilirim? 💬"""
 
 def generate_rule_based_response(user_message: str) -> str:
     """Fallback rule-based responses"""
@@ -1717,10 +1622,37 @@ async def clear_chat_history(user_id: str, current_user: dict = Depends(get_curr
             detail="Failed to clear chat history"
         )
 
-# 🆕 NEW SESSION-BASED HISTORY ENDPOINTS
+# 🆕 SESSION-BASED HISTORY ENDPOINTS WITH OPTIMIZATION
+@app.get("/chat/session/current")
+async def get_current_session_info(current_user: dict = Depends(get_current_user)):
+    """Get current active session info for user (optimized for quick access)"""
+    try:
+        # Ensure user has an active session
+        session_id = get_user_session(current_user["user_id"], force_new=False, auto_create=True)
+        
+        # Get session info with recent messages
+        session_info = db_manager.get_session_info(session_id)
+        recent_messages = db_manager.get_chat_history(current_user["user_id"], limit=5)
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "user_id": current_user["user_id"],
+            "session_info": session_info,
+            "recent_messages": recent_messages,
+            "total_recent": len(recent_messages),
+            "session_ready": True
+        }
+    except Exception as e:
+        logger.error(f"Error getting current session for user {current_user['username']}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get current session info"
+        )
+
 @app.get("/chat/sessions/{user_id}")
 async def get_chat_sessions(user_id: str, current_user: dict = Depends(get_current_user)):
-    """Get chat sessions with history (max 15 sessions per user)"""
+    """Get chat sessions with history (max 15 sessions per user) - optimized"""
     try:
         if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
             raise HTTPException(
@@ -1728,11 +1660,16 @@ async def get_chat_sessions(user_id: str, current_user: dict = Depends(get_curre
                 detail="Access denied"
             )
         
+        # 🚀 ENSURE ACTIVE SESSION: Make sure user has current session
+        current_session_id = get_user_session(user_id, force_new=False, auto_create=True)
+        
         sessions = db_manager.get_chat_sessions_with_history(user_id, limit=15)
         return {
             "user_id": user_id,
             "sessions": sessions,
-            "total_sessions": len(sessions)
+            "total_sessions": len(sessions),
+            "current_session_id": current_session_id,
+            "session_ready": True
         }
     except HTTPException:
         raise
@@ -1745,7 +1682,7 @@ async def get_chat_sessions(user_id: str, current_user: dict = Depends(get_curre
 
 @app.post("/chat/sessions/{user_id}/new")
 async def start_new_chat_session(user_id: str, current_user: dict = Depends(get_current_user)):
-    """Start a new chat session for the user"""
+    """Start a new chat session for the user (optimized for immediate use)"""
     try:
         if current_user["user_id"] != user_id and not current_user.get("is_admin", False):
             raise HTTPException(
@@ -1753,11 +1690,21 @@ async def start_new_chat_session(user_id: str, current_user: dict = Depends(get_
                 detail="Access denied"
             )
         
+        # 🚀 FORCE NEW SESSION: Always create a fresh session
         new_session_id = db_manager.start_new_session(user_id)
+        
+        # Verify session was created successfully
+        session_info = db_manager.get_session_info(new_session_id)
+        
+        logger.info(f"New session created for user {current_user['username']}: {new_session_id}")
+        
         return {
             "success": True,
-            "message": "New chat session started",
-            "session_id": new_session_id
+            "message": "New chat session started and ready",
+            "session_id": new_session_id,
+            "session_info": session_info,
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat()
         }
     except Exception as e:
         logger.error(f"Error starting new session: {e}")
@@ -1794,16 +1741,162 @@ async def get_session_info(session_id: str, current_user: dict = Depends(get_cur
             detail="Failed to fetch session info"
         )
 
+@app.get("/chat/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all messages for a specific session"""
+    try:
+        # Get session info to verify ownership
+        session_info = db_manager.get_session_info(session_id)
+        if not session_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        # Check if user owns this session
+        if session_info["user_id"] != current_user["user_id"] and not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        # Get messages for this session
+        messages = db_manager.get_chat_messages(session_id)
+        
+        return {
+            "session_id": session_id,
+            "messages": messages,
+            "message_count": len(messages)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching session messages: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch session messages"
+        )
+
+# 🎯 MAIN SESSION SAVE ENDPOINT
+@app.post("/chat/sessions/save")
+async def save_chat_session(
+    session_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Save a chat session to history with 15-session limit enforcement"""
+    try:
+        user_id = current_user.get("user_id") or current_user.get("username", "unknown")
+        session_id = session_data.get("sessionId")
+        messages = session_data.get("messages", [])
+        started_at = session_data.get("startedAt")
+        
+        if not session_id or not messages:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid session data: missing sessionId or messages"
+            )
+        
+        # Save each message to the database
+        for message in messages:
+            user_message = message.get("user_message", "")
+            bot_response = message.get("bot_response", "")
+            timestamp = message.get("timestamp", datetime.now().isoformat())
+            
+            if user_message and bot_response:
+                db_manager.add_message(
+                    session_id=session_id,
+                    user_id=user_id,
+                    user_message=user_message,
+                    bot_response=bot_response,
+                    source="session_save"
+                )
+        
+        # Create session record
+        db_manager.save_chat_session(
+            user_id=user_id,
+            session_id=session_id,
+            started_at=started_at,
+            message_count=len(messages)
+        )
+        
+        # Enforce 15-session limit per user
+        db_manager.trim_user_sessions(user_id, max_sessions=15)
+        
+        logger.info(f"💾 Session saved successfully: {session_id} ({len(messages)} messages)")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message_count": len(messages),
+            "message": "Session saved successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving chat session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save session: {str(e)}"
+        )
+
+# 🚨 BEACON ENDPOINT FOR EMERGENCY SESSION SAVES
+@app.post("/chat/sessions/save-beacon")
+async def save_session_beacon(request: Request):
+    """Emergency session save endpoint for page unload beacon API"""
+    try:
+        body = await request.body()
+        if body:
+            data = json.loads(body.decode())
+            session_id = data.get("session_id")
+            user_id = data.get("user_id", "demo-user-id")
+            
+            if session_id:
+                # Save the session to database
+                db_manager.save_chat_session_emergency(user_id, session_id)
+                logger.info(f"🚨 Emergency beacon save for session {session_id[:8]}...")
+        
+        return {"status": "saved"}
+    except Exception as e:
+        logger.error(f"Beacon save error: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
-    """Get current user information"""
-    return {
-        "user_id": current_user["user_id"],
-        "username": current_user["username"],
-        "email": current_user["email"],
-        "full_name": current_user.get("full_name"),
-        "created_at": current_user["created_at"].isoformat() if isinstance(current_user["created_at"], datetime) else current_user["created_at"]
-    }
+    """Get current user information with session status"""
+    try:
+        # Ensure user has an active session
+        session_id = get_user_session(current_user["user_id"], force_new=False, auto_create=True)
+        
+        # Get session info
+        session_info = None
+        try:
+            session_info = db_manager.get_session_info(session_id)
+        except Exception as e:
+            logger.warning(f"Could not get session info for user {current_user['username']}: {e}")
+        
+        return {
+            "user_id": current_user["user_id"],
+            "username": current_user["username"],
+            "email": current_user["email"],
+            "full_name": current_user.get("full_name"),
+            "created_at": current_user["created_at"].isoformat() if isinstance(current_user["created_at"], datetime) else current_user["created_at"],
+            "session_id": session_id,
+            "session_ready": True,
+            "session_info": session_info
+        }
+    except Exception as e:
+        logger.error(f"Error getting user info for {current_user.get('username', 'unknown')}: {e}")
+        return {
+            "user_id": current_user["user_id"],
+            "username": current_user["username"],
+            "email": current_user["email"],
+            "full_name": current_user.get("full_name"),
+            "created_at": current_user["created_at"].isoformat() if isinstance(current_user["created_at"], datetime) else current_user["created_at"],
+            "session_ready": False,
+            "error": "Session setup failed"
+        }
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, request: Request):
@@ -1929,11 +2022,12 @@ async def chat(message: ChatMessage, request: Request):
 @app.post("/chat/authenticated", response_model=ChatResponse)
 async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(get_current_user)):
     """
-    Authenticated chat endpoint with session management:
-    1. Search in Qdrant database using available embedding method
-    2. Generate response using OpenAI or Hugging Face
-    3. Save to user's chat session
-    4. Fallback mechanism for reliability
+    Authenticated chat endpoint with optimized session management:
+    1. Auto-ensure user has active session (create if needed)
+    2. Search in Qdrant database using available embedding method
+    3. Generate response using OpenAI or Hugging Face
+    4. Save to user's chat session immediately
+    5. Fallback mechanism for reliability
     """
     try:
         user_message = message.message.strip()
@@ -1943,8 +2037,18 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
         
         logger.info(f"User {current_user['username']} message: {user_message}")
         
-        # Get or create user session
-        session_id = get_user_session(current_user["user_id"])
+        # 🚀 OPTIMIZED SESSION MANAGEMENT: Ensure session exists before processing
+        try:
+            session_id = get_user_session(current_user["user_id"], force_new=False, auto_create=True)
+            if not session_id:
+                # Force create new session if something went wrong
+                session_id = get_user_session(current_user["user_id"], force_new=True, auto_create=True)
+            logger.debug(f"Using session {session_id} for user {current_user['username']}")
+        except Exception as session_error:
+            logger.error(f"Critical session error for user {current_user['username']}: {session_error}")
+            # Continue with fallback error response
+            response_text = "🤖 Oturum yönetimi hatası. Lütfen çıkış yapıp tekrar giriş yapın."
+            return ChatResponse(response=response_text, source="session_error")
         
         # Generate embedding for search
         try:
@@ -1953,7 +2057,11 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
             logger.error(f"Embedding generation failed: {e}")
             response_text = "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
             source = "error"
-            add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
+            # 🚀 IMMEDIATE SESSION SAVE: Save even on errors
+            try:
+                add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
+            except Exception as save_error:
+                logger.error(f"Failed to save error message to session: {save_error}")
             return ChatResponse(response=response_text, source=source)
         
         # Search in Qdrant
@@ -2017,7 +2125,12 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
                 source = "error"
         
         # Save to session
-        add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
+        try:
+            add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
+            logger.debug(f"Message saved to session {session_id} for user {current_user['username']}")
+        except Exception as save_error:
+            logger.error(f"Failed to save message to session for user {current_user['username']}: {save_error}")
+            # Don't fail the request, just log the error
         
         return ChatResponse(response=response_text, source=source)
         
@@ -2026,12 +2139,14 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
         response_text = "🤖 Bir hata oluştu. Lütfen tekrar deneyin."
         source = "error"
         
-        # Try to save to session even on error
+        # Try to save to session even on error with enhanced error handling
         try:
-            session_id = get_user_session(current_user["user_id"])
-            add_message_to_session(session_id, user_message, response_text, source, user_id=current_user["user_id"])
-        except:
-            pass
+            if 'session_id' not in locals():
+                session_id = get_user_session(current_user["user_id"], force_new=False, auto_create=True)
+            add_message_to_session(session_id, user_message if 'user_message' in locals() else "Hata", response_text, source, user_id=current_user["user_id"])
+            logger.debug(f"Error message saved to session for user {current_user['username']}")
+        except Exception as save_error:
+            logger.error(f"Critical: Failed to save error message to session for user {current_user['username']}: {save_error}")
             
         return ChatResponse(response=response_text, source=source)
 
