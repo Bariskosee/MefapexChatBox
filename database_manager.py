@@ -108,7 +108,10 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY,
                     session_id TEXT UNIQUE NOT NULL,
                     user_id TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1,
+                    message_count INTEGER DEFAULT 0
                 )
             """)
             conn.execute("""
@@ -365,6 +368,12 @@ class DatabaseManager:
             with self.pool.get_connection() as conn:
                 cur = conn.cursor()
                 
+                # Check if session exists first
+                cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = ?", (session_id,))
+                if not cur.fetchone():
+                    logger.warning(f"Session {session_id} not found during emergency save")
+                    return
+                
                 # Update session as saved
                 cur.execute("""
                     UPDATE chat_sessions 
@@ -472,26 +481,7 @@ class DatabaseManager:
                 "messages_24h": messages_24h,
                 "pool_active_connections": self.pool._active_connections,
                 "pool_max_connections": self.pool.max_connections
-            } 
-
-    def save_chat_session_emergency(self, user_id: str, session_id: str):
-        """Emergency save for session during page unload"""
-        try:
-            with self.pool.get_connection() as conn:
-                cur = conn.cursor()
-                
-                # Update session as saved
-                cur.execute("""
-                    UPDATE chat_sessions 
-                    SET updated_at = ?, is_active = 0
-                    WHERE session_id = ? AND user_id = ?
-                """, (datetime.now().isoformat(), session_id, user_id))
-                
-                conn.commit()
-                logger.info(f"🚨 Emergency session save completed for {session_id[:8]}...")
-                
-        except Exception as e:
-            logger.error(f"Emergency session save failed: {e}") 
+            }
     def save_chat_session(self, user_id: str, session_id: str, started_at: str, message_count: int):
         """Save a chat session record"""
         try:

@@ -85,3 +85,25 @@ faq_embeddings.pkl
 # Backup files
 *.bak
 *.backup
+*_backup.*
+backup/
+knowledge_backups/
+
+# Model files (large)
+*.bin
+*.safetensors
+models/
+
+# Qdrant storage
+qdrant_storage/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
