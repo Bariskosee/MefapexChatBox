@@ -29,7 +29,6 @@ echo ""
 echo "🚀 Ready to run MEFAPEX Chatbot!"
 echo "   To start the application: python main.py"
 echo "   To load embeddings: python embedding_loader.py"
-echo "   To run tests: python test_chatbot.py"
 echo ""
 
 # Start an interactive shell with the virtual environment
