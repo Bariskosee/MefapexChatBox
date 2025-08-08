@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -21,6 +22,10 @@ from jose import JWTError, jwt
 import uuid
 import json
 import asyncio
+import secrets
+from collections import defaultdict
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 # Import optimized components
 from database_manager import DatabaseManager
@@ -63,9 +68,21 @@ else:
 logger = logging.getLogger(__name__)
 
 # 🔐 AUTHENTICATION CONFIGURATION
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
+# Generate secure SECRET_KEY if not provided
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if ENVIRONMENT == "production":
+        logger.error("🚨 SECURITY ALERT: SECRET_KEY not set in production!")
+        raise RuntimeError(
+            "SECRET_KEY must be set in production environment variables."
+        )
+    else:
+        # Generate a secure random key for development
+        SECRET_KEY = secrets.token_urlsafe(32)
+        logger.warning("⚠️ Using auto-generated SECRET_KEY for development")
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # 🎯 HYBRID CONFIGURATION
 USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
@@ -80,12 +97,6 @@ if ENVIRONMENT == "production" and DEBUG_MODE:
 
 # Additional production checks
 if ENVIRONMENT == "production":
-    if SECRET_KEY == "your-secret-key-change-this-in-production":
-        logger.error("🚨 SECURITY ALERT: Default SECRET_KEY detected in production!")
-        raise RuntimeError(
-            "Default SECRET_KEY must be changed in production. Set a secure SECRET_KEY in environment variables."
-        )
-    
     if not os.getenv("OPENAI_API_KEY") and USE_OPENAI:
         logger.warning("⚠️ OpenAI API key not set in production environment")
 
@@ -103,34 +114,150 @@ chat_sessions = {}
 # Initialize database manager
 db_manager = DatabaseManager()
 
-app = FastAPI(title="MEFAPEX Chatbot API")
+# 🔒 RATE LIMITING IMPLEMENTATION
+class RateLimiter:
+    def __init__(self):
+        self.requests = defaultdict(list)
+        self.chat_requests = defaultdict(list)
+        self.max_requests_per_minute = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
+        self.max_chat_requests_per_minute = int(os.getenv("RATE_LIMIT_CHAT", "20"))
+        
+    def is_allowed(self, client_ip: str, endpoint_type: str = "general") -> bool:
+        """Check if request is allowed based on rate limits"""
+        now = time.time()
+        
+        if endpoint_type == "chat":
+            # Chat-specific rate limiting
+            client_requests = self.chat_requests[client_ip]
+            client_requests[:] = [req_time for req_time in client_requests if now - req_time < 60]
+            
+            if len(client_requests) >= self.max_chat_requests_per_minute:
+                return False
+            
+            client_requests.append(now)
+        else:
+            # General rate limiting
+            client_requests = self.requests[client_ip]
+            client_requests[:] = [req_time for req_time in client_requests if now - req_time < 60]
+            
+            if len(client_requests) >= self.max_requests_per_minute:
+                return False
+            
+            client_requests.append(now)
+        
+        return True
+
+rate_limiter = RateLimiter()
+
+# 🛡️ SECURITY HEADERS MIDDLEWARE
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        
+        # Security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' ws: wss:; "
+            "object-src 'none'; "
+            "base-uri 'self';"
+        )
+        
+        # HSTS header for HTTPS
+        if request.url.scheme == "https" or os.getenv("FORCE_HTTPS", "false").lower() == "true":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+        
+        # Remove server identification
+        if "server" in response.headers:
+            del response.headers["server"]
+        
+        return response
+
+# 🚦 RATE LIMITING MIDDLEWARE
+class RateLimitingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host
+        
+        # Determine endpoint type
+        endpoint_type = "general"
+        if request.url.path.startswith("/chat"):
+            endpoint_type = "chat"
+        
+        # Check rate limit
+        if not rate_limiter.is_allowed(client_ip, endpoint_type):
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Rate limit exceeded",
+                    "message": f"Too many requests. Please try again later.",
+                    "retry_after": 60
+                },
+                headers={"Retry-After": "60"}
+            )
+        
+        return await call_next(request)
+
+app = FastAPI(
+    title="MEFAPEX Chatbot API",
+    description="Secure AI Chatbot API for MEFAPEX Factory",
+    version="2.0.0",
+    docs_url="/docs" if ENVIRONMENT != "production" else None,
+    redoc_url="/redoc" if ENVIRONMENT != "production" else None,
+    openapi_url="/openapi.json" if ENVIRONMENT != "production" else None
+)
 
 # 🔒 PRODUCTION CORS CONFIGURATION
 # Get allowed origins from environment with secure defaults
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS", 
-    "http://localhost:3000,http://localhost:8000,https://yourdomain.com"
-).split(",")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Environment-based CORS configuration
-if os.getenv("ENVIRONMENT", "development") == "production":
-    # Strict CORS for production
-    cors_origins = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
-    cors_methods = ["GET", "POST", "PUT", "DELETE"]
-    cors_headers = ["accept", "authorization", "content-type", "x-csrf-token"]
+if ENVIRONMENT == "production":
+    # Strict CORS for production - NO WILDCARDS
+    cors_origins = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip() and origin.strip() != "*"]
+    cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    cors_headers = ["accept", "authorization", "content-type", "x-csrf-token", "x-requested-with"]
+    allow_credentials = True
+    
+    if not cors_origins:
+        logger.error("🚨 SECURITY ALERT: No valid CORS origins configured for production!")
+        raise RuntimeError("ALLOWED_ORIGINS must be set for production with specific domains (no wildcards)")
+        
 else:
-    # Relaxed CORS for development
-    cors_origins = ["*"]
-    cors_methods = ["*"] 
+    # More relaxed CORS for development (but still not wildcard)
+    cors_origins = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
+    if not cors_origins:
+        cors_origins = ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000"]
+    cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     cors_headers = ["*"]
+    allow_credentials = True
 
+# Add security middleware
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitingMiddleware)
+
+# Add Trusted Host middleware for production
+if ENVIRONMENT == "production":
+    app.add_middleware(
+        TrustedHostMiddleware, 
+        allowed_hosts=ALLOWED_HOSTS
+    )
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=cors_methods,
     allow_headers=cors_headers,
-    expose_headers=["*"] if os.getenv("ENVIRONMENT") != "production" else [],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 # Mount static files
@@ -258,13 +385,43 @@ class ChatSessionsResponse(BaseModel):
     total_sessions: int
 
 # 🔐 AUTHENTICATION UTILITIES
+def validate_password_strength(password: str) -> tuple[bool, str]:
+    """Validate password strength"""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+    
+    if not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter"
+    
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one number"
+    
+    if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+        return False, "Password must contain at least one special character"
+    
+    return True, "Password is strong"
+
 def verify_password(plain_password, hashed_password):
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
 
 def get_password_hash(password):
-    """Hash a password"""
-    return pwd_context.hash(password)
+    """Hash a password with enhanced security"""
+    try:
+        return pwd_context.hash(password)
+    except Exception as e:
+        logger.error(f"Password hashing error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password processing failed"
+        )
 
 def get_user(username: str):
     """Get user from database"""
@@ -280,34 +437,119 @@ def authenticate_user(username: str, password: str):
     return user
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT access token"""
+    """Create JWT access token with enhanced security"""
     to_encode = data.copy()
+    
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # Add security claims
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "jti": str(uuid.uuid4()),  # Unique token ID
+        "iss": "mefapex-api",  # Issuer
+    })
+    
+    try:
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return encoded_jwt
+    except Exception as e:
+        logger.error(f"Token creation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token creation failed"
+        )
+
+# 🛡️ BRUTE FORCE PROTECTION
+class BruteForceProtection:
+    def __init__(self):
+        self.failed_attempts = defaultdict(list)
+        self.blocked_ips = defaultdict(datetime)
+        self.max_attempts = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+        self.block_duration = int(os.getenv("BLOCK_DURATION_MINUTES", "15"))
+    
+    def is_blocked(self, client_ip: str) -> bool:
+        """Check if IP is currently blocked"""
+        if client_ip in self.blocked_ips:
+            if datetime.utcnow() < self.blocked_ips[client_ip]:
+                return True
+            else:
+                # Unblock expired blocks
+                del self.blocked_ips[client_ip]
+                self.failed_attempts[client_ip] = []
+        return False
+    
+    def record_failed_attempt(self, client_ip: str):
+        """Record a failed login attempt"""
+        now = datetime.utcnow()
+        
+        # Clean old attempts (older than 1 hour)
+        self.failed_attempts[client_ip] = [
+            attempt for attempt in self.failed_attempts[client_ip]
+            if now - attempt < timedelta(hours=1)
+        ]
+        
+        # Add current attempt
+        self.failed_attempts[client_ip].append(now)
+        
+        # Check if should block
+        if len(self.failed_attempts[client_ip]) >= self.max_attempts:
+            self.blocked_ips[client_ip] = now + timedelta(minutes=self.block_duration)
+            logger.warning(f"🚨 IP {client_ip} blocked due to too many failed login attempts")
+    
+    def record_successful_attempt(self, client_ip: str):
+        """Record a successful login attempt"""
+        # Clear failed attempts on successful login
+        if client_ip in self.failed_attempts:
+            del self.failed_attempts[client_ip]
+
+brute_force_protection = BruteForceProtection()
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get current authenticated user"""
+    """Get current authenticated user with enhanced security"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
     try:
         token = credentials.credentials
+        
+        # Enhanced token validation
+        if not token or len(token) < 10:
+            raise credentials_exception
+            
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
+        
         if username is None:
             raise credentials_exception
+            
+        # Check token expiration
+        exp_timestamp = payload.get("exp")
+        if exp_timestamp:
+            exp_datetime = datetime.fromtimestamp(exp_timestamp)
+            if datetime.utcnow() > exp_datetime:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has expired",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        
         token_data = TokenData(username=username)
-    except JWTError:
+        
+    except JWTError as e:
+        logger.warning(f"JWT validation error: {e}")
+        raise credentials_exception
+    except Exception as e:
+        logger.error(f"Authentication error: {e}")
         raise credentials_exception
     
-    # Handle demo user
+    # Handle demo user with rate limiting
     if token_data.username == "demo":
         return {
             "user_id": "demo-user-id",
@@ -316,13 +558,22 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             "full_name": "Demo User",
             "created_at": datetime.utcnow(),
             "is_active": True,
-            "is_demo": True
+            "is_demo": True,
+            "rate_limit": "strict"  # Demo users have stricter limits
         }
     
     # Handle regular users
     user = get_user(username=token_data.username)
     if user is None:
         raise credentials_exception
+        
+    # Check if user is still active
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is disabled"
+        )
+        
     return user
 
 def get_user_session(user_id: str, force_new: bool = False) -> str:
@@ -342,9 +593,41 @@ async def read_root():
 
 # 🆕 USER REGISTRATION
 @app.post("/register", response_model=dict)
-async def register_user(user: UserRegister):
-    """Register a new user"""
+async def register_user(user: UserRegister, request: Request):
+    """Register a new user with enhanced security"""
     try:
+        client_ip = request.client.host
+        
+        # Check rate limiting for registration
+        if not rate_limiter.is_allowed(client_ip, "general"):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many registration attempts. Please try again later."
+            )
+        
+        # Validate password strength
+        is_strong, message = validate_password_strength(user.password)
+        if not is_strong:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password validation failed: {message}"
+            )
+        
+        # Validate username (security check)
+        if len(user.username) < 3 or len(user.username) > 50:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username must be between 3 and 50 characters"
+            )
+        
+        # Check for prohibited usernames
+        prohibited_usernames = ["admin", "root", "system", "api", "test", "demo"]
+        if user.username.lower() in prohibited_usernames:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username not allowed"
+            )
+        
         # Check if user already exists
         if user.username in users_db:
             raise HTTPException(
@@ -360,7 +643,7 @@ async def register_user(user: UserRegister):
                     detail="Email already registered"
                 )
         
-        # Create new user
+        # Create new user with enhanced security
         user_id = str(uuid.uuid4())
         hashed_password = get_password_hash(user.password)
         
@@ -371,10 +654,13 @@ async def register_user(user: UserRegister):
             "hashed_password": hashed_password,
             "full_name": user.full_name,
             "created_at": datetime.utcnow(),
-            "is_active": True
+            "is_active": True,
+            "created_ip": client_ip,  # Track creation IP for security
+            "last_login": None,
+            "failed_login_attempts": 0
         }
         
-        logger.info(f"✅ New user registered: {user.username}")
+        logger.info(f"✅ New user registered: {user.username} from IP: {client_ip}")
         
         return {
             "success": True,
@@ -393,35 +679,79 @@ async def register_user(user: UserRegister):
 
 # 🆕 USER LOGIN WITH JWT (supports demo user)
 @app.post("/login", response_model=Token)
-async def login_for_access_token(form_data: LoginRequest):
-    """Authenticate user and return access token"""
-    # Check for demo user first
+async def login_for_access_token(form_data: LoginRequest, request: Request):
+    """Authenticate user and return access token with enhanced security"""
+    client_ip = request.client.host
+    
+    # Check if IP is blocked due to brute force attempts
+    if brute_force_protection.is_blocked(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. IP temporarily blocked.",
+            headers={"Retry-After": str(brute_force_protection.block_duration * 60)}
+        )
+    
+    # Rate limiting for login attempts
+    if not rate_limiter.is_allowed(client_ip, "general"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again later."
+        )
+    
+    # Input validation
+    if not form_data.username or not form_data.password:
+        brute_force_protection.record_failed_attempt(client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username and password are required"
+        )
+    
+    # Check for demo user first (with rate limiting)
     if form_data.username == "demo" and form_data.password == "1234":
-        # Create a temporary demo user entry for JWT
-        demo_user = {
-            "user_id": "demo-user-id",
-            "username": "demo",
-            "email": "demo@mefapex.com",
-            "is_demo": True
-        }
+        brute_force_protection.record_successful_attempt(client_ip)
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": "demo"}, expires_delta=access_token_expires
+            data={"sub": "demo", "ip": client_ip}, expires_delta=access_token_expires
         )
+        logger.info(f"Demo user login from IP: {client_ip}")
         return {"access_token": access_token, "token_type": "bearer"}
     
     # Check regular users
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
+        brute_force_protection.record_failed_attempt(client_ip)
+        logger.warning(f"Failed login attempt for user: {form_data.username} from IP: {client_ip}")
+        
+        # Generic error message to prevent username enumeration
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Check if user account is active
+    if not user.get("is_active", True):
+        brute_force_protection.record_failed_attempt(client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled"
+        )
+    
+    # Successful login
+    brute_force_protection.record_successful_attempt(client_ip)
+    
+    # Update user login information
+    user["last_login"] = datetime.utcnow()
+    user["last_login_ip"] = client_ip
+    user["failed_login_attempts"] = 0
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
+        data={"sub": user["username"], "ip": client_ip}, 
+        expires_delta=access_token_expires
     )
+    
+    logger.info(f"Successful login for user: {form_data.username} from IP: {client_ip}")
     return {"access_token": access_token, "token_type": "bearer"}
 
 # 🆕 LEGACY LOGIN (for backward compatibility)
@@ -1476,20 +1806,45 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     }
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(message: ChatMessage):
+async def chat(message: ChatMessage, request: Request):
     """
-    Hybrid chat endpoint:
+    Hybrid chat endpoint with enhanced security:
     1. Search in Qdrant database using available embedding method
     2. Generate response using OpenAI or Hugging Face
     3. Fallback mechanism for reliability
+    4. Rate limiting and input validation
     """
     try:
+        client_ip = request.client.host
+        
+        # Rate limiting for chat
+        if not rate_limiter.is_allowed(client_ip, "chat"):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many chat requests. Please slow down.",
+                headers={"Retry-After": "60"}
+            )
+        
         user_message = message.message.strip()
         
+        # Input validation and sanitization
         if not user_message:
             raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
         
-        logger.info(f"User message: {user_message}")
+        if len(user_message) > 1000:  # Prevent extremely long messages
+            raise HTTPException(
+                status_code=400, 
+                detail="Mesaj çok uzun. Lütfen 1000 karakterden kısa bir mesaj gönderin."
+            )
+        
+        # Basic XSS prevention
+        if any(tag in user_message.lower() for tag in ['<script', '<iframe', '<object', '<embed']):
+            raise HTTPException(
+                status_code=400,
+                detail="Güvenlik nedeniyle mesajınız kabul edilemedi."
+            )
+        
+        logger.info(f"User message from IP {client_ip}: {user_message[:50]}...")
         
         # Generate embedding for search
         try:

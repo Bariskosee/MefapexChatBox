@@ -1,0 +1,363 @@
+{
+  "timestamp": "20250808_112328",
+  "version": "2.0",
+  "knowledge_items": {
+    "4af53ded-9d98-43a2-9e92-c76a5da4e441": {
+      "id": "4af53ded-9d98-43a2-9e92-c76a5da4e441",
+      "question": "Fabrika çalışma saatleri nelerdir?",
+      "answer": "Fabrikamız haftaiçi 08:00-18:00 saatleri arasında çalışmaktadır. Cumartesi günleri 08:00-13:00 arası yarım gün çalışılır.",
+      "keywords": [
+        "çalışma saatleri",
+        "working hours",
+        "fabrika açılış",
+        "factory open",
+        "iş saatleri",
+        "work time",
+        "kaçta açılıyor",
+        "kaçta kapanıyor",
+        "ne zaman açık"
+      ],
+      "variations": [
+        "Çalışma saatleri nedir?",
+        "Fabrika kaçta açılıyor?",
+        "Fabrika kaçta kapanıyor?",
+        "İş saatleri nedir?",
+        "Ne zaman çalışıyoruz?",
+        "Fabrika ne zaman açık?",
+        "Working hours nedir?",
+        "Calışma saatlerim ne?",
+        "is kaçta başlıyor?",
+        "Kaç saat çalışıyoruz?"
+      ],
+      "category": "working_hours",
+      "confidence_score": 0.87,
+      "created_at": "2025-08-08T07:08:22.233796",
+      "updated_at": "2025-08-08T07:08:22.233805",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "1719e896-dd95-4360-9051-73f8ed4f6c65": {
+      "id": "1719e896-dd95-4360-9051-73f8ed4f6c65",
+      "question": "Personel giriş çıkış saatleri nedir?",
+      "answer": "Personel giriş 08:00, çıkış 18:00'dedir. Geç kalanlar sistemde kayıt altına alınır. 15 dakika tolerans süresi vardır.",
+      "keywords": [
+        "giriş çıkış",
+        "entry exit",
+        "personel saatleri",
+        "staff hours",
+        "mesai",
+        "work shift"
+      ],
+      "variations": [
+        "Giriş saati kaç?",
+        "Çıkış saati kaç?",
+        "Ne zaman işe gelmeliyim?",
+        "Ne zaman evime gidebilirim?",
+        "Mesai saatleri nedir?",
+        "Hangi saatte fabrikadan ayrılırım?"
+      ],
+      "category": "working_hours",
+      "confidence_score": 0.8999999999999999,
+      "created_at": "2025-08-08T07:08:22.796152",
+      "updated_at": "2025-08-08T07:08:22.796160",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "d8a9d054-efd3-4deb-ae54-0e238481e963": {
+      "id": "d8a9d054-efd3-4deb-ae54-0e238481e963",
+      "question": "Yemek saatleri nedir?",
+      "answer": "Öğle yemeği molası 12:00-13:00 arasındadır. Çay molaları sabah 10:00 ve öğleden sonra 15:30'da verilir.",
+      "keywords": [
+        "yemek saatleri",
+        "lunch time",
+        "öğle arası",
+        "lunch break",
+        "mola",
+        "break",
+        "çay molası"
+      ],
+      "variations": [
+        "Öğle arası ne zaman?",
+        "Yemek molası kaçta?",
+        "Lunch break ne zaman?",
+        "Çay molası ne zaman?",
+        "Mola saatleri nedir?",
+        "Ne zaman yemek yiyebilirim?",
+        "Öğle arası kaçta başlıyor?",
+        "Yemek ne zaman?",
+        "öğle arası ne zaman?"
+      ],
+      "category": "meal_breaks",
+      "confidence_score": 0.74,
+      "created_at": "2025-08-08T07:08:22.821054",
+      "updated_at": "2025-08-08T07:08:22.821059",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "95bdc5c0-00f0-498c-8461-8e3e4ea0468b": {
+      "id": "95bdc5c0-00f0-498c-8461-8e3e4ea0468b",
+      "question": "Stok durumu nasıl görüntülenir?",
+      "answer": "Stok durumu Logo sistemi üzerinden takip edilmektedir. Stok raporlarına ERP menüsünden erişilebilir.",
+      "keywords": [
+        "stok",
+        "stock",
+        "envanter",
+        "inventory",
+        "logo sistem",
+        "erp"
+      ],
+      "variations": [
+        "Stok nasıl kontrol edilir?",
+        "Envanter nerede görülür?",
+        "Stock kontrolü nasıl yapılır?",
+        "ERP'de stok nerede?",
+        "Logo sisteminde stok"
+      ],
+      "category": "inventory",
+      "confidence_score": 0.82,
+      "created_at": "2025-08-08T07:08:23.257087",
+      "updated_at": "2025-08-08T07:08:23.257095",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "91e3d2e3-ba4a-44a6-8408-9739afd1107c": {
+      "id": "91e3d2e3-ba4a-44a6-8408-9739afd1107c",
+      "question": "İzin başvurusu nasıl yapılır?",
+      "answer": "İzin başvuruları İK departmanına yazılı olarak veya online sistem üzerinden yapılmalıdır. En az 3 gün önceden başvuru yapılması gerekmektedir.",
+      "keywords": [
+        "izin",
+        "leave",
+        "tatil",
+        "vacation",
+        "ik",
+        "hr",
+        "başvuru"
+      ],
+      "variations": [
+        "Nasıl izin alırım?",
+        "Leave nasıl başvururum?",
+        "Tatil izni nasıl alınır?",
+        "İK'ya nasıl başvururum?",
+        "Online izin sistemi nerede?"
+      ],
+      "category": "hr_policies",
+      "confidence_score": 0.8999999999999999,
+      "created_at": "2025-08-08T07:08:23.585022",
+      "updated_at": "2025-08-08T07:08:23.585029",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "78efe81c-6806-4d3c-9164-bbf057e6a592": {
+      "id": "78efe81c-6806-4d3c-9164-bbf057e6a592",
+      "question": "Vardiya değişiklikleri nasıl yapılır?",
+      "answer": "Vardiya değişiklikleri vardiya amiri onayı ile yapılır. Değişiklik talepleri en az 1 gün önceden bildirilmelidir.",
+      "keywords": [
+        "vardiya",
+        "shift",
+        "değişiklik",
+        "change",
+        "amir",
+        "supervisor"
+      ],
+      "variations": [
+        "Shift nasıl değiştirilir?",
+        "Vardiya nasıl değişir?",
+        "Mesai saati nasıl değişir?",
+        "Amire nasıl başvururum?"
+      ],
+      "category": "operations",
+      "confidence_score": 0.87,
+      "created_at": "2025-08-08T07:08:23.762730",
+      "updated_at": "2025-08-08T07:08:23.762735",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "948abadd-c2a3-491d-b031-c0e5623e5ca3": {
+      "id": "948abadd-c2a3-491d-b031-c0e5623e5ca3",
+      "question": "Güvenlik kuralları nelerdir?",
+      "answer": "Fabrikada kask, güvenlik ayakkabısı ve iş elbisesi zorunludur. Makinelere yaklaşırken dikkatli olunmalı ve güvenlik protokolleri takip edilmelidir.",
+      "keywords": [
+        "güvenlik",
+        "safety",
+        "kask",
+        "helmet",
+        "iş güvenliği",
+        "work safety"
+      ],
+      "variations": [
+        "Safety kuralları nedir?",
+        "İş güvenliği kuralları",
+        "Fabrikada nelere dikkat etmeliyim?",
+        "Hangi ekipmanları kullanmalıyım?"
+      ],
+      "category": "safety_security",
+      "confidence_score": 0.79,
+      "created_at": "2025-08-08T07:08:23.818337",
+      "updated_at": "2025-08-08T07:08:23.818343",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "d4cd3a3f-9de0-4152-b5ed-33412569d1d4": {
+      "id": "d4cd3a3f-9de0-4152-b5ed-33412569d1d4",
+      "question": "Kalite kontrol prosedürleri nelerdir?",
+      "answer": "Her üretim hattında kalite kontrol noktaları bulunur. Ürünler ISO 9001 standartlarına göre test edilir ve raporlanır.",
+      "keywords": [
+        "kalite",
+        "quality",
+        "kontrol",
+        "control",
+        "iso",
+        "test"
+      ],
+      "variations": [
+        "Quality control nasıl yapılır?",
+        "Kalite nasıl kontrol edilir?",
+        "ISO standartları nedir?",
+        "Ürün kalitesi nasıl test edilir?"
+      ],
+      "category": "quality",
+      "confidence_score": 0.87,
+      "created_at": "2025-08-08T07:08:23.989349",
+      "updated_at": "2025-08-08T07:08:23.989355",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "d18a9751-3ac8-434c-a5f1-7a890c40898c": {
+      "id": "d18a9751-3ac8-434c-a5f1-7a890c40898c",
+      "question": "Makine arızaları nasıl bildirilir?",
+      "answer": "Makine arızaları derhal vardiya amiri ve teknik servise bildirilmelidir. Arıza formu doldurularak kayıt altına alınmalıdır.",
+      "keywords": [
+        "makine",
+        "machine",
+        "arıza",
+        "breakdown",
+        "teknik servis",
+        "technical service"
+      ],
+      "variations": [
+        "Machine breakdown nasıl bildirilir?",
+        "Arıza nasıl rapor edilir?",
+        "Teknik servise nasıl ulaşırım?",
+        "Makine bozulduğunda ne yapmalıyım?"
+      ],
+      "category": "maintenance",
+      "confidence_score": 0.82,
+      "created_at": "2025-08-08T07:08:24.045624",
+      "updated_at": "2025-08-08T07:08:24.045629",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    },
+    "f59cfe07-f8c2-40c2-9526-b29d7d39b18b": {
+      "id": "f59cfe07-f8c2-40c2-9526-b29d7d39b18b",
+      "question": "Üretim hedefleri nasıl takip edilir?",
+      "answer": "Günlük üretim hedefleri vardiya başında belirlenir ve sistem üzerinden anlık olarak takip edilir. Raporlar saatlik güncellenir.",
+      "keywords": [
+        "üretim",
+        "production",
+        "hedef",
+        "target",
+        "takip",
+        "tracking"
+      ],
+      "variations": [
+        "Production target nasıl görülür?",
+        "Üretim rakamları nerede?",
+        "Günlük hedefler nerede görülür?",
+        "Production nasıl takip edilir?"
+      ],
+      "category": "production",
+      "confidence_score": 0.95,
+      "created_at": "2025-08-08T07:08:24.190588",
+      "updated_at": "2025-08-08T07:08:24.190594",
+      "version": 1,
+      "source": "initial_load",
+      "usage_count": 0,
+      "last_accessed": null,
+      "priority": 2,
+      "tags": []
+    }
+  },
+  "categories": {
+    "working_hours": [
+      "4af53ded-9d98-43a2-9e92-c76a5da4e441",
+      "1719e896-dd95-4360-9051-73f8ed4f6c65"
+    ],
+    "meal_breaks": [
+      "d8a9d054-efd3-4deb-ae54-0e238481e963"
+    ],
+    "inventory": [
+      "95bdc5c0-00f0-498c-8461-8e3e4ea0468b"
+    ],
+    "hr_policies": [
+      "91e3d2e3-ba4a-44a6-8408-9739afd1107c"
+    ],
+    "operations": [
+      "78efe81c-6806-4d3c-9164-bbf057e6a592"
+    ],
+    "safety_security": [
+      "948abadd-c2a3-491d-b031-c0e5623e5ca3"
+    ],
+    "quality": [
+      "d4cd3a3f-9de0-4152-b5ed-33412569d1d4"
+    ],
+    "maintenance": [
+      "d18a9751-3ac8-434c-a5f1-7a890c40898c"
+    ],
+    "production": [
+      "f59cfe07-f8c2-40c2-9526-b29d7d39b18b"
+    ]
+  },
+  "performance_stats": {
+    "total_queries": 0,
+    "successful_matches": 0,
+    "failed_matches": 0,
+    "learning_additions": 0,
+    "manual_additions": 0,
+    "updates": 0,
+    "last_updated": "2025-08-08T11:18:28.756793",
+    "avg_response_time": 0.0,
+    "cache_hits": 0,
+    "cache_misses": 0
+  },
+  "settings": {
+    "learning_enabled": true,
+    "min_confidence_threshold": 0.7,
+    "max_items_per_category": 100
+  }
+}
