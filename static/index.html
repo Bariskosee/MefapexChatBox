@@ -165,26 +165,26 @@
         }
 
         .history-button-topLeft {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+            position: absolute;
+            top: 85px;
+            left: 40px;
+            background: rgba(255,255,255,0.15);
             color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 12px 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            padding: 10px 18px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             z-index: 1100;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
             transition: all 0.3s ease;
             display: none;
         }
 
         .history-button-topLeft:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-1px);
         }
 
         .history-button-topLeft:active {
@@ -396,6 +396,7 @@
             padding: 10px 18px;
             border-radius: 8px;
             cursor: pointer;
+            font-size: 16px;
             font-weight: 600;
             transition: all 0.3s ease;
         }
@@ -611,14 +612,14 @@
     <!-- Chat History Sidebar -->
     <div id="chatHistorySidebar" style="position: fixed; left: 0; top: 0; height: 100vh; width: 300px; background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; z-index: 2000; box-shadow: 4px 0 15px rgba(0,0,0,0.3); transform: translateX(-100%); transition: transform 0.3s ease; overflow-y: auto;">
         <div style="padding: 25px 20px; border-bottom: 2px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 20px; font-weight: 600;">🕑 Geçmiş</span>
+            <span style="font-size: 20px; font-weight: 600;">Geçmiş</span>
             <button onclick="closeChatHistorySidebar()" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='none'" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 8px; border-radius: 50%; transition: background 0.3s ease;">&times;</button>
         </div>
         <ul id="chatHistoryList" style="list-style: none; padding: 0; margin: 0;"></ul>
     </div>
 
     <!-- History Button - Top Left -->
-    <button id="openHistoryBtn" class="history-button-topLeft" onclick="openChatHistorySidebar()">🕑 Geçmiş</button>
+    <button id="openHistoryBtn" class="history-button-topLeft" onclick="openChatHistorySidebar()">Geçmiş</button>
 
     <!-- WebSocket Client -->
     <script src="static/websocket_client.js"></script>
