@@ -207,6 +207,12 @@ class SessionManager {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 console.log(`💾 Save attempt ${attempt}/${maxRetries}`);
+                console.log(`🔑 Auth token available: ${!!this.authToken}`);
+                console.log(`📝 Session data:`, sessionData);
+                
+                if (!this.authToken) {
+                    throw new Error('No authentication token available');
+                }
                 
                 const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, {
                     method: 'POST',
@@ -217,10 +223,16 @@ class SessionManager {
                     body: JSON.stringify(sessionData)
                 });
 
+                console.log(`📊 Response status: ${response.status}`);
+                console.log(`📊 Response headers:`, [...response.headers.entries()]);
+
                 if (response.ok) {
                     const result = await response.json();
+                    console.log(`✅ Save successful:`, result);
                     return { success: true, data: result };
                 } else {
+                    const errorText = await response.text();
+                    console.error(`❌ Response error: ${response.status} - ${errorText}`);
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
