@@ -28,7 +28,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 # Import optimized components
-from database_manager import DatabaseManager
+from database.production_manager import ProductionDatabaseManager, get_database_manager_sync
 from model_manager import model_manager
 from response_cache import response_cache
 from websocket_manager import websocket_manager, message_handler
@@ -130,9 +130,72 @@ if DEMO_PASSWORD == "1234" and ENVIRONMENT == "production":
         DEMO_USER_ENABLED = False
         logger.warning("🔒 Demo user disabled due to weak password")
 
-# Initialize database manager
-db_manager = DatabaseManager()
-db_manager.init_database()
+# 🗄️ PRODUCTION DATABASE INITIALIZATION
+logger.info(f"🔧 Environment: {ENVIRONMENT}")
+logger.info(f"🐛 Debug mode: {'ENABLED' if DEBUG_MODE else 'DISABLED'}")
+
+# Initialize production database manager
+db_manager = ProductionDatabaseManager()
+
+async def initialize_database():
+    """Initialize database asynchronously"""
+    success = await db_manager.initialize()
+    if not success:
+        logger.error("❌ Failed to initialize database")
+        raise RuntimeError("Database initialization failed")
+    
+    # Validate database integrity
+    integrity_check = await db_manager.validate_data_integrity()
+    if not integrity_check.get("validation_passed", False):
+        logger.warning("⚠️ Database integrity issues detected")
+        for issue in integrity_check.get("issues", []):
+            logger.warning(f"  - {issue}")
+
+# For backward compatibility, create sync wrapper
+class LegacyDatabaseWrapper:
+    """Wrapper to maintain compatibility with existing sync code"""
+    
+    def __init__(self, async_manager: ProductionDatabaseManager):
+        self.async_manager = async_manager
+        self.created_at = datetime.utcnow()
+    
+    @property
+    def db_path(self):
+        return self.async_manager.db_path
+    
+    def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
+        return self.async_manager.get_or_create_session(user_id, force_new)
+    
+    def get_current_session(self, user_id: str):
+        return self.async_manager.get_current_session(user_id)
+    
+    def add_message(self, session_id: str, user_id: str, message: str, response: str, source: str = "ai"):
+        return self.async_manager.add_message_sync(session_id, user_id, message, response, source)
+    
+    def get_chat_history(self, user_id: str, limit: int = 20):
+        return self.async_manager.get_chat_history(user_id, limit)
+    
+    def get_stats(self):
+        return self.async_manager.get_stats()
+    
+    def get_session_info(self, session_id: str):
+        import asyncio
+        return asyncio.run(self.async_manager.get_session(session_id))
+    
+    def get_chat_sessions_with_history(self, user_id: str, limit: int = 15):
+        import asyncio
+        return asyncio.run(self.async_manager.get_user_sessions(user_id, limit))
+    
+    def start_new_session(self, user_id: str) -> str:
+        import asyncio
+        return asyncio.run(self.async_manager.create_session(user_id))
+    
+    def clear_chat_history(self, user_id: str):
+        # This would need to be implemented in the async manager
+        logger.warning("clear_chat_history not implemented in production manager")
+
+# Create legacy wrapper for compatibility - will be replaced after database initialization
+legacy_db_manager = None
 
 # 🔒 RATE LIMITING IMPLEMENTATION
 class RateLimiter:
@@ -305,17 +368,31 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Startup event for model warmup
+# Startup event for database and model initialization
 @app.on_event("startup")
 async def startup_event():
-    """Initialize and warm up models on startup"""
+    """Initialize database and warm up models on startup"""
+    global legacy_db_manager
+    
     logger.info("🚀 Starting MEFAPEX Chatbot API")
+    
     try:
+        # Initialize database first
+        logger.info("🔥 Initializing production database...")
+        await initialize_database()
+        
+        # Create legacy wrapper after database is initialized
+        legacy_db_manager = LegacyDatabaseWrapper(db_manager)
+        logger.info("✅ Database initialization completed")
+        
         # Warm up models for better first-request performance
+        logger.info("🔥 Starting model warmup...")
         await startup_warmup()
-        logger.info("✅ Startup warmup completed")
+        logger.info("✅ Model warmup completed")
+        
     except Exception as e:
-        logger.warning(f"⚠️ Startup warmup failed: {e}")
+        logger.error(f"❌ Startup failed: {e}")
+        raise
     
     # Start memory monitoring if available
     if MEMORY_MONITORING_AVAILABLE and ENVIRONMENT == "production":
@@ -324,6 +401,8 @@ async def startup_event():
             logger.info("🧠 Memory monitoring started")
         except Exception as e:
             logger.warning(f"⚠️ Memory monitoring setup failed: {e}")
+    
+    logger.info("🔥 MEFAPEX API ready for requests")
     
     logger.info("🔥 MEFAPEX API ready for requests")
 
@@ -617,12 +696,12 @@ def get_user_session(user_id: str, force_new: bool = False, auto_create: bool = 
     """
     try:
         if auto_create:
-            session_id = db_manager.get_or_create_session(user_id, force_new=force_new)
+            session_id = legacy_legacy_db_manager.get_or_create_session(user_id, force_new=force_new)
             logger.debug(f"Session {'created' if force_new else 'retrieved'} for user {user_id}: {session_id}")
             return session_id
         else:
             # Only get existing session, don't create
-            existing_session = db_manager.get_current_session(user_id)
+            existing_session = legacy_legacy_db_manager.get_current_session(user_id)
             if existing_session:
                 return existing_session
             else:
@@ -632,7 +711,7 @@ def get_user_session(user_id: str, force_new: bool = False, auto_create: bool = 
         logger.error(f"Session management error for user {user_id}: {e}")
         # Fallback: try to create a new session
         try:
-            return db_manager.get_or_create_session(user_id, force_new=True)
+            return legacy_db_manager.get_or_create_session(user_id, force_new=True)
         except Exception as fallback_error:
             logger.error(f"Fallback session creation failed for user {user_id}: {fallback_error}")
             raise
@@ -725,7 +804,7 @@ def add_message_to_session(session_id: str, user_message: str, bot_response: str
             logger.warning(f"Bot response truncated for session {session_id}")
         
         # 🔒 SQL INJECTION PROTECTION - Use parameterized queries (handled by DatabaseManager)
-        db_manager.add_message(session_id, user_id, user_message, bot_response, source)
+        legacy_db_manager.add_message(session_id, user_id, user_message, bot_response, source)
         
         logger.debug(f"✅ Message safely added to session {session_id}: user='{user_message[:50]}...', bot='{bot_response[:50]}...', source={source}")
         
@@ -888,7 +967,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
             # 🚀 NEW SESSION CREATION: Create new session on each login
             demo_user_id = "demo-user-id"
             try:
-                session_id = db_manager.get_or_create_session(demo_user_id, force_new=True)
+                session_id = legacy_db_manager.get_or_create_session(demo_user_id, force_new=True)
                 logger.info(f"Demo user new session created: {session_id}")
             except Exception as e:
                 logger.warning(f"Demo session creation issue: {e}")
@@ -941,7 +1020,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     
     # 🚀 NEW SESSION CREATION: Create new session on each login
     try:
-        session_id = db_manager.get_or_create_session(user["user_id"], force_new=True)
+        session_id = legacy_db_manager.get_or_create_session(user["user_id"], force_new=True)
         logger.info(f"User {user['username']} new session created: {session_id}")
     except Exception as e:
         logger.warning(f"User session creation issue for {user['username']}: {e}")
@@ -1114,11 +1193,11 @@ async def comprehensive_health_check():
         # 4. 🗄️ Database Connectivity Check
         try:
             start_time = time.time()
-            db_stats = db_manager.get_stats()
+            db_stats = legacy_db_manager.get_stats()
             
             # Test database query
             test_query_start = time.time()
-            db_manager.get_or_create_session("health_check_user")
+            legacy_db_manager.get_or_create_session("health_check_user")
             query_time = time.time() - test_query_start
             
             health_data["checks"]["database"] = {
@@ -1239,7 +1318,7 @@ async def comprehensive_health_check():
             
         # Add summary metrics
         health_data["metrics"] = {
-            "uptime_seconds": (datetime.utcnow() - db_manager.created_at).total_seconds() if hasattr(db_manager, 'created_at') else 0,
+            "uptime_seconds": (datetime.utcnow() - legacy_db_manager.created_at).total_seconds() if hasattr(db_manager, 'created_at') else 0,
             "total_checks": len(health_data["checks"]),
             "healthy_checks": len([s for s in check_statuses if s == "healthy"]),
             "warning_checks": len([s for s in check_statuses if s == "warning"]),
@@ -1753,8 +1832,8 @@ async def get_chat_history(user_id: str, current_user: dict = Depends(get_curren
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied"
             )
-        session_id = db_manager.get_or_create_session(user_id)
-        messages = db_manager.get_chat_history(user_id, limit=20)
+        session_id = legacy_db_manager.get_or_create_session(user_id)
+        messages = legacy_db_manager.get_chat_history(user_id, limit=20)
         return ChatHistoryResponse(
             session_id=session_id,
             messages=messages,
@@ -1778,7 +1857,7 @@ async def clear_chat_history(user_id: str, current_user: dict = Depends(get_curr
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied"
             )
-        db_manager.clear_chat_history(user_id)
+        legacy_db_manager.clear_chat_history(user_id)
         return {"success": True, "message": "Chat history cleared"}
     except HTTPException:
         raise
@@ -1798,8 +1877,8 @@ async def get_current_session_info(current_user: dict = Depends(get_current_user
         session_id = get_user_session(current_user["user_id"], force_new=False, auto_create=True)
         
         # Get session info with recent messages
-        session_info = db_manager.get_session_info(session_id)
-        recent_messages = db_manager.get_chat_history(current_user["user_id"], limit=5)
+        session_info = legacy_db_manager.get_session_info(session_id)
+        recent_messages = legacy_db_manager.get_chat_history(current_user["user_id"], limit=5)
         
         return {
             "success": True,
@@ -1830,7 +1909,7 @@ async def get_chat_sessions(user_id: str, current_user: dict = Depends(get_curre
         # 🚀 ENSURE ACTIVE SESSION: Make sure user has current session
         current_session_id = get_user_session(user_id, force_new=False, auto_create=True)
         
-        sessions = db_manager.get_chat_sessions_with_history(user_id, limit=15)
+        sessions = legacy_db_manager.get_chat_sessions_with_history(user_id, limit=15)
         return {
             "user_id": user_id,
             "sessions": sessions,
@@ -1858,10 +1937,10 @@ async def start_new_chat_session(user_id: str, current_user: dict = Depends(get_
             )
         
         # 🚀 FORCE NEW SESSION: Always create a fresh session
-        new_session_id = db_manager.start_new_session(user_id)
+        new_session_id = legacy_db_manager.start_new_session(user_id)
         
         # Verify session was created successfully
-        session_info = db_manager.get_session_info(new_session_id)
+        session_info = legacy_db_manager.get_session_info(new_session_id)
         
         logger.info(f"New session created for user {current_user['username']}: {new_session_id}")
         
@@ -1884,7 +1963,7 @@ async def start_new_chat_session(user_id: str, current_user: dict = Depends(get_
 async def get_session_info(session_id: str, current_user: dict = Depends(get_current_user)):
     """Get information about a specific session"""
     try:
-        session_info = db_manager.get_session_info(session_id)
+        session_info = legacy_db_manager.get_session_info(session_id)
         if not session_info:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1913,7 +1992,7 @@ async def get_session_messages(session_id: str, current_user: dict = Depends(get
     """Get all messages for a specific session"""
     try:
         # Get session info to verify ownership
-        session_info = db_manager.get_session_info(session_id)
+        session_info = legacy_db_manager.get_session_info(session_id)
         if not session_info:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1928,7 +2007,7 @@ async def get_session_messages(session_id: str, current_user: dict = Depends(get
             )
         
         # Get messages for this session
-        messages = db_manager.get_chat_messages(session_id)
+        messages = legacy_db_manager.get_chat_messages(session_id)
         
         return {
             "session_id": session_id,
@@ -1971,7 +2050,7 @@ async def save_chat_session(
             timestamp = message.get("timestamp", datetime.now().isoformat())
             
             if user_message and bot_response:
-                db_manager.add_message(
+                legacy_db_manager.add_message(
                     session_id=session_id,
                     user_id=user_id,
                     user_message=user_message,
@@ -1980,7 +2059,7 @@ async def save_chat_session(
                 )
         
         # Create session record
-        db_manager.save_chat_session(
+        legacy_db_manager.save_chat_session(
             user_id=user_id,
             session_id=session_id,
             started_at=started_at,
@@ -1988,7 +2067,7 @@ async def save_chat_session(
         )
         
         # Enforce 15-session limit per user
-        db_manager.trim_user_sessions(user_id, max_sessions=15)
+        legacy_db_manager.trim_user_sessions(user_id, max_sessions=15)
         
         logger.info(f"💾 Session saved successfully: {session_id} ({len(messages)} messages)")
         
@@ -2021,7 +2100,7 @@ async def save_session_beacon(request: Request):
             
             if session_id:
                 # Save the session to database
-                db_manager.save_chat_session_emergency(user_id, session_id)
+                legacy_db_manager.save_chat_session_emergency(user_id, session_id)
                 logger.info(f"🚨 Emergency beacon save for session {session_id[:8]}...")
         
         return {"status": "saved"}
@@ -2039,7 +2118,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         # Get session info
         session_info = None
         try:
-            session_info = db_manager.get_session_info(session_id)
+            session_info = legacy_db_manager.get_session_info(session_id)
         except Exception as e:
             logger.warning(f"Could not get session info for user {current_user['username']}: {e}")
         
@@ -2387,7 +2466,7 @@ async def system_status():
     """Get current system configuration"""
     model_info = model_manager.get_model_info()
     cache_stats = response_cache.get_stats()
-    db_stats = db_manager.get_stats()
+    db_stats = legacy_db_manager.get_stats()
     
     return {
         "openai_enabled": USE_OPENAI,
@@ -2605,7 +2684,7 @@ async def handle_websocket_get_history(websocket: WebSocket, user_id: str):
     """
     try:
         # Get last 10 messages from database
-        messages = db_manager.get_chat_history(user_id, limit=10)
+        messages = legacy_db_manager.get_chat_history(user_id, limit=10)
         
         await websocket_manager.send_personal_message({
             'type': 'chat_history',
@@ -2627,7 +2706,7 @@ async def handle_websocket_get_history(websocket: WebSocket, user_id: str):
     Handle request for chat history via WebSocket
     """
     try:
-        messages = db_manager.get_chat_history(user_id, limit=20)
+        messages = legacy_db_manager.get_chat_history(user_id, limit=20)
         
         await websocket_manager.send_personal_message({
             'type': 'chat_history',
@@ -2667,7 +2746,7 @@ async def clear_caches():
 @app.get("/performance/database")
 async def get_database_performance():
     """Get database performance statistics"""
-    return db_manager.get_stats()
+    return legacy_db_manager.get_stats()
 
 @app.get("/performance/websockets")
 async def get_websocket_performance():
