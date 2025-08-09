@@ -20,6 +20,15 @@ sqlalchemy==2.0.23
 alembic==1.12.1
 aiosqlite==0.19.0  # SQLite async driver
 
+# Production Database Drivers
+psycopg2-binary==2.9.9  # PostgreSQL driver (recommended for production)
+pymysql==1.1.0  # MySQL driver (alternative for production)
+asyncpg==0.29.0  # Async PostgreSQL driver
+
+# Database Connection Pooling and Management
+sqlalchemy[asyncio]==2.0.23  # Async SQLAlchemy support
+greenlet==3.0.1  # Required for SQLAlchemy async
+
 # AI and ML
 openai==1.98.0
 transformers>=4.40.0

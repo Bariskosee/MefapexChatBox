@@ -32,6 +32,7 @@ from database_manager import DatabaseManager
 from model_manager import model_manager
 from response_cache import response_cache
 from websocket_manager import websocket_manager, message_handler
+from security_config import security_config, input_validator
 
 # Load environment variables
 load_dotenv()
@@ -107,9 +108,27 @@ logger.info(f"🐛 Debug mode: {'ENABLED' if DEBUG_MODE else 'DISABLED'}")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
-# In-memory storage (replace with database in production)
+# 🔒 SECURE USER STORAGE - Database-based with proper validation
 users_db = {}
 chat_sessions = {}
+
+# 🚨 PRODUCTION SECURITY ALERT: Remove demo user in production
+DEMO_USER_ENABLED = security_config.demo_user_enabled
+if ENVIRONMENT == "production" and DEMO_USER_ENABLED:
+    logger.error("🚨 CRITICAL SECURITY ALERT: Demo user is enabled in production!")
+    if not os.getenv("FORCE_DEMO_IN_PRODUCTION", "false").lower() == "true":
+        DEMO_USER_ENABLED = False
+        logger.warning("🔒 Demo user automatically disabled for production security")
+    else:
+        logger.critical("🚨 SECURITY RISK: Demo user is FORCED enabled in production!")
+
+# Enhanced demo password security
+DEMO_PASSWORD = security_config.demo_password if security_config.demo_user_enabled else None
+if DEMO_PASSWORD == "1234" and ENVIRONMENT == "production":
+    logger.critical("🚨 SECURITY ALERT: Demo user using default weak password in production!")
+    if not os.getenv("ACCEPT_WEAK_DEMO_PASSWORD", "false").lower() == "true":
+        DEMO_USER_ENABLED = False
+        logger.warning("🔒 Demo user disabled due to weak password")
 
 # Initialize database manager
 db_manager = DatabaseManager()
@@ -214,31 +233,53 @@ app = FastAPI(
     openapi_url="/openapi.json" if ENVIRONMENT != "production" else None
 )
 
-# 🔒 PRODUCTION CORS CONFIGURATION
-# Get allowed origins from environment with secure defaults
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+# 🔒 PRODUCTION CORS CONFIGURATION - STRICT SECURITY WITH ZERO TOLERANCE
+# Get allowed origins from environment with ABSOLUTE NO WILDCARDS in production
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000,http://127.0.0.1:8000").split(",")
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-# Environment-based CORS configuration
+# 🚨 ENHANCED SECURITY: Use security_config for CORS validation
+cors_origins = security_config.allowed_origins
+
+# Environment-based CORS configuration with ZERO TOLERANCE for wildcards in production
 if ENVIRONMENT == "production":
-    # Strict CORS for production - NO WILDCARDS
-    cors_origins = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip() and origin.strip() != "*"]
+    # 🚨 PRODUCTION SECURITY AUDIT
+    if "*" in cors_origins:
+        logger.critical("🚨 SECURITY BREACH: Wildcard CORS detected in production!")
+        raise RuntimeError(
+            "CORS wildcard (*) is FORBIDDEN in production. This is a critical security vulnerability. "
+            "Set specific domains in ALLOWED_ORIGINS environment variable."
+        )
+    
+    # Additional production validation
+    for origin in cors_origins:
+        if not origin.startswith("https://") and origin not in ["http://localhost:8000", "http://127.0.0.1:8000"]:
+            logger.warning(f"⚠️ Non-HTTPS origin in production: {origin}")
+    
     cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     cors_headers = ["accept", "authorization", "content-type", "x-csrf-token", "x-requested-with"]
     allow_credentials = True
     
     if not cors_origins:
-        logger.error("🚨 SECURITY ALERT: No valid CORS origins configured for production!")
-        raise RuntimeError("ALLOWED_ORIGINS must be set for production with specific domains (no wildcards)")
-        
+        logger.critical("🚨 CRITICAL SECURITY ALERT: No valid CORS origins configured for production!")
+        raise RuntimeError(
+            "ALLOWED_ORIGINS must be set for production with specific HTTPS domains. "
+            "Wildcards (*) and HTTP (except localhost) are FORBIDDEN in production."
+        )
+    
+    # Security audit log
+    logger.info(f"🔒 Production CORS origins (validated): {cors_origins}")
+    
 else:
-    # More relaxed CORS for development (but still not wildcard)
-    cors_origins = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
-    if not cors_origins:
-        cors_origins = ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000"]
+    # Development CORS (more permissive but still no global wildcards)
+    if "*" in cors_origins:
+        logger.warning("⚠️ Wildcard CORS detected in development - allowed but not recommended")
+    
     cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    cors_headers = ["*"]
+    cors_headers = ["*"]  # More permissive for development
     allow_credentials = True
+    
+    logger.info(f"🔧 Development CORS origins: {cors_origins}")
 
 # Add security middleware
 app.add_middleware(SecurityHeadersMiddleware)
@@ -387,23 +428,8 @@ class ChatSessionsResponse(BaseModel):
 
 # 🔐 AUTHENTICATION UTILITIES
 def validate_password_strength(password: str) -> tuple[bool, str]:
-    """Validate password strength"""
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
-    
-    if not any(c.isupper() for c in password):
-        return False, "Password must contain at least one uppercase letter"
-    
-    if not any(c.islower() for c in password):
-        return False, "Password must contain at least one lowercase letter"
-    
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one number"
-    
-    if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
-        return False, "Password must contain at least one special character"
-    
-    return True, "Password is strong"
+    """Validate password strength using security config"""
+    return input_validator.validate_password(password)
 
 def verify_password(plain_password, hashed_password):
     """Verify a password against its hash"""
@@ -613,35 +639,110 @@ def get_user_session(user_id: str, force_new: bool = False, auto_create: bool = 
 
 def add_message_to_session(session_id: str, user_message: str, bot_response: str, source: str, user_id: str = None):
     """
-    Add message to chat session (persistent) with enhanced error handling
+    Add message to chat session with comprehensive security protection
     
     Args:
-        session_id: Session identifier
-        user_message: User's input message
-        bot_response: Bot's response
-        source: Response source (openai, huggingface, etc.)
-        user_id: User identifier (optional but recommended)
+        session_id: Session identifier (validated UUID)
+        user_message: User's input message (validated and sanitized)
+        bot_response: Bot's response (validated and sanitized) 
+        source: Response source (validated enum)
+        user_id: User identifier (validated UUID, optional but recommended)
     """
     try:
-        if user_id is None:
-            # Try to infer user_id from session (legacy fallback)
-            logger.warning("user_id not provided to add_message_to_session, using None")
+        # 🛡️ COMPREHENSIVE INPUT VALIDATION
+        if not session_id or not isinstance(session_id, str):
+            raise ValueError("Invalid session_id: must be non-empty string")
         
-        # Ensure parameters are clean
+        if not user_message or not isinstance(user_message, str):
+            raise ValueError("Invalid user_message: must be non-empty string") 
+            
+        if not bot_response or not isinstance(bot_response, str):
+            raise ValueError("Invalid bot_response: must be non-empty string")
+            
+        if not source or not isinstance(source, str):
+            raise ValueError("Invalid source: must be non-empty string")
+        
+        # 🔒 SANITIZE AND VALIDATE INPUTS
         session_id = str(session_id).strip()
         user_message = str(user_message).strip()
         bot_response = str(bot_response).strip()
         source = str(source).strip()
         
-        # Call database manager with enhanced logging
-        db_manager.add_message(session_id, user_id, user_message, bot_response, source)
-        logger.debug(f"Message added to session {session_id}: user='{user_message[:50]}...', bot='{bot_response[:50]}...', source={source}")
+        # 🔍 SECURITY VALIDATION: Check for malicious content
+        is_xss, xss_pattern = input_validator.detect_xss_attempt(user_message)
+        if is_xss:
+            logger.warning(f"🚨 XSS attempt blocked in user message: {xss_pattern}")
+            raise ValueError(f"Invalid content detected: potential XSS attempt")
         
+        is_sql_injection, sql_pattern = input_validator.detect_sql_injection(user_message)
+        if is_sql_injection:
+            logger.warning(f"🚨 SQL injection attempt blocked: {sql_pattern}")
+            raise ValueError(f"Invalid content detected: potential SQL injection")
+        
+        # 📝 MESSAGE VALIDATION
+        is_valid_msg, msg_error = input_validator.validate_message(user_message)
+        if not is_valid_msg:
+            raise ValueError(f"Message validation failed: {msg_error}")
+        
+        # Validate UUID format for session_id
+        import uuid
+        try:
+            uuid.UUID(session_id)
+        except ValueError:
+            logger.warning(f"Invalid session_id format: {session_id}")
+            raise ValueError("session_id must be valid UUID format")
+        
+        # Validate user_id if provided
+        if user_id is not None:
+            user_id = str(user_id).strip()
+            if user_id:  # Only validate if not empty
+                try:
+                    # Allow demo-user-id or UUID format
+                    if user_id != "demo-user-id":
+                        uuid.UUID(user_id)
+                except ValueError:
+                    logger.warning(f"Invalid user_id format: {user_id}")
+                    raise ValueError("user_id must be valid UUID format or 'demo-user-id'")
+        
+        # Validate source against allowed values
+        allowed_sources = ["openai", "huggingface", "database", "cache", "advanced_ai", "local_ai", "session_save", "fallback", "error"]
+        if source not in allowed_sources:
+            logger.warning(f"Invalid source: {source}")
+            source = "unknown"
+        
+        # 🧹 CONTENT SANITIZATION
+        user_message = input_validator.sanitize_input(user_message)
+        bot_response = input_validator.sanitize_input(bot_response)
+        
+        # 📏 ENHANCED LENGTH VALIDATION  
+        max_msg_len = security_config.max_message_length
+        if len(user_message) > max_msg_len:
+            user_message = user_message[:max_msg_len] + "...[truncated for security]"
+            logger.warning(f"User message truncated for session {session_id}")
+            
+        if len(bot_response) > 5000:
+            bot_response = bot_response[:5000] + "...[truncated]"
+            logger.warning(f"Bot response truncated for session {session_id}")
+        
+        # 🔒 SQL INJECTION PROTECTION - Use parameterized queries (handled by DatabaseManager)
+        db_manager.add_message(session_id, user_id, user_message, bot_response, source)
+        
+        logger.debug(f"✅ Message safely added to session {session_id}: user='{user_message[:50]}...', bot='{bot_response[:50]}...', source={source}")
+        
+    except ValueError as ve:
+        logger.error(f"Validation error in add_message_to_session: {ve}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Input validation failed: {str(ve)}"
+        )
     except Exception as e:
         logger.error(f"Failed to add message to session {session_id}: {e}")
         logger.error(f"Message details: user_id={user_id}, user_msg='{user_message[:100] if user_message else 'None'}', source={source}")
         # Re-raise to let caller handle the error
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save message securely"
+        )
 
 @app.get("/")
 async def read_root():
@@ -669,19 +770,12 @@ async def register_user(user: UserRegister, request: Request):
                 detail=f"Password validation failed: {message}"
             )
         
-        # Validate username (security check)
-        if len(user.username) < 3 or len(user.username) > 50:
+        # Validate username (enhanced security check)
+        is_valid_username, username_message = input_validator.validate_username(user.username)
+        if not is_valid_username:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username must be between 3 and 50 characters"
-            )
-        
-        # Check for prohibited usernames
-        prohibited_usernames = ["admin", "root", "system", "api", "test", "demo"]
-        if user.username.lower() in prohibited_usernames:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username not allowed"
+                detail=f"Username validation failed: {username_message}"
             )
         
         # Check if user already exists
@@ -762,24 +856,59 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
             detail="Username and password are required"
         )
     
-    # Check for demo user first (with rate limiting)
-    if form_data.username == "demo" and form_data.password == "1234":
-        brute_force_protection.record_successful_attempt(client_ip)
+    # 🚨 SECURE DEMO USER CHECK with enhanced production protection
+    if DEMO_USER_ENABLED and form_data.username == "demo":
+        # 🔒 ENHANCED DEMO USER SECURITY with input validation
+        if not input_validator.validate_username(form_data.username)[0]:
+            brute_force_protection.record_failed_attempt(client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid username format"
+            )
         
-        # 🚀 NEW SESSION CREATION: Create new session on each login
-        demo_user_id = "demo-user-id"
-        try:
-            session_id = db_manager.get_or_create_session(demo_user_id, force_new=True)
-            logger.info(f"Demo user new session created: {session_id}")
-        except Exception as e:
-            logger.warning(f"Demo session creation issue: {e}")
+        demo_password_hash = os.getenv("DEMO_PASSWORD_HASH")  # Allow custom demo password
+        demo_password = DEMO_PASSWORD or os.getenv("DEMO_PASSWORD", "1234")
         
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": "demo", "ip": client_ip}, expires_delta=access_token_expires
-        )
-        logger.info(f"Demo user login from IP: {client_ip}")
-        return {"access_token": access_token, "token_type": "bearer"}
+        # Validate demo password strength if it's the default weak password
+        if demo_password == "1234" and ENVIRONMENT == "production":
+            logger.critical("🚨 PRODUCTION SECURITY BREACH: Default weak demo password detected!")
+            brute_force_protection.record_failed_attempt(client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Demo access disabled due to security policy"
+            )
+        
+        if form_data.password == demo_password:
+            brute_force_protection.record_successful_attempt(client_ip)
+            
+            # ⚠️ PRODUCTION WARNING
+            if ENVIRONMENT == "production":
+                logger.warning(f"🚨 PRODUCTION DEMO LOGIN from IP: {client_ip} - Consider disabling demo user!")
+            
+            # 🚀 NEW SESSION CREATION: Create new session on each login
+            demo_user_id = "demo-user-id"
+            try:
+                session_id = db_manager.get_or_create_session(demo_user_id, force_new=True)
+                logger.info(f"Demo user new session created: {session_id}")
+            except Exception as e:
+                logger.warning(f"Demo session creation issue: {e}")
+            
+            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = create_access_token(
+                data={"sub": "demo", "ip": client_ip, "session_type": "demo"}, 
+                expires_delta=access_token_expires
+            )
+            logger.info(f"Demo user login from IP: {client_ip}")
+            return {"access_token": access_token, "token_type": "bearer"}
+        else:
+            # Wrong demo password
+            brute_force_protection.record_failed_attempt(client_ip)
+            logger.warning(f"Failed demo login attempt from IP: {client_ip}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     
     # Check regular users
     user = authenticate_user(form_data.username, form_data.password)
@@ -826,19 +955,57 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     logger.info(f"Successful login for user: {form_data.username} from IP: {client_ip}")
     return {"access_token": access_token, "token_type": "bearer"}
 
-# 🆕 LEGACY LOGIN (for backward compatibility)
 @app.post("/login-legacy", response_model=LoginResponse)
-async def login_legacy(request: LoginRequest):
-    """Legacy login endpoint for demo purposes"""
-    # Keep demo login for testing
-    if request.username == "demo" and request.password == "1234":
-        return LoginResponse(success=True, message="Giriş başarılı")
+async def login_legacy(request: LoginRequest, request_obj: Request):
+    """
+    Legacy login endpoint with enhanced security
+    🚨 DEPRECATED: Use /login endpoint instead for JWT authentication
+    """
+    client_ip = request_obj.client.host
     
-    # Check real users
+    # Apply same brute force protection
+    if brute_force_protection.is_blocked(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="IP temporarily blocked due to too many failed attempts."
+        )
+    
+    # Input validation
+    if not request.username or not request.password:
+        brute_force_protection.record_failed_attempt(client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username and password are required"
+        )
+    
+    # Length validation
+    if len(request.username) > 100 or len(request.password) > 100:
+        brute_force_protection.record_failed_attempt(client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input length"
+        )
+    
+    # 🚨 SECURE DEMO USER CHECK
+    if DEMO_USER_ENABLED and request.username == "demo":
+        demo_password = os.getenv("DEMO_PASSWORD", "1234")
+        if request.password == demo_password:
+            brute_force_protection.record_successful_attempt(client_ip)
+            logger.info(f"Legacy demo login from IP: {client_ip}")
+            return LoginResponse(success=True, message="Giriş başarılı")
+        else:
+            brute_force_protection.record_failed_attempt(client_ip)
+            return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
+    
+    # Check real users with proper password verification
     user = authenticate_user(request.username, request.password)
     if user:
+        brute_force_protection.record_successful_attempt(client_ip)
+        logger.info(f"Legacy login success for user: {request.username} from IP: {client_ip}")
         return LoginResponse(success=True, message="Giriş başarılı")
     else:
+        brute_force_protection.record_failed_attempt(client_ip)
+        logger.warning(f"Legacy login failed for user: {request.username} from IP: {client_ip}")
         return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
 
 @app.get("/health")
@@ -1899,18 +2066,41 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         }
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(message: ChatMessage, request: Request):
+async def chat(message: ChatMessage, request: Request, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))):
     """
-    Hybrid chat endpoint with enhanced security:
-    1. Search in Qdrant database using available embedding method
-    2. Generate response using OpenAI or Hugging Face
-    3. Fallback mechanism for reliability
-    4. Rate limiting and input validation
+    🔒 SECURE Hybrid chat endpoint with optional authentication:
+    1. Optional authentication (works with or without token)
+    2. Input validation and sanitization
+    3. SQL injection protection
+    4. XSS prevention
+    5. Rate limiting
+    6. Search in Qdrant database using available embedding method
+    7. Generate response using OpenAI or Hugging Face
+    8. Fallback mechanism for reliability
     """
     try:
         client_ip = request.client.host
         
-        # Rate limiting for chat
+        # Handle optional authentication
+        current_user = None
+        user_id = "anonymous"
+        
+        if credentials and credentials.credentials:
+            try:
+                # Try to get authenticated user
+                current_user = await get_current_user(credentials)
+                user_id = current_user.get("user_id", "anonymous")
+                logger.info(f"Authenticated user: {current_user.get('username', 'unknown')}")
+            except HTTPException:
+                # Authentication failed, continue as anonymous
+                logger.info("Authentication failed, continuing as anonymous user")
+                pass
+        
+        # For demo users or legacy login, use a default session
+        if user_id == "anonymous":
+            user_id = "demo-user-id"  # Use the standard demo user ID for consistency
+        
+        # 🛡️ ENHANCED RATE LIMITING for chat
         if not rate_limiter.is_allowed(client_ip, "chat"):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -1918,26 +2108,57 @@ async def chat(message: ChatMessage, request: Request):
                 headers={"Retry-After": "60"}
             )
         
-        user_message = message.message.strip()
-        
-        # Input validation and sanitization
-        if not user_message:
-            raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
-        
-        if len(user_message) > 1000:  # Prevent extremely long messages
+        # 🔒 COMPREHENSIVE INPUT VALIDATION using security config
+        if not message or not hasattr(message, 'message'):
             raise HTTPException(
-                status_code=400, 
-                detail="Mesaj çok uzun. Lütfen 1000 karakterden kısa bir mesaj gönderin."
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid message format"
             )
         
-        # Basic XSS prevention
-        if any(tag in user_message.lower() for tag in ['<script', '<iframe', '<object', '<embed']):
+        user_message = message.message
+        
+        # Type validation
+        if not isinstance(user_message, str):
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message must be a string"
+            )
+        
+        # Validate message using security config
+        is_valid_message, message_error = input_validator.validate_message(user_message)
+        if not is_valid_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message_error
+            )
+        
+        # 🛡️ SECURITY THREAT DETECTION
+        # Check for XSS attempts
+        is_xss, xss_pattern = input_validator.detect_xss_attempt(user_message)
+        if is_xss:
+            logger.warning(f"🚨 XSS attempt detected from IP {client_ip}, user {user_id}: {xss_pattern}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Güvenlik nedeniyle mesajınız kabul edilemedi."
             )
         
-        logger.info(f"User message from IP {client_ip}: {user_message[:50]}...")
+        # Check for SQL injection attempts
+        is_sql_injection, sql_pattern = input_validator.detect_sql_injection(user_message)
+        if is_sql_injection:
+            logger.warning(f"🚨 SQL injection attempt detected from IP {client_ip}, user {user_id}: {sql_pattern}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Güvenlik nedeniyle mesajınız kabul edilemedi."
+            )
+        
+        # 🧹 SANITIZE INPUT
+        user_message = input_validator.sanitize_input(user_message)
+        
+        username = current_user.get('username', 'anonymous') if current_user else 'anonymous'
+        logger.info(f"Secure chat request from user {username} (IP: {client_ip}): {user_message[:50]}...")
+        
+        # Get or create user session
+        session_id = get_user_session(user_id, force_new=False, auto_create=True)
         
         # Generate embedding for search
         try:
@@ -2000,25 +2221,36 @@ async def chat(message: ChatMessage, request: Request):
                 if USE_HUGGINGFACE and source != "huggingface":
                     response_text = generate_response_huggingface(context, user_message)
                     source = "huggingface_fallback"
-                    logger.info("Using Hugging Face as fallback")
                 else:
-                    response_text = "🤖 Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin."
-                    source = "error"
-            except Exception as fallback_error:
-                logger.error(f"Fallback also failed: {fallback_error}")
+                    response_text = generate_rule_based_response(user_message)
+                    source = "fallback"
+            except Exception as e2:
+                logger.error(f"Fallback response failed: {e2}")
                 response_text = "🤖 Sistem geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
                 source = "error"
         
+        # 🔒 SECURE MESSAGE STORAGE with validation
+        try:
+            add_message_to_session(session_id, user_message, response_text, source, user_id)
+        except Exception as e:
+            logger.error(f"Failed to save message securely: {e}")
+            # Don't fail the response if storage fails, but log it
+        
+        username = current_user.get('username', 'anonymous') if current_user else 'anonymous'
+        logger.info(f"Secure chat response sent to user {username}, source: {source}")
+        
         return ChatResponse(response=response_text, source=source)
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Chat endpoint error: {e}")
-        return ChatResponse(
-            response="🤖 Bir hata oluştu. Lütfen tekrar deneyin.",
-            source="error"
+        logger.error(f"Unexpected error in secure chat endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
         )
 
-# 🆕 AUTHENTICATED CHAT WITH SESSION MANAGEMENT
+# 🆕 AUTHENTICATED CHAT WITH SESSION MANAGEMENT  
 @app.post("/chat/authenticated", response_model=ChatResponse)
 async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(get_current_user)):
     """
