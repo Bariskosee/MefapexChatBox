@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEFAPEX AI Login Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e13 0%, #1a202c 100%);
+            color: white;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .test-container {
+            background: #2d3748;
+            padding: 40px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 100%;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #4a5a6b;
+            border-radius: 8px;
+            font-size: 16px;
+            background: #374151;
+            color: white;
+            box-sizing: border-box;
+        }
+        input::placeholder {
+            color: #bdc3c7;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .success {
+            background: #27ae60;
+            color: white;
+        }
+        .error {
+            background: #e74c3c;
+            color: white;
+        }
+        .info {
+            background: #3498db;
+            color: white;
+        }
+        #debug {
+            margin-top: 20px;
+            background: #1a202c;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔐 MEFAPEX Login Test</h1>
+        <p>Testing login functionality with debug information</p>
+        
+        <form id="loginForm" onsubmit="return false;">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" placeholder="Enter username" value="demo">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" placeholder="Enter password" value="1234">
+            </div>
+            
+            <button type="button" onclick="testLogin()">🚀 Test Login</button>
+            <button type="button" onclick="testLegacyLogin()">📱 Test Legacy Login</button>
+            <button type="button" onclick="testAPI()">🔧 Test API</button>
+            <button type="button" onclick="clearDebug()">🧹 Clear Debug</button>
+        </form>
+        
+        <div id="status"></div>
+        <div id="debug"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = window.location.origin;
+        
+        function logDebug(message) {
+            const debug = document.getElementById('debug');
+            const timestamp = new Date().toLocaleTimeString();
+            debug.textContent += `[${timestamp}] ${message}\n`;
+            debug.scrollTop = debug.scrollHeight;
+        }
+        
+        function setStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = type;
+        }
+        
+        function clearDebug() {
+            document.getElementById('debug').textContent = '';
+            setStatus('Debug cleared');
+        }
+        
+        async function testAPI() {
+            logDebug('🔧 Testing API connection...');
+            setStatus('Testing API...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+                
+                logDebug(`✅ API Response: ${JSON.stringify(data, null, 2)}`);
+                setStatus('✅ API is working!', 'success');
+            } catch (error) {
+                logDebug(`❌ API Error: ${error.message}`);
+                setStatus('❌ API connection failed', 'error');
+            }
+        }
+        
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            logDebug('🚀 Testing JWT Login...');
+            logDebug(`Username: ${username}, Password: ${password ? '****' : '(empty)'}`);
+            setStatus('Testing JWT login...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                logDebug(`Response status: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logDebug(`✅ JWT Login Success: ${JSON.stringify(data, null, 2)}`);
+                    setStatus('✅ JWT Login successful!', 'success');
+                    
+                    // Test the /me endpoint
+                    if (data.access_token) {
+                        await testMeEndpoint(data.access_token);
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    logDebug(`❌ JWT Login Failed: ${JSON.stringify(errorData, null, 2)}`);
+                    setStatus('❌ JWT Login failed', 'error');
+                }
+            } catch (error) {
+                logDebug(`💥 JWT Login Error: ${error.message}`);
+                setStatus('💥 JWT Login error', 'error');
+            }
+        }
+        
+        async function testLegacyLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            logDebug('📱 Testing Legacy Login...');
+            logDebug(`Username: ${username}, Password: ${password ? '****' : '(empty)'}`);
+            setStatus('Testing legacy login...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/login-legacy`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                logDebug(`Response status: ${response.status} ${response.statusText}`);
+                
+                const data = await response.json();
+                logDebug(`Legacy Login Response: ${JSON.stringify(data, null, 2)}`);
+                
+                if (data.success) {
+                    setStatus('✅ Legacy Login successful!', 'success');
+                } else {
+                    setStatus(`❌ Legacy Login failed: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                logDebug(`💥 Legacy Login Error: ${error.message}`);
+                setStatus('💥 Legacy Login error', 'error');
+            }
+        }
+        
+        async function testMeEndpoint(token) {
+            logDebug('👤 Testing /me endpoint...');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    logDebug(`✅ User Data: ${JSON.stringify(userData, null, 2)}`);
+                } else {
+                    logDebug(`❌ /me endpoint failed: ${response.status}`);
+                }
+            } catch (error) {
+                logDebug(`💥 /me endpoint error: ${error.message}`);
+            }
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            logDebug('🚀 Login test page loaded');
+            logDebug(`API Base URL: ${API_BASE_URL}`);
+            
+            // Auto-test API on load
+            setTimeout(testAPI, 500);
+        });
+        
+        // Handle Enter key
+        document.getElementById('password').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                testLogin();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEFAPEX AI Asistan - Simple</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e13 0%, #1a202c 15%, #2d3748 30%, #374151 45%, #2d3748 60%, #1a202c 75%, #0f1419 85%, #0a0e13 100%);
+            background-size: 600% 600%;
+            animation: gradientShift 12s ease infinite;
+            height: 100vh;
+            margin: 0;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            25% { background-position: 50% 25%; }
+            50% { background-position: 100% 50%; }
+            75% { background-position: 50% 75%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            background: linear-gradient(145deg, #1a202c 0%, #2d3748 50%, #1a202c 100%);
+            width: 95%;
+            max-width: 900px;
+            height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            border-radius: 25px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            margin: 7.5vh auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0f1419 0%, #1a202c 100%);
+            color: white;
+            padding: 25px 30px;
+            text-align: center;
+            position: relative;
+            border-radius: 25px 25px 0 0;
+        }
+
+        .header h1 {
+            margin-bottom: 12px;
+            font-size: 34px;
+            font-weight: 600;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+            padding: 50px 40px;
+            background: linear-gradient(145deg, #2d3748 0%, #24303f 25%, #1f2937 50%, #1d2833 75%, #1a202c 100%);
+            border-radius: 0 0 25px 25px;
+        }
+
+        .login-form {
+            background: transparent;
+            padding: 50px 60px;
+            border-radius: 15px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .login-form h2 {
+            text-align: center;
+            margin-bottom: 35px;
+            color: #ecf0f1;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .login-form input {
+            width: 100%;
+            padding: 22px 30px;
+            margin-bottom: 30px;
+            border: 2px solid #4a5a6b;
+            border-radius: 35px;
+            font-size: 20px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+            background: linear-gradient(135deg, #2d3748 0%, #253241 30%, #1e2a36 70%, #1a202c 100%);
+            color: #e2e8f0;
+            min-height: 60px;
+        }
+
+        .login-form input::placeholder {
+            color: #bdc3c7;
+        }
+
+        .login-form input:focus {
+            outline: none;
+            border-color: #5dade2;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
+            background: linear-gradient(135deg, #374151 0%, #2d3748 30%, #253241 70%, #1f2937 100%);
+        }
+
+        .login-form button {
+            width: 100%;
+            padding: 22px 40px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 35px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(52, 152, 219, 0.4);
+            letter-spacing: 1px;
+            min-height: 65px;
+            margin-top: 10px;
+        }
+
+        .login-form button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .login-form button:active {
+            transform: translateY(0);
+        }
+
+        .chat-container {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            position: relative;
+            background: #34495e;
+            border-radius: 0 0 25px 25px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 25px;
+            background: #3a4a5c;
+            scroll-behavior: smooth;
+            max-height: calc(85vh - 220px);
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-end;
+            animation: messageSlideIn 0.3s ease-out;
+        }
+
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.bot {
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 75%;
+            padding: 15px 20px;
+            border-radius: 20px;
+            word-wrap: break-word;
+            line-height: 1.5;
+            font-size: 15px;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border-bottom-right-radius: 6px;
+            box-shadow: 0 3px 10px rgba(52, 152, 219, 0.3);
+        }
+
+        .message.bot .message-bubble {
+            background: #4a5a6b;
+            color: #ecf0f1;
+            border: 2px solid #5a6b7d;
+            border-bottom-left-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-input-container {
+            display: flex;
+            padding: 25px;
+            background: #2c3e50;
+            border-top: 2px solid #4a5a6b;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #4a5a6b;
+            border-radius: 25px;
+            outline: none;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #34495e;
+            color: #ecf0f1;
+        }
+
+        .chat-input::placeholder {
+            color: #bdc3c7;
+        }
+
+        .chat-input:focus {
+            border-color: #5dade2;
+            background: #3a4a5c;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
+        }
+
+        .send-button {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 55px;
+            height: 55px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .send-button:disabled {
+            background: linear-gradient(135deg, #bdc3c7 0%, #95a5a6 100%);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            background: linear-gradient(135deg, #fdf2f2 0%, #ffeaea 100%);
+            border: 2px solid #fadbd8;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .welcome-message {
+            text-align: center;
+            color: #bdc3c7;
+            padding: 50px 30px;
+            font-style: italic;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .logout-button {
+            position: absolute;
+            top: 25px;
+            right: 30px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .logout-button:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-1px);
+        }
+
+        .status-message {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
+        .status-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .status-error {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .status-info {
+            background: #3498db;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 MEFAPEX AI</h1>
+            <p>Fabrika personeli için akıllı yardım sistemi</p>
+            <button class="logout-button" id="logoutBtn" style="display: none;" onclick="logout()">Çıkış</button>
+        </div>
+
+        <!-- Login Container -->
+        <div class="login-container" id="loginContainer">
+            <div class="login-form">
+                <h2>Giriş Yap</h2>
+                <div id="statusMessage" style="display: none;"></div>
+                <input type="text" id="username" placeholder="Kullanıcı Adı" value="demo">
+                <input type="password" id="password" placeholder="Şifre" value="1234">
+                <button onclick="performLogin()">Giriş Yap</button>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome-message">
+                    👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
+                    Size nasıl yardımcı olabilirim?
+                </div>
+            </div>
+            <div class="chat-input-container">
+                <input 
+                    type="text" 
+                    class="chat-input" 
+                    id="messageInput" 
+                    placeholder="Sorunuzu buraya yazın..."
+                    onkeypress="handleChatKeyPress(event)"
+                >
+                <button class="send-button" id="sendButton" onclick="sendChatMessage()">
+                    ➤
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = window.location.origin;
+        let isLoggedIn = false;
+        let authToken = null;
+        let isTyping = false;
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message status-${type}`;
+            statusDiv.style.display = 'block';
+            
+            // Auto-hide success and info messages
+            if (type !== 'error') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            }
+        }
+        
+        function hideStatus() {
+            document.getElementById('statusMessage').style.display = 'none';
+        }
+        
+        async function performLogin() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            console.log('🔐 Simple login attempt:', username);
+            
+            if (!username || !password) {
+                showStatus('Kullanıcı adı ve şifre gereklidir.', 'error');
+                return;
+            }
+            
+            showStatus('Giriş yapılıyor...', 'info');
+            
+            try {
+                // Try JWT login
+                const response = await fetch(`${API_BASE_URL}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                console.log('Login response status:', response.status);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Login successful:', data);
+                    
+                    if (data.access_token) {
+                        authToken = data.access_token;
+                        localStorage.setItem('authToken', authToken);
+                        
+                        // Get user data
+                        const meResponse = await fetch(`${API_BASE_URL}/me`, {
+                            headers: { 'Authorization': `Bearer ${authToken}` }
+                        });
+                        
+                        if (meResponse.ok) {
+                            const userData = await meResponse.json();
+                            console.log('User data:', userData);
+                            
+                            // Successfully logged in
+                            isLoggedIn = true;
+                            showStatus('Giriş başarılı!', 'success');
+                            
+                            // Switch to chat interface
+                            setTimeout(() => {
+                                document.getElementById('loginContainer').style.display = 'none';
+                                document.getElementById('chatContainer').style.display = 'flex';
+                                document.getElementById('logoutBtn').style.display = 'block';
+                                document.getElementById('messageInput').focus();
+                                hideStatus();
+                            }, 1500);
+                        } else {
+                            throw new Error('Kullanıcı bilgileri alınamadı');
+                        }
+                    } else {
+                        throw new Error('Geçerli token alınamadı');
+                    }
+                } else {
+                    // Try legacy login
+                    await tryLegacyLogin(username, password);
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showStatus('Giriş hatası: ' + error.message, 'error');
+            }
+        }
+        
+        async function tryLegacyLogin(username, password) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/login-legacy`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Legacy login response:', data);
+                
+                if (data.success) {
+                    isLoggedIn = true;
+                    showStatus('Giriş başarılı! (Legacy Mode)', 'success');
+                    
+                    // Switch to chat interface
+                    setTimeout(() => {
+                        document.getElementById('loginContainer').style.display = 'none';
+                        document.getElementById('chatContainer').style.display = 'flex';
+                        document.getElementById('logoutBtn').style.display = 'block';
+                        document.getElementById('messageInput').focus();
+                        hideStatus();
+                    }, 1500);
+                } else {
+                    throw new Error(data.message || 'Giriş başarısız');
+                }
+            } catch (error) {
+                console.error('Legacy login error:', error);
+                showStatus('Kullanıcı adı veya şifre hatalı', 'error');
+            }
+        }
+        
+        function logout() {
+            console.log('🚪 Logout');
+            
+            isLoggedIn = false;
+            authToken = null;
+            localStorage.removeItem('authToken');
+            
+            // Clear chat and show login
+            document.getElementById('loginContainer').style.display = 'flex';
+            document.getElementById('chatContainer').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'none';
+            
+            // Clear and reset inputs
+            document.getElementById('username').value = 'demo';
+            document.getElementById('password').value = '1234';
+            document.getElementById('messageInput').value = '';
+            
+            // Reset chat messages
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="welcome-message">
+                    👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
+                    Size nasıl yardımcı olabilirim?
+                </div>
+            `;
+            
+            hideStatus();
+            document.getElementById('username').focus();
+        }
+        
+        function handleChatKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendChatMessage();
+            }
+        }
+        
+        async function sendChatMessage() {
+            if (isTyping || !isLoggedIn) return;
+            
+            const message = document.getElementById('messageInput').value.trim();
+            if (!message) return;
+            
+            // Clear input
+            document.getElementById('messageInput').value = '';
+            
+            // Add user message to chat
+            addMessage(message, 'user');
+            
+            // Show typing
+            isTyping = true;
+            document.getElementById('sendButton').disabled = true;
+            
+            try {
+                const endpoint = authToken ? '/chat/authenticated' : '/chat';
+                const headers = {
+                    'Content-Type': 'application/json',
+                };
+                
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+                
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        message: message
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Chat response:', data);
+                
+                // Add bot response
+                addMessage(data.response, 'bot');
+                
+            } catch (error) {
+                console.error('Chat error:', error);
+                addMessage('Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.', 'bot');
+            } finally {
+                isTyping = false;
+                document.getElementById('sendButton').disabled = false;
+                document.getElementById('messageInput').focus();
+            }
+        }
+        
+        function addMessage(text, sender) {
+            const chatMessages = document.getElementById('chatMessages');
+            
+            // Remove welcome message if it exists
+            const welcomeMessage = chatMessages.querySelector('.welcome-message');
+            if (welcomeMessage) {
+                welcomeMessage.remove();
+            }
+            
+            // Create message element
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            const bubbleDiv = document.createElement('div');
+            bubbleDiv.className = 'message-bubble';
+            bubbleDiv.innerHTML = formatMessage(text);
+            
+            messageDiv.appendChild(bubbleDiv);
+            chatMessages.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            setTimeout(() => {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }, 100);
+        }
+        
+        function formatMessage(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>')
+                .replace(/•/g, '&bull;');
+        }
+        
+        // Handle Enter key in login form
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Simple MEFAPEX loaded');
+            
+            // Focus username field
+            document.getElementById('username').focus();
+            
+            // Handle Enter key in login
+            document.getElementById('password').addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    performLogin();
+                }
+            });
+            
+            // Check for saved token
+            const savedToken = localStorage.getItem('authToken');
+            if (savedToken) {
+                console.log('🔑 Found saved token, auto-login...');
+                authToken = savedToken;
+                
+                // Verify token
+                fetch(`${API_BASE_URL}/me`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error('Token expired');
+                })
+                .then(userData => {
+                    console.log('✅ Auto-login successful:', userData.username);
+                    isLoggedIn = true;
+                    document.getElementById('loginContainer').style.display = 'none';
+                    document.getElementById('chatContainer').style.display = 'flex';
+                    document.getElementById('logoutBtn').style.display = 'block';
+                    document.getElementById('messageInput').focus();
+                })
+                .catch(error => {
+                    console.log('❌ Auto-login failed:', error);
+                    authToken = null;
+                    localStorage.removeItem('authToken');
+                });
+            }
+        });
+        
+        console.log('✅ Simple MEFAPEX script loaded');
+    </script>
+</body>
+</html>

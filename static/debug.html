@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEFAPEX AI Debug - Login Diagnostics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e13 0%, #1a202c 15%, #2d3748 30%, #374151 45%, #2d3748 60%, #1a202c 75%, #0f1419 85%, #0a0e13 100%);
+            background-size: 600% 600%;
+            animation: gradientShift 12s ease infinite;
+            height: 100vh;
+            margin: 0;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            25% { background-position: 50% 25%; }
+            50% { background-position: 100% 50%; }
+            75% { background-position: 50% 75%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            background: linear-gradient(145deg, #1a202c 0%, #2d3748 50%, #1a202c 100%);
+            width: 95%;
+            max-width: 900px;
+            height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            border-radius: 25px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            margin: 7.5vh auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0f1419 0%, #1a202c 100%);
+            color: white;
+            padding: 25px 30px;
+            text-align: center;
+            position: relative;
+            border-radius: 25px 25px 0 0;
+        }
+
+        .header h1 {
+            margin-bottom: 12px;
+            font-size: 34px;
+            font-weight: 600;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30px;
+            background: linear-gradient(145deg, #2d3748 0%, #24303f 25%, #1f2937 50%, #1d2833 75%, #1a202c 100%);
+            border-radius: 0 0 25px 25px;
+            overflow-y: auto;
+        }
+
+        .login-section {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #ecf0f1;
+        }
+
+        input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #4a5a6b;
+            border-radius: 8px;
+            font-size: 16px;
+            background: #374151;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        input::placeholder {
+            color: #bdc3c7;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #5dade2;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
+        }
+
+        button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        #debugLog {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 20px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #ecf0f1;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #4a5a6b;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .status.error {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .status.info {
+            background: #3498db;
+            color: white;
+        }
+
+        .test-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 MEFAPEX AI Debug</h1>
+            <p>Login Diagnostics & Error Detection</p>
+        </div>
+
+        <div class="content">
+            <div class="login-section">
+                <h2 style="color: #ecf0f1; margin-bottom: 20px;">🔐 Login Test</h2>
+                
+                <div class="form-group">
+                    <label for="username">Username:</label>
+                    <input type="text" id="username" placeholder="Enter username" value="demo">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password:</label>
+                    <input type="password" id="password" placeholder="Enter password" value="1234">
+                </div>
+
+                <div class="test-buttons">
+                    <button onclick="testJWTLogin()">🚀 Test JWT Login</button>
+                    <button onclick="testLegacyLogin()">📱 Test Legacy Login</button>
+                    <button onclick="testOriginalScript()">🔧 Test Original Script</button>
+                    <button onclick="testAPI()">🌐 Test API</button>
+                    <button onclick="clearLog()">🧹 Clear Log</button>
+                </div>
+
+                <div id="status" style="display: none;"></div>
+            </div>
+
+            <h3 style="color: #ecf0f1; margin-bottom: 15px;">📊 Debug Log</h3>
+            <div id="debugLog"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = window.location.origin;
+        
+        function log(message, type = 'info') {
+            const debugLog = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warn' ? '⚠️' : 'ℹ️';
+            debugLog.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            
+            console.log(`[${timestamp}] ${message}`);
+        }
+        
+        function setStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+        
+        function clearLog() {
+            document.getElementById('debugLog').textContent = '';
+            document.getElementById('status').style.display = 'none';
+            log('Debug log cleared');
+        }
+        
+        async function testAPI() {
+            log('Testing API connection...', 'info');
+            setStatus('Testing API...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+                
+                log(`API Response: ${JSON.stringify(data, null, 2)}`, 'success');
+                setStatus('✅ API is working!', 'success');
+            } catch (error) {
+                log(`API Error: ${error.message}`, 'error');
+                setStatus('❌ API connection failed', 'error');
+            }
+        }
+        
+        async function testJWTLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            log(`Testing JWT Login with username: ${username}`, 'info');
+            setStatus('Testing JWT login...', 'info');
+            
+            try {
+                const requestData = { username, password };
+                log(`Request data: ${JSON.stringify(requestData)}`, 'info');
+                
+                const response = await fetch(`${API_BASE_URL}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                log(`Response status: ${response.status} ${response.statusText}`, 'info');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`JWT Login Success: ${JSON.stringify(data, null, 2)}`, 'success');
+                    setStatus('✅ JWT Login successful!', 'success');
+                    
+                    // Test the /me endpoint
+                    if (data.access_token) {
+                        await testMeEndpoint(data.access_token);
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    log(`JWT Login Failed: ${JSON.stringify(errorData, null, 2)}`, 'error');
+                    setStatus('❌ JWT Login failed', 'error');
+                }
+            } catch (error) {
+                log(`JWT Login Error: ${error.message}`, 'error');
+                setStatus('💥 JWT Login error', 'error');
+            }
+        }
+        
+        async function testLegacyLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            log(`Testing Legacy Login with username: ${username}`, 'info');
+            setStatus('Testing legacy login...', 'info');
+            
+            try {
+                const requestData = { username, password };
+                log(`Request data: ${JSON.stringify(requestData)}`, 'info');
+                
+                const response = await fetch(`${API_BASE_URL}/login-legacy`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                log(`Response status: ${response.status} ${response.statusText}`, 'info');
+                
+                const data = await response.json();
+                log(`Legacy Login Response: ${JSON.stringify(data, null, 2)}`, data.success ? 'success' : 'error');
+                
+                if (data.success) {
+                    setStatus('✅ Legacy Login successful!', 'success');
+                } else {
+                    setStatus(`❌ Legacy Login failed: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                log(`Legacy Login Error: ${error.message}`, 'error');
+                setStatus('💥 Legacy Login error', 'error');
+            }
+        }
+        
+        async function testMeEndpoint(token) {
+            log('Testing /me endpoint...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    log(`User Data: ${JSON.stringify(userData, null, 2)}`, 'success');
+                } else {
+                    log(`/me endpoint failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`/me endpoint error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testOriginalScript() {
+            log('Testing Original Script Login Function...', 'info');
+            setStatus('Testing original login...', 'info');
+            
+            try {
+                // Check if original login function exists
+                if (typeof window.login === 'function') {
+                    log('Original login function found, calling it...', 'info');
+                    await window.login();
+                } else {
+                    log('Original login function not found, loading original script...', 'warn');
+                    
+                    // Try to load and execute the original login logic
+                    const username = document.getElementById('username').value;
+                    const password = document.getElementById('password').value;
+                    
+                    // Simulate the original login process
+                    log('Simulating original login process...', 'info');
+                    
+                    // First try JWT
+                    const jwtResponse = await fetch(`${API_BASE_URL}/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    
+                    if (jwtResponse.ok) {
+                        const jwtData = await jwtResponse.json();
+                        log('JWT login successful in original simulation', 'success');
+                        
+                        // Check if session manager would work
+                        if (typeof window.sessionManager !== 'undefined') {
+                            log('SessionManager found', 'success');
+                        } else {
+                            log('SessionManager NOT found - this is likely the issue!', 'error');
+                        }
+                        
+                        setStatus('✅ Original logic would work (JWT)', 'success');
+                    } else {
+                        // Try legacy
+                        const legacyResponse = await fetch(`${API_BASE_URL}/login-legacy`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username, password })
+                        });
+                        
+                        const legacyData = await legacyResponse.json();
+                        if (legacyData.success) {
+                            log('Legacy login successful in original simulation', 'success');
+                            setStatus('✅ Original logic would work (Legacy)', 'success');
+                        } else {
+                            log('Both JWT and Legacy failed in original simulation', 'error');
+                            setStatus('❌ Original logic would fail', 'error');
+                        }
+                    }
+                }
+            } catch (error) {
+                log(`Original script test error: ${error.message}`, 'error');
+                setStatus('💥 Original script test failed', 'error');
+            }
+        }
+        
+        // Check for JavaScript errors
+        window.addEventListener('error', function(event) {
+            log(`JavaScript Error: ${event.error.message} at ${event.filename}:${event.lineno}`, 'error');
+        });
+        
+        window.addEventListener('unhandledrejection', function(event) {
+            log(`Unhandled Promise Rejection: ${event.reason}`, 'error');
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Debug page loaded', 'info');
+            log(`API Base URL: ${API_BASE_URL}`, 'info');
+            
+            // Check if original scripts are loaded
+            if (typeof window.sessionManager !== 'undefined') {
+                log('SessionManager is available', 'success');
+            } else {
+                log('SessionManager is NOT available', 'warn');
+            }
+            
+            if (typeof window.login === 'function') {
+                log('Original login function is available', 'success');
+            } else {
+                log('Original login function is NOT available', 'warn');
+            }
+            
+            // Auto-test API on load
+            setTimeout(testAPI, 500);
+        });
+        
+        // Handle Enter key
+        document.getElementById('password').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                testJWTLogin();
+            }
+        });
+    </script>
+</body>
+</html>

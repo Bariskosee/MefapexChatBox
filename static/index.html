@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEFAPEX AI Asistan</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e13 0%, #1a202c 15%, #2d3748 30%, #374151 45%, #2d3748 60%, #1a202c 75%, #0f1419 85%, #0a0e13 100%);
+            background-size: 600% 600%;
+            animation: gradientShift 12s ease infinite;
+            height: 100vh;
+            margin: 0;
+        }
+
+        @keyframes gradientShift {
+            0% {
+                background-position: 0% 50%;
+            }
+            25% {
+                background-position: 50% 25%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            75% {
+                background-position: 50% 75%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .container {
+            background: linear-gradient(145deg, #1a202c 0%, #2d3748 50%, #1a202c 100%);
+            width: 95%;
+            max-width: 900px;
+            height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            border-radius: 25px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0f1419 0%, #1a202c 100%);
+            color: white;
+            padding: 25px 30px;
+            text-align: center;
+            position: relative;
+            border-radius: 25px 25px 0 0;
+        }
+
+        .header h1 {
+            margin-bottom: 12px;
+            font-size: 34px;
+            font-weight: 600;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+            padding: 50px 40px;
+            background: linear-gradient(145deg, #2d3748 0%, #24303f 25%, #1f2937 50%, #1d2833 75%, #1a202c 100%);
+            border-radius: 0 0 25px 25px;
+        }
+
+        .login-form {
+            background: transparent;
+            padding: 50px 60px;
+            border-radius: 15px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .login-form h2 {
+            text-align: center;
+            margin-bottom: 35px;
+            color: #ecf0f1;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .login-form input {
+            width: 100%;
+            padding: 22px 30px;
+            margin-bottom: 30px;
+            border: 2px solid #4a5a6b;
+            border-radius: 35px;
+            font-size: 20px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+            background: linear-gradient(135deg, #2d3748 0%, #253241 30%, #1e2a36 70%, #1a202c 100%);
+            color: #e2e8f0;
+            min-height: 60px;
+        }
+
+        .login-form input::placeholder {
+            color: #bdc3c7;
+        }
+
+        .login-form input:focus {
+            outline: none;
+            border-color: #5dade2;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
+            background: linear-gradient(135deg, #374151 0%, #2d3748 30%, #253241 70%, #1f2937 100%);
+        }
+
+        .login-form button {
+            width: 100%;
+            padding: 22px 40px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 35px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(52, 152, 219, 0.4);
+            letter-spacing: 1px;
+            min-height: 65px;
+            margin-top: 10px;
+        }
+
+        .login-form button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .login-form button:active {
+            transform: translateY(0);
+        }
+
+        .chat-container {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            position: relative;
+            background: #34495e;
+            border-radius: 0 0 25px 25px;
+        }
+
+        .history-button-topLeft {
+            position: absolute;
+            top: 85px;
+            left: 40px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 1100;
+            transition: all 0.3s ease;
+            display: none;
+        }
+
+        .history-button-topLeft:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-1px);
+        }
+
+        .history-button-topLeft:active {
+            transform: scale(0.95);
+        }        .scroll-to-top {
+            position: absolute;
+            bottom: 90px;
+            right: 25px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+            z-index: 1000;
+            transition: all 0.3s ease;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .scroll-to-top:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .scroll-to-top.show {
+            display: flex;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 25px;
+            background: #3a4a5c;
+            scroll-behavior: smooth;
+            max-height: calc(85vh - 220px);
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: #2c3e50;
+            border-radius: 4px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #5a6b7d 0%, #4a5a6b 100%);
+            border-radius: 4px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #6b7d8f 0%, #5a6b7d 100%);
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-end;
+            animation: messageSlideIn 0.3s ease-out;
+        }
+
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.bot {
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 75%;
+            padding: 15px 20px;
+            border-radius: 20px;
+            word-wrap: break-word;
+            line-height: 1.5;
+            font-size: 15px;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border-bottom-right-radius: 6px;
+            box-shadow: 0 3px 10px rgba(52, 152, 219, 0.3);
+        }
+
+        .message.bot .message-bubble {
+            background: #4a5a6b;
+            color: #ecf0f1;
+            border: 2px solid #5a6b7d;
+            border-bottom-left-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-input-container {
+            display: flex;
+            padding: 25px;
+            background: #2c3e50;
+            border-top: 2px solid #4a5a6b;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #4a5a6b;
+            border-radius: 25px;
+            outline: none;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #34495e;
+            color: #ecf0f1;
+        }
+
+        .chat-input::placeholder {
+            color: #bdc3c7;
+        }
+
+        .chat-input:focus {
+            border-color: #5dade2;
+            background: #3a4a5c;
+            box-shadow: 0 0 0 3px rgba(93, 173, 226, 0.2);
+        }
+
+        .send-button {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 55px;
+            height: 55px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .send-button:disabled {
+            background: linear-gradient(135deg, #bdc3c7 0%, #95a5a6 100%);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 15px 25px;
+            font-style: italic;
+            color: #7f8c8d;
+            background: rgba(52, 152, 219, 0.05);
+            border-top: 1px solid rgba(52, 152, 219, 0.1);
+        }
+
+        .error-message {
+            color: #e74c3c;
+            background: linear-gradient(135deg, #fdf2f2 0%, #ffeaea 100%);
+            border: 2px solid #fadbd8;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .welcome-message {
+            text-align: center;
+            color: #bdc3c7;
+            padding: 50px 30px;
+            font-style: italic;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .logout-button {
+            position: absolute;
+            top: 25px;
+            right: 30px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .logout-button:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-1px);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .container {
+                width: 98%;
+                height: 95vh;
+                margin: 2.5vh 1%;
+                border-radius: 20px;
+            }
+
+            .header {
+                padding: 20px 15px;
+                border-radius: 20px 20px 0 0;
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+
+            .header p {
+                font-size: 16px;
+            }
+
+            .login-container {
+                padding: 30px 20px;
+            }
+
+            .login-form {
+                padding: 35px 25px;
+                max-width: 350px;
+                border-radius: 20px;
+            }
+
+            .chat-messages {
+                padding: 20px 15px;
+                max-height: calc(95vh - 200px);
+            }
+
+            .message-bubble {
+                max-width: 85%;
+                padding: 12px 16px;
+                font-size: 14px;
+            }
+
+            .chat-input-container {
+                padding: 20px 15px;
+                gap: 12px;
+            }
+
+            .chat-input {
+                padding: 12px 16px;
+                font-size: 15px;
+            }
+
+            .send-button {
+                width: 50px;
+                height: 50px;
+                font-size: 16px;
+            }
+
+            .history-button-topLeft {
+                top: 15px;
+                left: 15px;
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+
+            .new-session-button-topLeft {
+                top: 15px;
+                left: 140px; /* Adjust for mobile */
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+
+            .logout-button {
+                top: 20px;
+                right: 20px;
+                padding: 8px 14px;
+                font-size: 14px;
+            }
+
+            .scroll-to-top {
+                bottom: 80px;
+                right: 20px;
+                width: 45px;
+                height: 45px;
+                font-size: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                width: 100%;
+                height: 100vh;
+                border-radius: 15px;
+            }
+
+            .header {
+                padding: 18px 15px;
+                border-radius: 15px 15px 0 0;
+            }
+
+            .header h1 {
+                font-size: 26px;
+            }
+
+            .login-form {
+                padding: 30px 25px;
+                border-radius: 20px;
+            }
+
+            .chat-messages {
+                padding: 15px;
+                max-height: calc(100vh - 180px);
+            }
+
+            .message-bubble {
+                max-width: 90%;
+                padding: 10px 14px;
+            }
+
+            .chat-input-container {
+                padding: 15px;
+                gap: 10px;
+            }
+
+            .history-button-topLeft {
+                top: 10px;
+                left: 10px;
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+
+            .logout-button {
+                top: 15px;
+                right: 15px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+        }
+
+        /* Sidebar Responsive */
+        @media (max-width: 768px) {
+            #chatHistorySidebar {
+                width: 280px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #chatHistorySidebar {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><img src="static/images/logo.png" alt="MEFAPEX" style="width: 32px; height: 32px; margin-right: 8px; vertical-align: middle; border-radius: 6px;"> MEFAPEX AI</h1>
+            <p>Fabrika personeli için akıllı yardım sistemi</p>
+            <button class="logout-button" id="logoutBtn" style="display: none;" onclick="logout()">Çıkış</button>
+        </div>
+
+        <!-- Login Container -->
+        <div class="login-container" id="loginContainer">
+            <div class="login-form">
+                <h2>Giriş Yap</h2>
+                <div id="loginError" class="error-message" style="display: none;"></div>
+                <input type="text" id="username" placeholder="Kullanıcı Adı" value="">
+                <input type="password" id="password" placeholder="Şifre" value="">
+                <button onclick="login()">Giriş Yap</button>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome-message">
+                    👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
+                    Size nasıl yardımcı olabilirim?
+                </div>
+            </div>
+            <button class="scroll-to-top" id="scrollToTop" onclick="scrollToTop()">
+                ↑
+            </button>
+            <div class="typing-indicator" id="typingIndicator">
+                AI asistan yazıyor...
+            </div>
+            <div class="chat-input-container">
+                <input 
+                    type="text" 
+                    class="chat-input" 
+                    id="messageInput" 
+                    placeholder="Sorunuzu buraya yazın..."
+                    onkeypress="handleKeyPress(event)"
+                >
+                <button class="send-button" id="sendButton" onclick="sendMessage()">
+                    ➤
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat History Sidebar -->
+    <div id="chatHistorySidebar" style="position: fixed; left: 0; top: 0; height: 100vh; width: 300px; background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; z-index: 2000; box-shadow: 4px 0 15px rgba(0,0,0,0.3); transform: translateX(-100%); transition: transform 0.3s ease; overflow-y: auto;">
+        <div style="padding: 25px 20px; border-bottom: 2px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 20px; font-weight: 600;">Geçmiş</span>
+            <button onclick="closeChatHistorySidebar()" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='none'" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 8px; border-radius: 50%; transition: background 0.3s ease;">&times;</button>
+        </div>
+        <ul id="chatHistoryList" style="list-style: none; padding: 0; margin: 0;"></ul>
+    </div>
+
+    <!-- History Button - Top Left -->
+    <button id="openHistoryBtn" class="history-button-topLeft" onclick="openChatHistorySidebar()">Geçmiş</button>
+
+    <!-- WebSocket Client -->
+    <script src="static/websocket_client.js"></script>
+    <!-- Session Manager -->
+    <script src="static/session-manager.js"></script>
+    <!-- Main Application Script -->
+    <script src="static/script.js"></script>
+</body>
+</html>
