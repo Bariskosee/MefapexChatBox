@@ -859,7 +859,11 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
         )
     
     # 🚨 SECURE DEMO USER CHECK with enhanced production protection
+    logger.info(f"🔍 Debug: DEMO_USER_ENABLED={DEMO_USER_ENABLED}, username={form_data.username}")
+    
     if DEMO_USER_ENABLED and form_data.username == "demo":
+        logger.info(f"🔍 Debug: Demo user login attempt - validating credentials")
+        
         # 🔒 ENHANCED DEMO USER SECURITY with input validation
         if not input_validator.validate_username(form_data.username)[0]:
             brute_force_protection.record_failed_attempt(client_ip)
@@ -870,6 +874,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
         
         demo_password_hash = os.getenv("DEMO_PASSWORD_HASH")  # Allow custom demo password
         demo_password = DEMO_PASSWORD or os.getenv("DEMO_PASSWORD", "1234")
+        logger.info(f"🔍 Debug: Demo password check - expected={demo_password}, provided={form_data.password}")
         
         # Validate demo password strength if it's the default weak password
         if demo_password == "1234" and ENVIRONMENT == "production":
