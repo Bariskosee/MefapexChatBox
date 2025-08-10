@@ -10,9 +10,24 @@
 
 MEFAPEX fabrikası için geliştirilmiş **production-ready** Türkçe AI chatbot sistemi. Modüler mimari ve Docker orchestration ile enterprise-level deployment.
 
-## 🚀 Hızlı Başlangıç (Docker)
+## 🚀 Hızlı Başlangıç
 
-### Tek komutla tüm sistemi başlat:
+### ⚡ Otomatik Kurulum (Önerilen)
+```bash
+# Repository'yi klonlayın
+git clone https://github.com/Bariskosee/MefapexChatBox.git
+cd MefapexChatBox
+
+# Otomatik kurulum scriptini çalıştırın
+python setup.py
+
+# Sistemi başlatın
+./run.sh        # Linux/macOS
+# VEYA
+./run.bat       # Windows
+```
+
+### 🐳 Docker ile Hızlı Başlatma
 ```bash
 git clone https://github.com/Bariskosee/MefapexChatBox.git
 cd MefapexChatBox
@@ -20,6 +35,42 @@ cd MefapexChatBox
 ```
 
 🎉 **İşte bu kadar!** Sistem `http://localhost:8000` adresinde hazır.
+
+## 📋 Gereksinimler
+
+### ✅ Minimum Sistem Gereksinimleri
+- **Python**: 3.11+ (Zorunlu)
+- **RAM**: 4GB+ (AI modelleri için)
+- **Disk**: 2GB+ boş alan
+- **İşletim Sistemi**: Windows 10+, macOS 10.15+, Linux Ubuntu 20.04+
+
+### 🐍 Python Kurulumu
+**Windows:**
+```bash
+# Microsoft Store'dan Python 3.11+ indirin
+# VEYA python.org'dan resmi installer
+
+python --version  # 3.11+ olmalı
+```
+
+**macOS:**
+```bash
+# Homebrew ile
+brew install python@3.11
+
+# VEYA python.org'dan resmi installer
+python3.11 --version
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+# APT ile
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3.11-pip
+
+# Versiyonu kontrol edin
+python3.11 --version
+```
 
 ## 🚀 Özellikler
 
@@ -81,21 +132,42 @@ docker-compose up -d
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
-### 🔧 **2. Manuel Kurulum**
+### 🔧 **Manuel Kurulum**
 ```bash
-# Repository klonla
+# 1. Repository'yi klonlayın
 git clone https://github.com/Bariskosee/MefapexChatBox.git
 cd MefapexChatBox
 
-# Dependencies yükle
+# 2. Python 3.11+ kontrol edin
+python --version  # 3.11+ olmalı
+
+# 3. Virtual environment oluşturun
+python -m venv .venv
+
+# 4. Virtual environment'ı aktive edin
+# Linux/macOS:
+source .venv/bin/activate
+# Windows:
+.venv\Scripts\activate
+
+# 5. Dependencies'leri yükleyin
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Servisleri başlat (gerekli)
-docker run -p 6333:6333 qdrant/qdrant  # Vector DB
-docker run -p 6379:6379 redis:alpine   # Cache
+# 6. Environment dosyası oluşturun
+cp .env.example .env  # Ayarları düzenleyin
 
-# Uygulamayı başlat
-python main_optimized.py
+# 7. Uygulamayı başlatın
+python main.py
+```
+
+### 🔧 **İsteğe Bağlı Servisler**
+```bash
+# Vector search için Qdrant (isteğe bağlı)
+docker run -p 6333:6333 qdrant/qdrant
+
+# Caching için Redis (isteğe bağlı)
+docker run -p 6379:6379 redis:alpine
 ```
 
 ## 🌐 **Erişim Adresleri**
