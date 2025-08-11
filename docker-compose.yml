@@ -8,22 +8,24 @@ services:
       dockerfile: Dockerfile
     container_name: mefapex-chatbox
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
-      - DATABASE_URL=sqlite:///./data/mefapex.db
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/mefapex.db}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - USE_OPENAI=false
-      - USE_HUGGINGFACE=true
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:8000
+      - USE_OPENAI=${USE_OPENAI:-false}
+      - USE_HUGGINGFACE=${USE_HUGGINGFACE:-true}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
     volumes:
       - ./data:/app/data
       - ./models_cache:/app/models_cache
       - ./logs:/app/logs
+      - ./content:/app/content
     depends_on:
       - qdrant
       - redis
@@ -42,7 +44,7 @@ services:
     image: qdrant/qdrant:v1.7.4
     container_name: mefapex-qdrant
     ports:
-      - "6333:6333"
+      - "${QDRANT_PORT:-6333}:6333"
       - "6334:6334"
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
@@ -58,7 +60,7 @@ services:
     image: redis:7.2-alpine
     container_name: mefapex-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -66,7 +68,7 @@ services:
     networks:
       - mefapex-network
 
-  # 📊 Nginx Reverse Proxy (Optional)
+  # 📊 Nginx Reverse Proxy (Production only)
   nginx:
     image: nginx:alpine
     container_name: mefapex-nginx
@@ -76,13 +78,16 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./static:/var/www/html/static:ro
     depends_on:
       - mefapex-app
     restart: unless-stopped
     networks:
       - mefapex-network
+    profiles:
+      - production
 
-  # 📈 Monitoring Dashboard (Optional)
+  # 📈 Monitoring (Production only)
   monitoring:
     image: prom/prometheus:latest
     container_name: mefapex-monitoring
@@ -91,16 +96,11 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
     restart: unless-stopped
     networks:
       - mefapex-network
+    profiles:
+      - production
 
 volumes:
   qdrant_data:

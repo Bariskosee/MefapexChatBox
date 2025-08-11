@@ -37,7 +37,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 
 # Create necessary directories
-RUN mkdir -p /app/data /app/models_cache /app/logs /app/static && \
+RUN mkdir -p /app/data /app/models_cache /app/logs /app/static /app/content && \
     chown -R appuser:appuser /app
 
 # Copy application code
@@ -59,7 +59,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# 🚀 Start command with optimized settings
+# 🚀 Start command
 CMD ["python", "-m", "uvicorn", "main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
