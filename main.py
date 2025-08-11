@@ -19,6 +19,7 @@ from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+from content_manager import ContentManager
 import uuid
 import json
 import asyncio
@@ -28,7 +29,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 # Import optimized components
-from database_manager import DatabaseManager
+from database.production_manager import ProductionDatabaseManager, get_database_manager_sync
 from model_manager import model_manager
 from response_cache import response_cache
 from websocket_manager import websocket_manager, message_handler
@@ -55,13 +56,11 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 # Configure logging based on environment
 if ENVIRONMENT == "production":
-    # Ensure logs directory exists
-    os.makedirs('/app/logs', exist_ok=True)
     logging.basicConfig(
         level=logging.WARNING,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler('/app/logs/app.log'),
+            logging.FileHandler('/var/log/mefapex/app.log'),
             logging.StreamHandler()
         ]
     )
@@ -132,9 +131,72 @@ if DEMO_PASSWORD == "1234" and ENVIRONMENT == "production":
         DEMO_USER_ENABLED = False
         logger.warning("🔒 Demo user disabled due to weak password")
 
-# Initialize database manager
-db_manager = DatabaseManager()
-db_manager.init_database()
+# 🗄️ PRODUCTION DATABASE INITIALIZATION
+logger.info(f"🔧 Environment: {ENVIRONMENT}")
+logger.info(f"🐛 Debug mode: {'ENABLED' if DEBUG_MODE else 'DISABLED'}")
+
+# Initialize production database manager
+db_manager = ProductionDatabaseManager()
+
+async def initialize_database():
+    """Initialize database asynchronously"""
+    success = await db_manager.initialize()
+    if not success:
+        logger.error("❌ Failed to initialize database")
+        raise RuntimeError("Database initialization failed")
+    
+    # Validate database integrity
+    integrity_check = await db_manager.validate_data_integrity()
+    if not integrity_check.get("validation_passed", False):
+        logger.warning("⚠️ Database integrity issues detected")
+        for issue in integrity_check.get("issues", []):
+            logger.warning(f"  - {issue}")
+
+# For backward compatibility, create sync wrapper
+class LegacyDatabaseWrapper:
+    """Wrapper to maintain compatibility with existing sync code"""
+    
+    def __init__(self, async_manager: ProductionDatabaseManager):
+        self.async_manager = async_manager
+        self.created_at = datetime.utcnow()
+    
+    @property
+    def db_path(self):
+        return self.async_manager.db_path
+    
+    def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
+        return self.async_manager.get_or_create_session(user_id, force_new)
+    
+    def get_current_session(self, user_id: str):
+        return self.async_manager.get_current_session(user_id)
+    
+    def add_message(self, session_id: str, user_id: str, message: str, response: str, source: str = "ai"):
+        return self.async_manager.add_message_sync(session_id, user_id, message, response, source)
+    
+    def get_chat_history(self, user_id: str, limit: int = 20):
+        return self.async_manager.get_chat_history(user_id, limit)
+    
+    def get_stats(self):
+        return self.async_manager.get_stats()
+    
+    def get_session_info(self, session_id: str):
+        import asyncio
+        return asyncio.run(self.async_manager.get_session(session_id))
+    
+    def get_chat_sessions_with_history(self, user_id: str, limit: int = 15):
+        import asyncio
+        return asyncio.run(self.async_manager.get_user_sessions(user_id, limit))
+    
+    def start_new_session(self, user_id: str) -> str:
+        import asyncio
+        return asyncio.run(self.async_manager.create_session(user_id))
+    
+    def clear_chat_history(self, user_id: str):
+        # This would need to be implemented in the async manager
+        logger.warning("clear_chat_history not implemented in production manager")
+
+# Create legacy wrapper for compatibility - will be replaced after database initialization
+legacy_db_manager = None
 
 # 🔒 RATE LIMITING IMPLEMENTATION
 class RateLimiter:
@@ -307,17 +369,31 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Startup event for model warmup
+# Startup event for database and model initialization
 @app.on_event("startup")
 async def startup_event():
-    """Initialize and warm up models on startup"""
+    """Initialize database and warm up models on startup"""
+    global legacy_db_manager
+    
     logger.info("🚀 Starting MEFAPEX Chatbot API")
+    
     try:
+        # Initialize database first
+        logger.info("🔥 Initializing production database...")
+        await initialize_database()
+        
+        # Create legacy wrapper after database is initialized
+        legacy_db_manager = LegacyDatabaseWrapper(db_manager)
+        logger.info("✅ Database initialization completed")
+        
         # Warm up models for better first-request performance
+        logger.info("🔥 Starting model warmup...")
         await startup_warmup()
-        logger.info("✅ Startup warmup completed")
+        logger.info("✅ Model warmup completed")
+        
     except Exception as e:
-        logger.warning(f"⚠️ Startup warmup failed: {e}")
+        logger.error(f"❌ Startup failed: {e}")
+        raise
     
     # Start memory monitoring if available
     if MEMORY_MONITORING_AVAILABLE and ENVIRONMENT == "production":
@@ -326,6 +402,8 @@ async def startup_event():
             logger.info("🧠 Memory monitoring started")
         except Exception as e:
             logger.warning(f"⚠️ Memory monitoring setup failed: {e}")
+    
+    logger.info("🔥 MEFAPEX API ready for requests")
     
     logger.info("🔥 MEFAPEX API ready for requests")
 
@@ -346,6 +424,9 @@ qdrant_client = QdrantClient(
     host=os.getenv("QDRANT_HOST", "localhost"),
     port=int(os.getenv("QDRANT_PORT", 6333))
 )
+
+# Initialize ContentManager for static responses
+content_manager = ContentManager()
 
 # Warm up models on startup for better first-request performance
 async def startup_warmup():
@@ -619,12 +700,12 @@ def get_user_session(user_id: str, force_new: bool = False, auto_create: bool = 
     """
     try:
         if auto_create:
-            session_id = db_manager.get_or_create_session(user_id, force_new=force_new)
+            session_id = legacy_db_manager.get_or_create_session(user_id, force_new=force_new)
             logger.debug(f"Session {'created' if force_new else 'retrieved'} for user {user_id}: {session_id}")
             return session_id
         else:
             # Only get existing session, don't create
-            existing_session = db_manager.get_current_session(user_id)
+            existing_session = legacy_db_manager.get_current_session(user_id)
             if existing_session:
                 return existing_session
             else:
@@ -859,11 +940,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
         )
     
     # 🚨 SECURE DEMO USER CHECK with enhanced production protection
-    logger.info(f"🔍 Debug: DEMO_USER_ENABLED={DEMO_USER_ENABLED}, username={form_data.username}")
-    
     if DEMO_USER_ENABLED and form_data.username == "demo":
-        logger.info(f"🔍 Debug: Demo user login attempt - validating credentials")
-        
         # 🔒 ENHANCED DEMO USER SECURITY with input validation
         if not input_validator.validate_username(form_data.username)[0]:
             brute_force_protection.record_failed_attempt(client_ip)
@@ -874,7 +951,6 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
         
         demo_password_hash = os.getenv("DEMO_PASSWORD_HASH")  # Allow custom demo password
         demo_password = DEMO_PASSWORD or os.getenv("DEMO_PASSWORD", "1234")
-        logger.info(f"🔍 Debug: Demo password check - expected={demo_password}, provided={form_data.password}")
         
         # Validate demo password strength if it's the default weak password
         if demo_password == "1234" and ENVIRONMENT == "production":

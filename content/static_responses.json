@@ -1,0 +1,83 @@
+{
+  "responses": {
+    "greetings": {
+      "message": "👋 **Merhaba! Hoş geldiniz.**\n\nBen MEFAPEX Bilişim Teknolojileri'nin asistanıyım. \n\n\n**Size yardımcı olabileceğim konular:**\n• Sistem ve yazılım ile ilgili destek\n• Operasyonel süreçler ve yönlendirme\n• Talep ve arıza bildirimleri\n• Çalışma süreçleri hakkında bilgi\n• İletişim ve yönlendirme\n\nLütfen sorununuzu ya da talebinizi yazın, hemen yardımcı olayım. 😊",
+      "keywords": ["merhaba", "selam", "selamun aleyküm", "selamünaleyküm", "günaydın", "iyi günler", "iyi akşamlar", "iyi geceler", "nasılsın", "nasilsin", "nasıl gidiyor", "naber", "ne haber", "hoş geldin", "hoşgeldin", "hello", "hi", "hey"],
+      "category": "greeting"
+    },
+    "thanks_goodbye": {
+      "message": "🙏 **Rica ederim!**\n\nSize yardımcı olabildiysem ne mutlu bana! \n\nBaşka sorularınız olduğunda her zaman buradayım.\nİyi çalışmalar dilerim! 🌟",
+      "keywords": ["teşekkür", "thanks", "sağol", "görüşürüz", "bye", "hoşça kal"],
+      "category": "thanks_goodbye"
+    },
+    "company_info": {
+      "message": "🏭 **MEFAPEX Bilişim Teknolojileri Hakkında**\n\nMEFAPEX Bilişim Teknolojileri, modern teknoloji çözümleri sunan bir firmadır.\n\n**Hizmet Alanlarımız:**\n• 💻 **Yazılım Geliştirme**: Özel yazılım çözümleri\n• 🛡️ **Sistem Güvenliği**: Güvenlik danışmanlığı ve çözümleri\n• 🌐 **Web Teknolojileri**: Modern web uygulamaları\n• 📱 **Mobil Uygulamalar**: iOS ve Android geliştirme\n• 🤖 **Yapay Zeka**: AI ve makine öğrenmesi çözümleri\n\n**Teknoloji Odaklılığımız:**\n• En güncel teknolojiler ile çalışırız\n• Sürekli öğrenme ve gelişim kültürü\n• Müşteri odaklı çözümler\n• Kaliteli ve güvenilir hizmet\n\nSize hangi konuda yardımcı olabilirim? 🤝",
+      "keywords": ["mefapex", "şirket", "hakkında", "firma", "teknoloji", "bilişim"],
+      "category": "company_info"
+    },
+    "working_hours": {
+      "message": "⏰ **Çalışma Saatleri ve İletişim**\n\n**Ofis Saatleri:**\n• Pazartesi - Cuma: 09:00 - 18:00\n• Öğle molası: 12:00 - 13:00\n• Hafta sonu: Kapalı\n\n**Acil Durumlar:**\n• 7/24 sistem destek hattı\n• Kritik sistem arızaları için anında müdahale\n• Uzaktan destek imkanı\n\n**İletişim Kanalları:**\n• 📞 Ana hat: [Telefon numarası]\n• 📧 Destek: destek@mefapex.com\n• 💬 Canlı destek: Bu platform\n• 🎫 Ticket sistemi: [Portal adresi]\n\n**Yanıt Süreleri:**\n• Acil: 15 dakika içinde\n• Normal: 2 saat içinde\n• Düşük öncelik: 24 saat içinde\n\nHangi konuda destek almak istiyorsunuz? 📞",
+      "keywords": ["saat", "zaman", "çalışma saati", "mesai", "ne zaman", "office hours"],
+      "category": "working_hours"
+    },
+    "support_types": {
+      "message": "🛠️ **Teknik Destek Türleri**\n\n**Yazılım Desteği:**\n• Uygulama hataları ve çözümleri\n• Performans optimizasyonu\n• Güncelleme ve bakım\n• Kullanıcı eğitimi\n\n**Sistem Desteği:**\n• Sunucu yönetimi\n• Ağ altyapısı\n• Güvenlik duvarı yapılandırması\n• Backup ve recovery\n\n**Acil Müdahale:**\n• Sistem çökmeleri\n• Güvenlik ihlalleri\n• Veri kaybı durumları\n• Kritik hata çözümleri\n\n**Danışmanlık Hizmetleri:**\n• Teknoloji stratejisi\n• Sistem mimarisi\n• Güvenlik değerlendirmesi\n• Performans analizi\n\n**Destek Alma Yolları:**\n• Bu chat sistemi üzerinden\n• Telefon ile direkt iletişim\n• E-mail ile detaylı açıklama\n• Uzaktan ekran paylaşımı\n\nHangi tür destek almak istiyorsunuz? 🔧",
+      "keywords": ["destek", "yardım", "problem", "hata", "arıza", "support"],
+      "category": "support_types"
+    },
+    "technology_info": {
+      "message": "💻 **Teknoloji ve Yazılım Geliştirme**\n\n**Kullandığımız Teknolojiler:**\n• **Backend**: Python, Node.js, .NET Core\n• **Frontend**: React, Vue.js, Angular\n• **Mobile**: React Native, Flutter\n• **Database**: PostgreSQL, MongoDB, Redis\n• **Cloud**: AWS, Azure, Google Cloud\n• **DevOps**: Docker, Kubernetes, CI/CD\n\n**Yazılım Geliştirme Süreçleri:**\n• Agile metodoloji\n• Test-driven development\n• Code review süreçleri\n• Continuous integration\n• Automated testing\n\n**Yapay Zeka ve ML:**\n• Natural Language Processing\n• Computer Vision\n• Predictive Analytics\n• Chatbot geliştirme\n• Data Science\n\n**Güvenlik Önlemleri:**\n• OWASP standartları\n• Penetration testing\n• Secure coding practices\n• Encryption ve tokenization\n\nTeknik konularda nasıl yardımcı olabilirim? 🚀",
+      "keywords": ["teknoloji", "yazılım", "programming", "kod", "development", "ai", "yapay zeka"],
+      "category": "technology_info"
+    },
+    "default_response": {
+      "message": "🤔 **'{user_input}' hakkında MEFAPEX bilgi tabanımızda hazır bir kayıt bulamadım.**\n\n**Daha iyi yardım için şunları deneyebilirsiniz:**\n• Soruyu daha detaylandırın\n• Hangi alanda bilgi istediğinizi belirtin\n• Teknik konular için spesifik terimler kullanın\n\n**Hızlı erişim için:**\n• 📞 Direkt destek hattı: [Telefon]\n• 📧 E-mail desteği: destek@mefapex.com\n• 💬 Canlı destek: Bu platform\n\n**Popüler konular:**\n• Sistem ve yazılım desteği\n• Teknik sorun bildirimi\n• Proje danışmanlığı\n• Güvenlik konuları\n• Çalışma saatleri ve iletişim\n\nSize başka nasıl yardımcı olabilirim? 💬",
+      "keywords": [],
+      "category": "default"
+    }
+  },
+  "categories": {
+    "greeting": {
+      "name": "Selamlama",
+      "priority": 1,
+      "enabled": true
+    },
+    "thanks_goodbye": {
+      "name": "Teşekkür ve Veda",
+      "priority": 2,
+      "enabled": true
+    },
+    "company_info": {
+      "name": "Şirket Bilgileri",
+      "priority": 3,
+      "enabled": true
+    },
+    "working_hours": {
+      "name": "Çalışma Saatleri",
+      "priority": 4,
+      "enabled": true
+    },
+    "support_types": {
+      "name": "Destek Türleri",
+      "priority": 5,
+      "enabled": true
+    },
+    "technology_info": {
+      "name": "Teknoloji Bilgileri",
+      "priority": 6,
+      "enabled": true
+    },
+    "default": {
+      "name": "Varsayılan",
+      "priority": 999,
+      "enabled": true
+    }
+  },
+  "settings": {
+    "version": "1.0.0",
+    "last_updated": "2025-08-11",
+    "cache_enabled": true,
+    "fallback_to_db": true,
+    "max_response_length": 2000
+  }
+}
