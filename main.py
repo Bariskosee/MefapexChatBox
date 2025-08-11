@@ -17,7 +17,6 @@ import logging
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 from content_manager import ContentManager
-import uuid
 import json
 import asyncio
 from collections import defaultdict
@@ -122,51 +121,8 @@ async def initialize_database():
         for issue in integrity_check.get("issues", []):
             logger.warning(f"  - {issue}")
 
-# For backward compatibility, create sync wrapper
-class LegacyDatabaseWrapper:
-    """Wrapper to maintain compatibility with existing sync code"""
-    
-    def __init__(self, async_manager: ProductionDatabaseManager):
-        self.async_manager = async_manager
-        self.created_at = datetime.utcnow()
-    
-    @property
-    def db_path(self):
-        return self.async_manager.db_path
-    
-    def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
-        return self.async_manager.get_or_create_session(user_id, force_new)
-    
-    def get_current_session(self, user_id: str):
-        return self.async_manager.get_current_session(user_id)
-    
-    def add_message(self, session_id: str, user_id: str, message: str, response: str, source: str = "ai"):
-        return self.async_manager.add_message_sync(session_id, user_id, message, response, source)
-    
-    def get_chat_history(self, user_id: str, limit: int = 20):
-        return self.async_manager.get_chat_history(user_id, limit)
-    
-    def get_stats(self):
-        return self.async_manager.get_stats()
-    
-    def get_session_info(self, session_id: str):
-        import asyncio
-        return asyncio.run(self.async_manager.get_session(session_id))
-    
-    def get_chat_sessions_with_history(self, user_id: str, limit: int = 15):
-        import asyncio
-        return asyncio.run(self.async_manager.get_user_sessions(user_id, limit))
-    
-    def start_new_session(self, user_id: str) -> str:
-        import asyncio
-        return asyncio.run(self.async_manager.create_session(user_id))
-    
-    def clear_chat_history(self, user_id: str):
-        # This would need to be implemented in the async manager
-        logger.warning("clear_chat_history not implemented in production manager")
-
-# Create legacy wrapper for compatibility - will be replaced after database initialization
-legacy_db_manager = None
+# Database manager initialization
+# Using ProductionDatabaseManager directly without wrapper
 
 # 🔒 RATE LIMITING IMPLEMENTATION
 class RateLimiter:
@@ -343,7 +299,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and warm up models on startup"""
-    global legacy_db_manager
     
     logger.info("🚀 Starting MEFAPEX Chatbot API")
     
@@ -351,9 +306,6 @@ async def startup_event():
         # Initialize database first
         logger.info("🔥 Initializing production database...")
         await initialize_database()
-        
-        # Create legacy wrapper after database is initialized
-        legacy_db_manager = LegacyDatabaseWrapper(db_manager)
         logger.info("✅ Database initialization completed")
         
         # Warm up models for better first-request performance
@@ -400,13 +352,6 @@ content_manager = ContentManager()
 
 # Warm up models on startup for better first-request performance
 async def startup_warmup():
-    """Warm up models during application startup"""
-    logger.info("🔥 Starting model warmup...")
-    try:
-        model_manager.warmup_models()
-        logger.info("✅ Model warmup completed")
-    except Exception as e:
-        logger.warning(f"⚠️ Model warmup failed: {e}")
     """Warm up models during application startup"""
     logger.info("🔥 Starting model warmup...")
     try:
@@ -558,12 +503,12 @@ def get_user_session(user_id: str, force_new: bool = False, auto_create: bool = 
     """
     try:
         if auto_create:
-            session_id = legacy_db_manager.get_or_create_session(user_id, force_new=force_new)
+            session_id = db_manager.get_or_create_session(user_id, force_new=force_new)
             logger.debug(f"Session {'created' if force_new else 'retrieved'} for user {user_id}: {session_id}")
             return session_id
         else:
             # Only get existing session, don't create
-            existing_session = legacy_db_manager.get_current_session(user_id)
+            existing_session = db_manager.get_current_session(user_id)
             if existing_session:
                 return existing_session
             else:
@@ -626,7 +571,6 @@ def add_message_to_session(session_id: str, user_message: str, bot_response: str
             raise ValueError(f"Message validation failed: {msg_error}")
         
         # Validate UUID format for session_id
-        import uuid
         try:
             uuid.UUID(session_id)
         except ValueError:
