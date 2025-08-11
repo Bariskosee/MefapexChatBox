@@ -31,6 +31,10 @@ def check_python_version():
         print("   Python 3.11+ indirin: https://www.python.org/downloads/")
         sys.exit(1)
     
+    # Warn about compatibility issues with specific versions
+    if version.major == 3 and version.minor == 13:
+        print("⚠️  Python 3.13 detected - some packages may need special handling")
+    
     print("✅ Python versiyonu uygun!")
     return f"{version.major}.{version.minor}"
 
@@ -48,17 +52,43 @@ def create_virtual_env():
     venv_path = Path(".venv")
     
     if venv_path.exists():
-        print("✅ Virtual environment mevcut")
-        return str(venv_path)
+        print("🔍 Mevcut virtual environment bulundu, uyumluluğu kontrol ediliyor...")
+        
+        # Check if the virtual environment is compatible
+        pyvenv_cfg = venv_path / "pyvenv.cfg"
+        if pyvenv_cfg.exists():
+            with open(pyvenv_cfg, 'r') as f:
+                content = f.read()
+                if "version" in content:
+                    for line in content.split('\n'):
+                        if line.startswith('version'):
+                            venv_version = line.split('=')[1].strip()
+                            current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+                            
+                            if not venv_version.startswith(current_version):
+                                print(f"⚠️  Virtual environment Python version mismatch!")
+                                print(f"   Current Python: {current_version}")
+                                print(f"   Virtual env Python: {venv_version}")
+                                print("🔄 Recreating virtual environment with correct Python version...")
+                                
+                                # Remove old venv and create new one
+                                import shutil
+                                shutil.rmtree(venv_path)
+                                break
+                            else:
+                                print(f"✅ Virtual environment Python version compatible: {venv_version}")
+                                return str(venv_path)
     
-    print("🔧 Virtual environment oluşturuluyor...")
-    try:
-        subprocess.run([sys.executable, "-m", "venv", ".venv"], check=True)
-        print("✅ Virtual environment oluşturuldu")
-        return str(venv_path)
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Virtual environment oluşturulamadı: {e}")
-        sys.exit(1)
+    if not venv_path.exists():
+        print("🔧 Virtual environment oluşturuluyor...")
+        try:
+            subprocess.run([sys.executable, "-m", "venv", ".venv"], check=True)
+            print("✅ Virtual environment oluşturuldu")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Virtual environment oluşturulamadı: {e}")
+            sys.exit(1)
+    
+    return str(venv_path)
 
 def get_pip_executable():
     """Doğru pip executable'ını bul"""
@@ -83,15 +113,56 @@ def install_dependencies():
     print("\n📚 Dependencies yükleniyor...")
     
     pip_path = get_pip_executable()
+    python_version = sys.version_info
     
     try:
         # Pip'i güncelle
         print("🔄 pip güncelleniyor...")
         subprocess.run([pip_path, "install", "--upgrade", "pip"], check=True)
         
+        # Handle Python 3.13 specific package compatibility
+        if python_version.major == 3 and python_version.minor == 13:
+            print("🔧 Python 3.13 için özel paket uyumluluğu sağlanıyor...")
+            
+            # Install compatible versions for Python 3.13
+            special_packages = [
+                "numpy>=1.24.0",  # Use newer numpy for Python 3.13
+                "scikit-learn>=1.3.0",  # Use newer scikit-learn
+                "torch>=2.0.0",  # Ensure compatible torch version
+            ]
+            
+            for package in special_packages:
+                print(f"📦 Installing {package}...")
+                subprocess.run([pip_path, "install", package], check=True)
+        
         # Requirements'ları yükle
         print("📦 Requirements yükleniyor...")
-        subprocess.run([pip_path, "install", "-r", "requirements.txt"], check=True)
+        result = subprocess.run([pip_path, "install", "-r", "requirements.txt"], 
+                              capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print("⚠️  Bazı paketlerde sorun var, alternatif yöntem deneniyor...")
+            # Try installing packages individually if batch install fails
+            with open("requirements.txt", "r") as f:
+                packages = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            
+            failed_packages = []
+            for package in packages:
+                try:
+                    print(f"📦 Installing {package}...")
+                    subprocess.run([pip_path, "install", package], check=True)
+                except subprocess.CalledProcessError:
+                    failed_packages.append(package)
+                    print(f"⚠️  Failed to install {package}, will try alternatives...")
+            
+            # Try alternatives for failed packages
+            if failed_packages:
+                print(f"🔄 Trying alternatives for {len(failed_packages)} failed packages...")
+                for package in failed_packages:
+                    if "scikit-learn" in package:
+                        subprocess.run([pip_path, "install", "scikit-learn"], check=True)
+                    elif "numpy<2.0" in package:
+                        subprocess.run([pip_path, "install", "numpy"], check=True)
         
         print("✅ Tüm dependencies başarıyla yüklendi!")
         
@@ -99,6 +170,16 @@ def install_dependencies():
         print(f"❌ Dependencies yüklenemedi: {e}")
         print("\n🔧 Manuel kurulum deneyin:")
         print(f"   {pip_path} install -r requirements.txt")
+        
+        # Show specific help for Python 3.13 users
+        if python_version.major == 3 and python_version.minor == 13:
+            print("\n💡 Python 3.13 için öneriler:")
+            print("   1. pip install --upgrade pip")
+            print("   2. pip install scikit-learn")
+            print("   3. pip install numpy")
+            print("   4. pip install torch")
+            print("   5. pip install -r requirements.txt")
+        
         sys.exit(1)
 
 def test_installation():

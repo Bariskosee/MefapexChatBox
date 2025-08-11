@@ -12,9 +12,19 @@ MEFAPEX fabrikası için geliştirilmiş **production-ready** Türkçe AI chatbo
 
 ## 🚀 Hızlı Başlangıç
 
-### ⚡ Otomatik Kurulum (Önerilen)
+### 🔍 Uyumluluk Kontrolü (Önerilen)
 ```bash
 # Repository'yi klonlayın
+git clone https://github.com/Bariskosee/MefapexChatBox.git
+cd MefapexChatBox
+
+# Python sürümünüzü ve sistem uyumluluğunu kontrol edin
+python check_compatibility.py
+```
+
+### ⚡ Otomatik Kurulum (Önerilen)
+```bash
+# Repository'yi klonlayın (eğer henüz yapmadıysanız)
 git clone https://github.com/Bariskosee/MefapexChatBox.git
 cd MefapexChatBox
 
@@ -44,7 +54,13 @@ cd MefapexChatBox
 - **Disk**: 2GB+ boş alan
 - **İşletim Sistemi**: Windows 10+, macOS 10.15+, Linux Ubuntu 20.04+
 
-### 🐍 Python Kurulumu
+### 🐍 Python Kurulumu & Sürüm Uyumluluğu
+
+**🎯 Önerilen Python Sürümleri:**
+- ✅ **Python 3.11**: Tam uyumlu (Önerilen)
+- ✅ **Python 3.12**: Tam uyumlu
+- ⚠️ **Python 3.13**: Uyumlu (bazı paketler özel kurulum gerektirebilir)
+
 **Windows:**
 ```bash
 # Microsoft Store'dan Python 3.11+ indirin
@@ -71,6 +87,12 @@ sudo apt install python3.11 python3.11-venv python3.11-pip
 # Versiyonu kontrol edin
 python3.11 --version
 ```
+
+### 🔧 Python 3.13 Özel Notları
+Python 3.13 kullanıyorsanız:
+1. `setup.py` otomatik olarak uyumluluğu sağlar
+2. Alternatif olarak: `pip install -r requirements-python313.txt`
+3. Bazı paketler daha yeni sürümlerde yüklenecektir
 
 ## 🚀 Özellikler
 
@@ -415,6 +437,34 @@ REDIS_PORT=6379
 - � **Workflow Automation**: Process automation integration
 
 ## 🐛 Sorun Giderme
+
+### 🐍 Python Sürüm Sorunları
+
+**Virtual Environment Python Sürüm Uyumsuzluğu:**
+```bash
+# Problemi kontrol edin
+python --version
+source .venv/bin/activate
+python --version
+
+# Farklı sürümler gösteriyorsa:
+rm -rf .venv
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Python 3.13 Kurulum Sorunları:**
+```bash
+# Özel Python 3.13 requirements kullanın
+pip install -r requirements-python313.txt
+
+# Manuel greenlet kurulumu
+pip install greenlet>=3.2.0
+
+# Scikit-learn için
+pip install scikit-learn>=1.3.0
+```
 
 ### Qdrant Bağlantı Hatası
 ```bash
