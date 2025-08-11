@@ -1213,6 +1213,54 @@ async def comprehensive_health_check():
             }
         )
 
+def is_factory_related_question(user_message: str) -> bool:
+    """Check if the question is related to factory operations"""
+    msg_lower = user_message.lower().strip()
+    
+    # Factory-related keywords
+    factory_keywords = [
+        "mefapex", "fabrika", "factory", "üretim", "imalat", "production",
+        "çalışan", "personel", "işçi", "employee", "worker", "staff",
+        "vardiya", "shift", "mesai", "working", "çalışma", "iş",
+        "güvenlik", "safety", "kural", "regulation", "prosedür", "procedure",
+        "izin", "leave", "tatil", "holiday", "rapor", "report",
+        "departman", "department", "yönetim", "management", "müdür", "manager",
+        "makine", "machine", "ekipman", "equipment", "alet", "tool",
+        "kalite", "quality", "kontrol", "control", "test", "ürün", "product",
+        "saat", "time", "zaman", "when", "ne zaman", "kaçta", "hangi saat",
+        "nerede", "where", "nasıl", "how", "kim", "who", "kime", "whom"
+    ]
+    
+    # Non-factory keywords that should be rejected
+    non_factory_keywords = [
+        "matematik", "math", "hesapla", "calculate", "toplam", "sum", "çarp", "multiply",
+        "böl", "divide", "eksi", "minus", "artı", "plus", "kaç eder", "=",
+        "yapay zeka", "ai", "artificial intelligence", "chatgpt", "gpt", "openai",
+        "python", "programlama", "kod", "code", "yazılım", "software",
+        "teknoloji", "technology", "bilgisayar", "computer", "internet",
+        "futbol", "football", "spor", "sports", "müzik", "music",
+        "yemek", "food", "tarif", "recipe", "seyahat", "travel"
+    ]
+    
+    # Check for non-factory keywords first
+    if any(keyword in msg_lower for keyword in non_factory_keywords):
+        return False
+    
+    # Check for factory keywords
+    if any(keyword in msg_lower for keyword in factory_keywords):
+        return True
+    
+    # Check for greetings and basic communication
+    basic_communication = [
+        "merhaba", "selam", "hello", "hi", "hey", "günaydın", "iyi günler",
+        "teşekkür", "thanks", "sağol", "görüşürüz", "bye", "hoşça kal"
+    ]
+    
+    if any(keyword in msg_lower for keyword in basic_communication):
+        return True
+    
+    return False
+
 def generate_embedding(text: str) -> list:
     """Generate embedding using ModelManager with caching"""
     try:
@@ -1238,28 +1286,28 @@ def generate_response_openai(context: str, user_message: str) -> str:
     try:
         if context:
             # Use context from database
-            system_prompt = """Sen MEFAPEX fabrikasının Türkçe AI asistanısın. 
+            system_prompt = """Sen MEFAPEX fabrikasının Türkçe asistanısın. 
             ÖNEMLI: Sadece Türkçe yanıt ver, asla İngilizce kullanma.
+            Sadece MEFAPEX fabrikası ile ilgili konularda yardımcı ol. 
+            Fabrika dışındaki genel konular, matematik, teknoloji soruları gibi konularda yardım etme.
             Verilen bilgileri kullanarak Türkçe, kısa ve net cevaplar ver.
-            Bilgileri doğru bir şekilde kullan ve kullanıcıya Türkçe yardımcı ol.
             Tüm yanıtların Türkiye Türkçesi ile olmalıdır."""
             
             user_prompt = f"Bağlam: {context}\n\nSoru: {user_message}"
         else:
             # No context found - use general knowledge
-            system_prompt = """Sen MEFAPEX fabrikasının Türkçe AI asistanısın. 
+            system_prompt = """Sen MEFAPEX fabrikasının Türkçe asistanısın. 
             ÖNEMLI: Sadece Türkçe yanıt ver, hiç İngilizce kelime kullanma.
-            
-            Fabrika ile ilgili genel sorulara Türkçe yardımcı ol. Eğer spesifik fabrika verisi gerekmiyorsa,
-            genel bilginle Türkçe yanıt verebilirsin. Yanıtını kısa, yararlı ve tamamen Türkçe tut.
+            Sadece fabrika ile ilgili konularda yardımcı ol.
+            Matematik, teknoloji, genel bilgi gibi fabrika dışı konularda yardım etme.
             
             MEFAPEX hakkında genel bilgi: Türkiye'deki bir üretim fabrikası, çalışan hakları ve 
             güvenlik kurallarına önem verir.
             
-            Eğer fabrika-spesifik veri gerekliyse, kullanıcıyı yönetime yönlendir.
+            Eğer soru fabrika ile ilgili değilse, kullanıcıyı fabrika konularına yönlendir.
             Tüm yanıtların Türkiye Türkçesi ile olmalıdır."""
             
-            user_prompt = f"Soru: {user_message}\n\nBu konuda fabrika veritabanında spesifik bilgi bulunamadı. Genel bilginle yardımcı olabilir misin?"
+            user_prompt = f"Soru: {user_message}\n\nBu konuda fabrika veritabanında spesifik bilgi bulunamadı. Fabrika ile ilgili ise genel bilginle yardımcı olabilir misin?"
         
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -1314,129 +1362,20 @@ Yüksek kaliteli ürünlerle hem yerel hem de global pazarda güvenilir bir üre
 
 Size MEFAPEX hakkında başka hangi konularda bilgi verebilirim? 🤝"""
     
-    # Yapay Zeka Soruları - Türkçe öncelikli
-    turkish_ai_terms = [
-        "yapay zeka", "yapay zekâ", "makine öğrenmesi", "makine öğrenimi",
-        "derin öğrenme", "sinir ağları", "algoritma", "robot", "otomasyon",
-        "akıllı sistem", "veri bilimi", "büyük veri", "analitik",
-        # İngilizce ve diğer diller (düşük öncelik)
-        "ia", "ai", "artificial intelligence", "IA nedir"
-    ]
-    
-    if any(word in user_lower for word in turkish_ai_terms):
-        return """🤖 **IA (Intelligence Artificielle) / Yapay Zeka Nedir?**
 
-IA veya AI (Artificial Intelligence), makinelerin insan benzeri zeka göstermesini sağlayan teknolojilerin genel adıdır.
-
-**Temel Özellikler:**
-• Öğrenme ve adaptasyon yeteneği
-• Problem çözme ve karar verme
-• Doğal dil işleme ve anlama
-• Görüntü ve ses tanıma
-• Otonom hareket ve planlama
-
-**Kullanım Alanları:**
-• Sağlık: Hastalık teşhisi, ilaç keşfi
-• Finans: Risk analizi, dolandırıcılık tespiti
-• Üretim: Kalite kontrol, tahmine dayalı bakım
-• Eğitim: Kişiselleştirilmiş öğrenme
-• Günlük hayat: Sesli asistanlar, öneri sistemleri
-
-Ben de bir AI asistanıyım ve size MEFAPEX fabrikası hakkında yardımcı olmak için buradayım! 🎯"""
-
-    # ChatGPT hakkında sorular
-    elif any(word in user_lower for word in ["chatgpt", "gpt", "openai"]):
-        return """💬 **ChatGPT Nedir?**
-
-ChatGPT, OpenAI tarafından geliştirilen gelişmiş bir dil modelidir. GPT (Generative Pre-trained Transformer) teknolojisini kullanır.
-
-**Yetenekleri:**
-• Doğal dil anlama ve üretme
-• Çok dilli destek (100+ dil)
-• Kod yazma ve debugging
-• Yaratıcı içerik üretimi
-• Analiz ve problem çözme
-
-**Nasıl Çalışır:**
-• Milyarlarca parametreli sinir ağı
-• Transformer mimarisi
-• Bağlamsal anlama ve tahmin
-• Sürekli öğrenme ve gelişme
-
-Ben de benzer teknolojiler kullanıyorum! Size nasıl yardımcı olabilirim? 🚀"""
-
-    # Python hakkında sorular
-    elif any(word in user_lower for word in ["python", "programlama", "kod", "yazılım"]):
-        return """🐍 **Python Programlama Dili**
-
-Python, yüksek seviyeli, yorumlanabilir ve çok amaçlı bir programlama dilidir.
-
-**Özellikleri:**
-• Kolay ve okunabilir sözdizimi
-• Geniş kütüphane desteği
-• Platform bağımsız
-• Açık kaynak ve ücretsiz
-• Dinamik tip sistemi
-
-**Kullanım Alanları:**
-• Web geliştirme (Django, Flask)
-• Veri bilimi (Pandas, NumPy)
-• Yapay zeka (TensorFlow, PyTorch)
-• Otomasyon ve scripting
-• Oyun geliştirme
-
-Bu chatbot da Python ile geliştirilmiştir! 🎯"""
-
-    # Teknoloji genel soruları
-    elif any(word in user_lower for word in ["teknoloji", "bilgisayar", "internet", "dijital"]):
-        return """💻 **Teknoloji ve Dijital Dönüşüm**
-
-Modern teknoloji, hayatımızın her alanını dönüştürüyor.
-
-**Önemli Teknoloji Trendleri:**
-• Yapay Zeka ve Makine Öğrenmesi
-• Bulut Bilişim (Cloud Computing)
-• Nesnelerin İnterneti (IoT)
-• Blockchain ve Kripto
-• 5G ve Bağlantı Teknolojileri
-• Sanal ve Artırılmış Gerçeklik
-
-**Fabrikada Teknoloji:**
-MEFAPEX fabrikamız da modern teknolojileri kullanarak üretim verimliliğini artırıyor.
-
-Teknoloji hakkında spesifik sorularınız varsa, sormaktan çekinmeyin! 🚀"""
-
-    # Matematik/Hesaplama soruları
-    elif any(word in user_lower for word in ["hesapla", "matematik", "toplam", "çarp", "böl", "eksi", "artı"]):
-        return """🔢 **Matematik ve Hesaplama**
-
-Matematik sorunuz için size yardımcı olmaya çalışayım!
-
-Basit hesaplamalar yapabilirim:
-• Toplama, çıkarma, çarpma, bölme
-• Yüzde hesaplamaları
-• Oran ve orantı
-• Basit denklemler
-
-Lütfen hesaplamanızı net bir şekilde yazın. Örnek:
-- "15 + 27 kaç eder?"
-- "120'nin %15'i nedir?"
-- "8 x 12 = ?"
-
-Not: Karmaşık hesaplamalar için hesap makinesi kullanmanızı öneririm. 📊"""
 
     # Genel selamlama
     elif any(word in user_lower for word in ["merhaba", "selam", "günaydın", "iyi günler", "hey", "hello"]):
         return """👋 **Merhaba! Hoş geldiniz!**
 
-Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
+Ben MEFAPEX fabrikasının asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
 
 **Size yardımcı olabileceğim konular:**
 • Fabrika ile ilgili sorular (çalışma saatleri, kurallar vb.)
-• Genel bilgi soruları
-• Teknoloji ve AI konuları
-• Basit hesaplamalar
-• Ve daha fazlası...
+• İş güvenliği prosedürleri
+• Departman bilgileri ve iletişim
+• Vardiya ve mesai bilgileri
+• Fabrika kuralları ve düzenlemeleri
 
 Nasıl yardımcı olabilirim? 😊"""
 
@@ -1536,7 +1475,7 @@ def generate_ai_response_local(user_message: str) -> str:
     if any(word in msg_lower for word in greetings):
         return """👋 **Merhaba! Hoş geldiniz!**
 
-Ben MEFAPEX fabrikasının AI asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
+Ben MEFAPEX fabrikasının asistanıyım. Size yardımcı olmaktan mutluluk duyarım!
 
 **Size yardımcı olabileceğim konular:**
 • 🏭 Fabrika operasyonları ve süreçleri
@@ -1663,21 +1602,30 @@ Hangi güvenlik konusu hakkında detaylı bilgi almak istiyorsunuz? �"""
 Size başka nasıl yardımcı olabilirim? 💬"""
 
 def generate_rule_based_response(user_message: str) -> str:
-    """Fallback rule-based responses"""
+    """Fallback rule-based responses - Factory focused only"""
     msg_lower = user_message.lower()
     
     # Greetings
     greetings = ["merhaba", "selam", "hi", "hello", "hey"]
     if any(greeting in msg_lower for greeting in greetings):
-        return "👋 Merhaba! MEFAPEX fabrika asistanınızım. Size nasıl yardımcı olabilirim?"
+        return "👋 Merhaba! MEFAPEX fabrika asistanınızım. Fabrika ile ilgili nasıl yardımcı olabilirim?"
     
     # Goodbyes
     goodbyes = ["görüşürüz", "bye", "hoşça kal", "iyi günler"]
     if any(goodbye in msg_lower for goodbye in goodbyes):
-        return "👋 İyi günler! Başka sorularınız olduğunda yardımcı olmaktan mutluluk duyarım."
+        return "👋 İyi günler! Fabrika ile ilgili başka sorularınız olduğunda yardımcı olmaktan mutluluk duyarım."
     
-    # Default response
-    return "🤖 Bu konuda detaylı bilgim bulunmuyor, ancak size yardımcı olmaya çalışabilirim. Sorunuzu biraz daha detaylandırabilir misiniz? Veya fabrika ile ilgili spesifik bir konu hakkında soru sorabilirsiniz."
+    # Default response for factory-related questions
+    return """🏭 Bu konuda detaylı bilgim bulunmuyor, ancak size fabrika konularında yardımcı olmaya çalışabilirim. 
+
+**Size yardımcı olabileceğim konular:**
+• Çalışma saatleri ve vardiya sistemi  
+• İş güvenliği kuralları ve prosedürler
+• İzin ve tatil işlemleri
+• Departman bilgileri
+• Genel fabrika operasyonları
+
+Sorunuzu biraz daha detaylandırabilir misiniz? 🤝"""
 
 # =============================
 # 📚 CHAT HISTORY SECTION
@@ -2094,6 +2042,26 @@ async def chat(message: ChatMessage, request: Request, current_user_data = Depen
         # 🧹 SANITIZE INPUT
         user_message = input_validator.sanitize_input(user_message)
         
+        # 🏭 CHECK IF QUESTION IS FACTORY-RELATED
+        if not is_factory_related_question(user_message):
+            logger.info(f"Non-factory question rejected from user {username}: {user_message[:50]}...")
+            return ChatResponse(
+                response="""🏭 **MEFAPEX Fabrika Asistanı**
+
+Ben sadece MEFAPEX fabrikası ile ilgili konularda yardımcı olabilirim.
+
+**Size yardımcı olabileceğim konular:**
+• Çalışma saatleri ve vardiya bilgileri
+• İş güvenliği kuralları ve prosedürler
+• İzin ve tatil işlemleri
+• Departman bilgileri ve iletişim
+• Fabrika kuralları ve düzenlemeleri
+• Genel fabrika operasyonları
+
+Lütfen fabrika ile ilgili bir soru sorun. 🤝""",
+                source="factory_filter"
+            )
+        
         username = current_user.get('username', 'anonymous') if current_user else 'anonymous'
         logger.info(f"Secure chat request from user {username} (IP: {client_ip}): {user_message[:50]}...")
         
@@ -2206,6 +2174,26 @@ async def chat_authenticated(message: ChatMessage, current_user: dict = Depends(
         
         if not user_message:
             raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
+        
+        # 🏭 CHECK IF QUESTION IS FACTORY-RELATED
+        if not is_factory_related_question(user_message):
+            logger.info(f"Non-factory question rejected from user {current_user['username']}: {user_message[:50]}...")
+            return ChatResponse(
+                response="""🏭 **MEFAPEX Fabrika Asistanı**
+
+Ben sadece MEFAPEX fabrikası ile ilgili konularda yardımcı olabilirim.
+
+**Size yardımcı olabileceğim konular:**
+• Çalışma saatleri ve vardiya bilgileri
+• İş güvenliği kuralları ve prosedürler
+• İzin ve tatil işlemleri
+• Departman bilgileri ve iletişim
+• Fabrika kuralları ve düzenlemeleri
+• Genel fabrika operasyonları
+
+Lütfen fabrika ile ilgili bir soru sorun. 🤝""",
+                source="factory_filter"
+            )
         
         logger.info(f"User {current_user['username']} message: {user_message}")
         
@@ -2447,6 +2435,28 @@ async def handle_websocket_chat_message(websocket: WebSocket, user_id: str, mess
             await websocket_manager.send_personal_message({
                 'type': 'error',
                 'message': 'Message cannot be empty',
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
+            return
+        
+        # 🏭 CHECK IF QUESTION IS FACTORY-RELATED
+        if not is_factory_related_question(user_message):
+            await websocket_manager.send_personal_message({
+                'type': 'chat_response',
+                'response': """🏭 **MEFAPEX Fabrika Asistanı**
+
+Ben sadece MEFAPEX fabrikası ile ilgili konularda yardımcı olabilirim.
+
+**Size yardımcı olabileceğim konular:**
+• Çalışma saatleri ve vardiya bilgileri
+• İş güvenliği kuralları ve prosedürler
+• İzin ve tatil işlemleri
+• Departman bilgileri ve iletişim
+• Fabrika kuralları ve düzenlemeleri
+• Genel fabrika operasyonları
+
+Lütfen fabrika ile ilgili bir soru sorun. 🤝""",
+                'source': "factory_filter",
                 'timestamp': datetime.utcnow().isoformat()
             }, websocket)
             return
