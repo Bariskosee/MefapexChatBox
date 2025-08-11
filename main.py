@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -17,19 +16,19 @@ from dotenv import load_dotenv
 import logging
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
-from passlib.context import CryptContext
-from jose import JWTError, jwt
 from content_manager import ContentManager
 import uuid
 import json
 import asyncio
-import secrets
 from collections import defaultdict
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+# Import unified authentication service
+from auth_service import init_auth_service, get_auth_service, verify_token
+
 # Import optimized components
-from database.production_manager import ProductionDatabaseManager, get_database_manager_sync
+from database_manager import ProductionDatabaseManager, create_database_manager
 from model_manager import model_manager
 from response_cache import response_cache
 from websocket_manager import websocket_manager, message_handler
@@ -70,21 +69,9 @@ else:
 logger = logging.getLogger(__name__)
 
 # 🔐 AUTHENTICATION CONFIGURATION
-# Generate secure SECRET_KEY if not provided
+# Initialize unified authentication service
 SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    if ENVIRONMENT == "production":
-        logger.error("🚨 SECURITY ALERT: SECRET_KEY not set in production!")
-        raise RuntimeError(
-            "SECRET_KEY must be set in production environment variables."
-        )
-    else:
-        # Generate a secure random key for development
-        SECRET_KEY = secrets.token_urlsafe(32)
-        logger.warning("⚠️ Using auto-generated SECRET_KEY for development")
-
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+auth_service = init_auth_service(secret_key=SECRET_KEY, environment=ENVIRONMENT)
 
 # 🎯 HYBRID CONFIGURATION
 USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
@@ -105,31 +92,14 @@ if ENVIRONMENT == "production":
 logger.info(f"🔧 Environment: {ENVIRONMENT}")
 logger.info(f"🐛 Debug mode: {'ENABLED' if DEBUG_MODE else 'DISABLED'}")
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+# Password hashing - Use auth_service
+# Removed: pwd_context and security - now handled by auth_service
 
 # 🔒 SECURE USER STORAGE - Database-based with proper validation
 users_db = {}
 chat_sessions = {}
 
-# 🚨 PRODUCTION SECURITY ALERT: Remove demo user in production
-DEMO_USER_ENABLED = security_config.demo_user_enabled
-if ENVIRONMENT == "production" and DEMO_USER_ENABLED:
-    logger.error("🚨 CRITICAL SECURITY ALERT: Demo user is enabled in production!")
-    if not os.getenv("FORCE_DEMO_IN_PRODUCTION", "false").lower() == "true":
-        DEMO_USER_ENABLED = False
-        logger.warning("🔒 Demo user automatically disabled for production security")
-    else:
-        logger.critical("🚨 SECURITY RISK: Demo user is FORCED enabled in production!")
-
-# Enhanced demo password security
-DEMO_PASSWORD = security_config.demo_password if security_config.demo_user_enabled else None
-if DEMO_PASSWORD == "1234" and ENVIRONMENT == "production":
-    logger.critical("🚨 SECURITY ALERT: Demo user using default weak password in production!")
-    if not os.getenv("ACCEPT_WEAK_DEMO_PASSWORD", "false").lower() == "true":
-        DEMO_USER_ENABLED = False
-        logger.warning("🔒 Demo user disabled due to weak password")
+# 🚨 PRODUCTION SECURITY ALERT: Demo user handled by auth_service
 
 # 🗄️ PRODUCTION DATABASE INITIALIZATION
 logger.info(f"🔧 Environment: {ENVIRONMENT}")
@@ -509,29 +479,18 @@ class ChatSessionsResponse(BaseModel):
     sessions: List[ChatSessionResponse]
     total_sessions: int
 
-# 🔐 AUTHENTICATION UTILITIES
+# 🔐 AUTHENTICATION UTILITIES - Using unified auth_service
 def validate_password_strength(password: str) -> tuple[bool, str]:
-    """Validate password strength using security config"""
-    return input_validator.validate_password(password)
+    """Validate password strength using auth service"""
+    return auth_service.validate_password_strength(password)
 
 def verify_password(plain_password, hashed_password):
     """Verify a password against its hash"""
-    try:
-        return pwd_context.verify(plain_password, hashed_password)
-    except Exception as e:
-        logger.error(f"Password verification error: {e}")
-        return False
+    return auth_service.verify_password(plain_password, hashed_password)
 
 def get_password_hash(password):
     """Hash a password with enhanced security"""
-    try:
-        return pwd_context.hash(password)
-    except Exception as e:
-        logger.error(f"Password hashing error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password processing failed"
-        )
+    return auth_service.get_password_hash(password)
 
 def get_user(username: str):
     """Get user from database"""
@@ -539,128 +498,24 @@ def get_user(username: str):
 
 def authenticate_user(username: str, password: str):
     """Authenticate user credentials"""
-    user = get_user(username)
-    if not user:
-        return False
-    if not verify_password(password, user["hashed_password"]):
-        return False
-    return user
+    return auth_service.authenticate_user(username, password, users_db)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Create JWT access token with enhanced security"""
-    to_encode = data.copy()
-    
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    # Add security claims
-    to_encode.update({
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "jti": str(uuid.uuid4()),  # Unique token ID
-        "iss": "mefapex-api",  # Issuer
-    })
-    
-    try:
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-        return encoded_jwt
-    except Exception as e:
-        logger.error(f"Token creation error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token creation failed"
-        )
+    return auth_service.create_access_token(data, expires_delta)
 
-# 🛡️ BRUTE FORCE PROTECTION
-class BruteForceProtection:
-    def __init__(self):
-        self.failed_attempts = defaultdict(list)
-        self.blocked_ips = defaultdict(datetime)
-        self.max_attempts = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
-        self.block_duration = int(os.getenv("BLOCK_DURATION_MINUTES", "15"))
-    
-    def is_blocked(self, client_ip: str) -> bool:
-        """Check if IP is currently blocked"""
-        if client_ip in self.blocked_ips:
-            if datetime.utcnow() < self.blocked_ips[client_ip]:
-                return True
-            else:
-                # Unblock expired blocks
-                del self.blocked_ips[client_ip]
-                self.failed_attempts[client_ip] = []
-        return False
-    
-    def record_failed_attempt(self, client_ip: str):
-        """Record a failed login attempt"""
-        now = datetime.utcnow()
-        
-        # Clean old attempts (older than 1 hour)
-        self.failed_attempts[client_ip] = [
-            attempt for attempt in self.failed_attempts[client_ip]
-            if now - attempt < timedelta(hours=1)
-        ]
-        
-        # Add current attempt
-        self.failed_attempts[client_ip].append(now)
-        
-        # Check if should block
-        if len(self.failed_attempts[client_ip]) >= self.max_attempts:
-            self.blocked_ips[client_ip] = now + timedelta(minutes=self.block_duration)
-            logger.warning(f"🚨 IP {client_ip} blocked due to too many failed login attempts")
-    
-    def record_successful_attempt(self, client_ip: str):
-        """Record a successful login attempt"""
-        # Clear failed attempts on successful login
-        if client_ip in self.failed_attempts:
-            del self.failed_attempts[client_ip]
+# 🛡️ BRUTE FORCE PROTECTION - Using unified auth_service
+# Removed: BruteForceProtection class - now handled by auth_service
 
-brute_force_protection = BruteForceProtection()
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(current_user_data = Depends(verify_token)):
     """Get current authenticated user with enhanced security"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     
-    try:
-        token = credentials.credentials
-        
-        # Enhanced token validation
-        if not token or len(token) < 10:
-            raise credentials_exception
-            
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        
-        if username is None:
-            raise credentials_exception
-            
-        # Check token expiration
-        exp_timestamp = payload.get("exp")
-        if exp_timestamp:
-            exp_datetime = datetime.fromtimestamp(exp_timestamp)
-            if datetime.utcnow() > exp_datetime:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has expired",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        
-        token_data = TokenData(username=username)
-        
-    except JWTError as e:
-        logger.warning(f"JWT validation error: {e}")
-        raise credentials_exception
-    except Exception as e:
-        logger.error(f"Authentication error: {e}")
-        raise credentials_exception
+    # Use unified auth service for token verification
+    username = current_user_data.get("username")
+    user_id = current_user_data.get("user_id")
     
-    # Handle demo user with rate limiting
-    if token_data.username == "demo":
+    # Handle demo user
+    if username == "demo":
         return {
             "user_id": "demo-user-id",
             "username": "demo",
@@ -669,13 +524,16 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             "created_at": datetime.utcnow(),
             "is_active": True,
             "is_demo": True,
-            "rate_limit": "strict"  # Demo users have stricter limits
+            "rate_limit": "strict"
         }
     
     # Handle regular users
-    user = get_user(username=token_data.username)
+    user = get_user(username=username)
     if user is None:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
         
     # Check if user is still active
     if not user.get("is_active", True):
@@ -917,11 +775,11 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     client_ip = request.client.host
     
     # Check if IP is blocked due to brute force attempts
-    if brute_force_protection.is_blocked(client_ip):
+    if auth_service.check_brute_force(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed login attempts. IP temporarily blocked.",
-            headers={"Retry-After": str(brute_force_protection.block_duration * 60)}
+            headers={"Retry-After": str(auth_service.brute_force_protection.block_duration * 60)}
         )
     
     # Rate limiting for login attempts
@@ -933,36 +791,35 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     
     # Input validation
     if not form_data.username or not form_data.password:
-        brute_force_protection.record_failed_attempt(client_ip)
+        auth_service.record_failed_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username and password are required"
         )
     
-    # 🚨 SECURE DEMO USER CHECK with enhanced production protection
-    if DEMO_USER_ENABLED and form_data.username == "demo":
+    # 🚨 SECURE DEMO USER CHECK with enhanced production protection  
+    if auth_service.demo_user_enabled and form_data.username == "demo":
         # 🔒 ENHANCED DEMO USER SECURITY with input validation
         if not input_validator.validate_username(form_data.username)[0]:
-            brute_force_protection.record_failed_attempt(client_ip)
+            auth_service.record_failed_attempt(client_ip)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid username format"
             )
         
-        demo_password_hash = os.getenv("DEMO_PASSWORD_HASH")  # Allow custom demo password
-        demo_password = DEMO_PASSWORD or os.getenv("DEMO_PASSWORD", "1234")
+        demo_password = auth_service.demo_password
         
         # Validate demo password strength if it's the default weak password
         if demo_password == "1234" and ENVIRONMENT == "production":
             logger.critical("🚨 PRODUCTION SECURITY BREACH: Default weak demo password detected!")
-            brute_force_protection.record_failed_attempt(client_ip)
+            auth_service.record_failed_attempt(client_ip)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Demo access disabled due to security policy"
             )
         
         if form_data.password == demo_password:
-            brute_force_protection.record_successful_attempt(client_ip)
+            auth_service.record_successful_login(client_ip)
             
             # ⚠️ PRODUCTION WARNING
             if ENVIRONMENT == "production":
@@ -976,7 +833,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
             except Exception as e:
                 logger.warning(f"Demo session creation issue: {e}")
             
-            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token_expires = timedelta(minutes=auth_service.access_token_expire_minutes)
             access_token = create_access_token(
                 data={"sub": "demo", "ip": client_ip, "session_type": "demo"}, 
                 expires_delta=access_token_expires
@@ -985,7 +842,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
             return {"access_token": access_token, "token_type": "bearer"}
         else:
             # Wrong demo password
-            brute_force_protection.record_failed_attempt(client_ip)
+            auth_service.record_failed_attempt(client_ip)
             logger.warning(f"Failed demo login attempt from IP: {client_ip}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -996,7 +853,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     # Check regular users
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
-        brute_force_protection.record_failed_attempt(client_ip)
+        auth_service.record_failed_attempt(client_ip)
         logger.warning(f"Failed login attempt for user: {form_data.username} from IP: {client_ip}")
         
         # Generic error message to prevent username enumeration
@@ -1008,14 +865,14 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     
     # Check if user account is active
     if not user.get("is_active", True):
-        brute_force_protection.record_failed_attempt(client_ip)
+        auth_service.record_failed_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled"
         )
     
     # Successful login
-    brute_force_protection.record_successful_attempt(client_ip)
+    auth_service.record_successful_login(client_ip)
     
     # Update user login information
     user["last_login"] = datetime.utcnow()
@@ -1029,7 +886,7 @@ async def login_for_access_token(form_data: LoginRequest, request: Request):
     except Exception as e:
         logger.warning(f"User session creation issue for {user['username']}: {e}")
     
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=auth_service.access_token_expire_minutes)
     access_token = create_access_token(
         data={"sub": user["username"], "ip": client_ip}, 
         expires_delta=access_token_expires
@@ -1047,7 +904,7 @@ async def login_legacy(request: LoginRequest, request_obj: Request):
     client_ip = request_obj.client.host
     
     # Apply same brute force protection
-    if brute_force_protection.is_blocked(client_ip):
+    if auth_service.check_brute_force(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="IP temporarily blocked due to too many failed attempts."
@@ -1055,7 +912,7 @@ async def login_legacy(request: LoginRequest, request_obj: Request):
     
     # Input validation
     if not request.username or not request.password:
-        brute_force_protection.record_failed_attempt(client_ip)
+        auth_service.record_failed_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username and password are required"
@@ -1063,31 +920,31 @@ async def login_legacy(request: LoginRequest, request_obj: Request):
     
     # Length validation
     if len(request.username) > 100 or len(request.password) > 100:
-        brute_force_protection.record_failed_attempt(client_ip)
+        auth_service.record_failed_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid input length"
         )
     
     # 🚨 SECURE DEMO USER CHECK
-    if DEMO_USER_ENABLED and request.username == "demo":
-        demo_password = os.getenv("DEMO_PASSWORD", "1234")
+    if auth_service.demo_user_enabled and request.username == "demo":
+        demo_password = auth_service.demo_password
         if request.password == demo_password:
-            brute_force_protection.record_successful_attempt(client_ip)
+            auth_service.record_successful_login(client_ip)
             logger.info(f"Legacy demo login from IP: {client_ip}")
             return LoginResponse(success=True, message="Giriş başarılı")
         else:
-            brute_force_protection.record_failed_attempt(client_ip)
+            auth_service.record_failed_attempt(client_ip)
             return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
     
     # Check real users with proper password verification
     user = authenticate_user(request.username, request.password)
     if user:
-        brute_force_protection.record_successful_attempt(client_ip)
+        auth_service.record_successful_login(client_ip)
         logger.info(f"Legacy login success for user: {request.username} from IP: {client_ip}")
         return LoginResponse(success=True, message="Giriş başarılı")
     else:
-        brute_force_protection.record_failed_attempt(client_ip)
+        auth_service.record_failed_attempt(client_ip)
         logger.warning(f"Legacy login failed for user: {request.username} from IP: {client_ip}")
         return LoginResponse(success=False, message="Kullanıcı adı veya şifre hatalı")
 
@@ -2149,7 +2006,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         }
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(message: ChatMessage, request: Request, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))):
+async def chat(message: ChatMessage, request: Request, current_user_data = Depends(auth_service.verify_token) if auth_service else None):
     """
     🔒 SECURE Hybrid chat endpoint with optional authentication:
     1. Optional authentication (works with or without token)
@@ -2168,13 +2025,13 @@ async def chat(message: ChatMessage, request: Request, credentials: HTTPAuthoriz
         current_user = None
         user_id = "anonymous"
         
-        if credentials and credentials.credentials:
+        if current_user_data:
             try:
-                # Try to get authenticated user
-                current_user = await get_current_user(credentials)
+                # Authenticated user
+                current_user = current_user_data
                 user_id = current_user.get("user_id", "anonymous")
                 logger.info(f"Authenticated user: {current_user.get('username', 'unknown')}")
-            except HTTPException:
+            except Exception:
                 # Authentication failed, continue as anonymous
                 logger.info("Authentication failed, continuing as anonymous user")
                 pass

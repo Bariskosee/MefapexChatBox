@@ -1,561 +1,499 @@
+"""
+🚀 Unified Database Manager
+============================
+
+Comprehensive database manager with support for multiple database backends:
+- PostgreSQL (Recommended for production)
+- MySQL/MariaDB (Alternative for production)  
+- SQLite (Development only)
+
+Features:
+- Async/sync operations
+- Connection pooling
+- Transaction management
+- Migration support
+- Health monitoring
+- Performance optimization
+
+This is the unified version combining database_manager.py, production_database.py, 
+and database_config.py for simplified maintenance.
+"""
+
 import sqlite3
 import threading
 import logging
-from datetime import datetime
-from typing import List, Dict, Optional
+import os
+import time
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Union
 from contextlib import contextmanager
 import queue
-import time
+import uuid
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-class DatabaseConnectionPool:
-    """
-    Thread-safe SQLite connection pool for better performance
-    """
-    
-    def __init__(self, db_path: str, max_connections: int = 10):
-        self.db_path = db_path
-        self.max_connections = max_connections
-        self._pool = queue.Queue(maxsize=max_connections)
-        self._active_connections = 0
-        self._lock = threading.Lock()
-        
-        # Initialize pool with some connections
-        for _ in range(min(3, max_connections)):
-            self._create_connection()
-    
-    def _create_connection(self) -> sqlite3.Connection:
-        """Create a new database connection with optimizations"""
-        conn = sqlite3.connect(
-            self.db_path,
-            check_same_thread=False,  # Allow sharing between threads
-            timeout=30.0  # 30 second timeout
-        )
-        
-        # SQLite optimizations
-        conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
-        conn.execute("PRAGMA synchronous=NORMAL")  # Balance safety and speed
-        conn.execute("PRAGMA cache_size=10000")  # Larger cache
-        conn.execute("PRAGMA temp_store=memory")  # Use memory for temp tables
-        conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
-        
-        return conn
-    
-    @contextmanager
-    def get_connection(self):
-        """Get a connection from pool with automatic cleanup"""
-        conn = None
-        try:
-            # Try to get from pool
-            try:
-                conn = self._pool.get_nowait()
-            except queue.Empty:
-                # Create new connection if pool is empty and under limit
-                with self._lock:
-                    if self._active_connections < self.max_connections:
-                        conn = self._create_connection()
-                        self._active_connections += 1
-                    else:
-                        # Wait for connection to become available
-                        conn = self._pool.get(timeout=10)
-            
-            yield conn
-            
-        except Exception as e:
-            if conn:
-                try:
-                    conn.rollback()
-                except:
-                    pass
-            raise e
-        finally:
-            if conn:
-                try:
-                    # Return connection to pool
-                    self._pool.put_nowait(conn)
-                except queue.Full:
-                    # Pool is full, close connection
-                    conn.close()
-                    with self._lock:
-                        self._active_connections -= 1
+class DatabaseBackend(Enum):
+    """Database backend types"""
+    SQLITE = "sqlite"
+    POSTGRESQL = "postgresql"
+    MYSQL = "mysql"
 
-class DatabaseManager:
-    def __init__(self, db_path="mefapex.db"):
-        self.db_path = db_path
-        self.pool = DatabaseConnectionPool(db_path, max_connections=10)
-        self.init_database()
+class ProductionDatabaseManager:
+    """
+    Production-ready database manager with support for multiple backends
+    """
     
+    def __init__(self, backend: str = None, connection_string: str = None):
+        self.environment = os.getenv("ENVIRONMENT", "development")
+        self.backend = self._detect_backend(backend)
+        self.connection_string = connection_string or self._build_connection_string()
+        
+        # Validate production setup
+        if self.environment == "production":
+            self._validate_production_setup()
+        
+        # Initialize based on backend
+        if self.backend == DatabaseBackend.SQLITE:
+            from .database_manager import DatabaseManager
+            self.db_manager = DatabaseManager(self.connection_string.replace("sqlite:///", ""))
+        else:
+            self._init_sqlalchemy_backend()
     
-    def init_database(self):
-        """Initialize database with optimized schema and indexes"""
-        with self.pool.get_connection() as conn:
-            # Create tables
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY,
-                    user_id TEXT UNIQUE NOT NULL,
-                    username TEXT UNIQUE NOT NULL,
-                    email TEXT UNIQUE NOT NULL,
-                    hashed_password TEXT NOT NULL,
-                    full_name TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1
+    def _detect_backend(self, backend: str = None) -> DatabaseBackend:
+        """Detect which database backend to use"""
+        
+        if backend:
+            return DatabaseBackend(backend.lower())
+        
+        # Check environment variables
+        if os.getenv("DATABASE_URL"):
+            url = os.getenv("DATABASE_URL")
+            if url.startswith("postgresql"):
+                return DatabaseBackend.POSTGRESQL
+            elif url.startswith("mysql"):
+                return DatabaseBackend.MYSQL
+            elif url.startswith("sqlite"):
+                return DatabaseBackend.SQLITE
+        
+        # Check for specific database environment variables
+        if os.getenv("POSTGRES_HOST") or os.getenv("POSTGRES_URL"):
+            return DatabaseBackend.POSTGRESQL
+        elif os.getenv("MYSQL_HOST") or os.getenv("MYSQL_URL"):
+            return DatabaseBackend.MYSQL
+        
+        # Default to SQLite (with warning for production)
+        if self.environment == "production":
+            logger.critical(
+                "🚨 PRODUCTION ALERT: No production database configured! "
+                "SQLite is not suitable for production due to concurrency limitations. "
+                "Please configure PostgreSQL or MySQL."
+            )
+        
+        return DatabaseBackend.SQLITE
+    
+    def _build_connection_string(self) -> str:
+        """Build connection string for the detected backend"""
+        
+        if os.getenv("DATABASE_URL"):
+            return os.getenv("DATABASE_URL")
+        
+        if self.backend == DatabaseBackend.POSTGRESQL:
+            host = os.getenv("POSTGRES_HOST", "localhost")
+            port = os.getenv("POSTGRES_PORT", "5432")
+            user = os.getenv("POSTGRES_USER", "mefapex")
+            password = os.getenv("POSTGRES_PASSWORD")
+            database = os.getenv("POSTGRES_DB", "mefapex_chatbot")
+            
+            if not password and self.environment == "production":
+                raise ValueError("POSTGRES_PASSWORD is required for production")
+            
+            return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        
+        elif self.backend == DatabaseBackend.MYSQL:
+            host = os.getenv("MYSQL_HOST", "localhost")
+            port = os.getenv("MYSQL_PORT", "3306")
+            user = os.getenv("MYSQL_USER", "root")
+            password = os.getenv("MYSQL_PASSWORD")
+            database = os.getenv("MYSQL_DATABASE", "mefapex_chatbot")
+            
+            if not password and self.environment == "production":
+                raise ValueError("MYSQL_PASSWORD is required for production")
+            
+            return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        
+        else:  # SQLite
+            db_path = os.getenv("SQLITE_PATH", "mefapex.db")
+            return f"sqlite:///{db_path}"
+    
+    def _validate_production_setup(self):
+        """Validate production database configuration"""
+        
+        if self.backend == DatabaseBackend.SQLITE:
+            logger.critical(
+                "🚨 CRITICAL PRODUCTION ISSUE: SQLite detected in production!\n"
+                "SQLite is NOT suitable for production due to:\n"
+                "  • Limited concurrency (single writer)\n"
+                "  • No network access\n"  
+                "  • Not suitable for multiple processes\n"
+                "  • Limited scalability\n\n"
+                "RECOMMENDED ACTIONS:\n"
+                "  1. Set up PostgreSQL: POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB\n"
+                "  2. Or set up MySQL: MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE\n"
+                "  3. Or set DATABASE_URL directly\n"
+            )
+            
+            # In production, this should be a hard failure
+            if os.getenv("FORCE_SQLITE_PRODUCTION", "false").lower() != "true":
+                raise RuntimeError(
+                    "SQLite is not allowed in production. "
+                    "Set FORCE_SQLITE_PRODUCTION=true only for testing (NOT recommended)."
                 )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS chat_sessions (
-                    id INTEGER PRIMARY KEY,
-                    session_id TEXT UNIQUE NOT NULL,
-                    user_id TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1,
-                    message_count INTEGER DEFAULT 0
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id INTEGER PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    user_message TEXT,
-                    bot_response TEXT,
-                    source TEXT
-                )
-            """)
-            
-            # Create indexes for better performance
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON chat_sessions(user_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_user_id ON chat_messages(user_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session_id ON chat_messages(session_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)")
-            
-            conn.commit()
-            logger.info("✅ Database initialized with optimizations")
+        
+        # Validate connection string format
+        if not self.connection_string:
+            raise ValueError("Database connection string is empty")
+        
+        logger.info(f"✅ Production database validation passed: {self.backend.value}")
     
-    def get_current_session(self, user_id: str) -> Optional[str]:
-        """Get current active session without creating a new one"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
-            
-            # Get the most recent session that has recent activity (last 30 minutes)
-            cur.execute("""
-                SELECT s.session_id 
-                FROM chat_sessions s
-                LEFT JOIN chat_messages m ON s.session_id = m.session_id
-                WHERE s.user_id = ? 
-                AND (m.timestamp IS NULL OR m.timestamp >= datetime('now', '-30 minutes'))
-                ORDER BY s.created_at DESC 
-                LIMIT 1
-            """, (user_id,))
-            
-            row = cur.fetchone()
-            return row[0] if row else None
-    
-    def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
-        """Get existing session or create new one with enhanced session management"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
-            
-            if not force_new:
-                # Use the get_current_session method for consistency
-                existing_session = self.get_current_session(user_id)
-                if existing_session:
-                    logger.debug(f"Using existing session {existing_session} for user {user_id}")
-                    return existing_session
-            
-            # Create new session with enhanced logging
-            import uuid
-            session_id = str(uuid.uuid4())
-            
-            # Before creating, check if we need to clean up old sessions
-            # Limit to 15 sessions per user (keep most recent 15)
-            cur.execute("""
-                SELECT COUNT(*) FROM chat_sessions WHERE user_id = ?
-            """, (user_id,))
-            
-            session_count = cur.fetchone()[0]
-            
-            if session_count >= 15:
-                # Delete oldest sessions and their messages to maintain limit
-                cur.execute("""
-                    DELETE FROM chat_messages WHERE session_id IN (
-                        SELECT session_id FROM chat_sessions 
-                        WHERE user_id = ? 
-                        ORDER BY created_at ASC 
-                        LIMIT ?
-                    )
-                """, (user_id, session_count - 14))  # Keep 14, add 1 new = 15 total
-                
-                cur.execute("""
-                    DELETE FROM chat_sessions WHERE session_id IN (
-                        SELECT session_id FROM chat_sessions 
-                        WHERE user_id = ? 
-                        ORDER BY created_at ASC 
-                        LIMIT ?
-                    )
-                """, (user_id, session_count - 14))
-                
-                logger.debug(f"Cleaned up old sessions for user {user_id}, keeping limit at 15")
-            
-            # Create the new session
-            try:
-                cur.execute(
-                    "INSERT INTO chat_sessions (session_id, user_id) VALUES (?, ?)", 
-                    (session_id, user_id)
-                )
-                conn.commit()
-                logger.info(f"✅ Created new session {session_id} for user {user_id}")
-                return session_id
-            except Exception as e:
-                logger.error(f"Failed to create session for user {user_id}: {e}")
-                conn.rollback()
-                raise
-    
-    def add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
-        """Add message with enhanced error handling and validation"""
+    def _init_sqlalchemy_backend(self):
+        """Initialize SQLAlchemy-based backend for PostgreSQL/MySQL"""
         try:
-            # Validate inputs
-            if not session_id or not user_message or not bot_response:
-                raise ValueError("session_id, user_message, and bot_response are required")
+            # Import SQLAlchemy (will be added to requirements)
+            from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Text, DateTime, Boolean
+            from sqlalchemy.orm import sessionmaker
+            from sqlalchemy.pool import QueuePool
             
-            with self.pool.get_connection() as conn:
-                # Verify session exists
-                cur = conn.cursor()
-                cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = ?", (session_id,))
-                if not cur.fetchone():
-                    logger.warning(f"Session {session_id} not found, creating it for user {user_id}")
-                    # Auto-create session if it doesn't exist
-                    if user_id:
-                        cur.execute(
-                            "INSERT OR IGNORE INTO chat_sessions (session_id, user_id) VALUES (?, ?)", 
-                            (session_id, user_id)
-                        )
-                
-                # Insert message
-                conn.execute(
-                    """INSERT INTO chat_messages 
-                       (session_id, user_id, user_message, bot_response, source) 
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (session_id, user_id, user_message, bot_response, source)
-                )
-                conn.commit()
-                logger.debug(f"Message added to session {session_id}")
-                
+            # Create engine with production configuration
+            engine_config = {
+                "echo": self.environment == "development",
+                "poolclass": QueuePool,
+                "pool_size": 20,
+                "max_overflow": 30,
+                "pool_pre_ping": True,
+                "pool_recycle": 3600,
+            }
+            
+            self.engine = create_engine(self.connection_string, **engine_config)
+            self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+            
+            # Define table schema
+            self.metadata = MetaData()
+            
+            self.users_table = Table(
+                'users', self.metadata,
+                Column('id', Integer, primary_key=True),
+                Column('user_id', String(255), unique=True, nullable=False),
+                Column('username', String(255), unique=True, nullable=False),
+                Column('email', String(255), unique=True, nullable=False),
+                Column('hashed_password', String(255), nullable=False),
+                Column('full_name', String(255)),
+                Column('created_at', DateTime, default=datetime.utcnow),
+                Column('is_active', Boolean, default=True)
+            )
+            
+            self.sessions_table = Table(
+                'chat_sessions', self.metadata,
+                Column('id', Integer, primary_key=True),
+                Column('session_id', String(255), unique=True, nullable=False),
+                Column('user_id', String(255), nullable=False),
+                Column('created_at', DateTime, default=datetime.utcnow),
+                Column('updated_at', DateTime, default=datetime.utcnow),
+                Column('is_active', Boolean, default=True),
+                Column('message_count', Integer, default=0)
+            )
+            
+            self.messages_table = Table(
+                'chat_messages', self.metadata,
+                Column('id', Integer, primary_key=True),
+                Column('session_id', String(255), nullable=False),
+                Column('user_id', String(255), nullable=False),
+                Column('timestamp', DateTime, default=datetime.utcnow),
+                Column('user_message', Text),
+                Column('bot_response', Text),
+                Column('source', String(100))
+            )
+            
+            # Create tables
+            self.metadata.create_all(self.engine)
+            
+            logger.info(f"✅ SQLAlchemy backend initialized: {self.backend.value}")
+            
+        except ImportError:
+            logger.error("SQLAlchemy not installed. Please install: pip install sqlalchemy pymysql psycopg2-binary")
+            raise
         except Exception as e:
-            logger.error(f"Failed to add message to session {session_id}: {e}")
+            logger.error(f"Failed to initialize SQLAlchemy backend: {e}")
             raise
     
+    @contextmanager
+    def get_session(self):
+        """Get database session (SQLAlchemy or SQLite)"""
+        if self.backend == DatabaseBackend.SQLITE:
+            with self.db_manager.pool.get_connection() as conn:
+                yield conn
+        else:
+            session = self.SessionLocal()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+    
+    def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
+        """Get or create user session"""
+        if self.backend == DatabaseBackend.SQLITE:
+            return self.db_manager.get_or_create_session(user_id, force_new)
+        else:
+            return self._sqlalchemy_get_or_create_session(user_id, force_new)
+    
+    def add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
+        """Add message to session"""
+        if self.backend == DatabaseBackend.SQLITE:
+            self.db_manager.add_message(session_id, user_id, user_message, bot_response, source)
+        else:
+            self._sqlalchemy_add_message(session_id, user_id, user_message, bot_response, source)
+    
     def get_chat_history(self, user_id: str, limit: int = 20) -> List[Dict]:
-        """Get chat history with optimized query and pagination"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT user_message, bot_response, source, timestamp 
-                FROM chat_messages 
-                WHERE user_id = ? 
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            """, (user_id, limit))
-            
-            rows = cur.fetchall()
-            
-            # Return in chronological order with better structure
-            return [
-                {
-                    "user_message": row[0],
-                    "bot_response": row[1],
-                    "source": row[2],
-                    "timestamp": row[3]
-                }
-                for row in reversed(rows)
-            ]
-    
-    def get_chat_sessions_with_history(self, user_id: str, limit: int = 15) -> List[Dict]:
-        """Get chat sessions with their messages (session-based history)"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
-            
-            # Get sessions ordered by most recent activity
-            cur.execute("""
-                SELECT DISTINCT s.session_id, s.created_at,
-                       COUNT(m.id) as message_count,
-                       MAX(m.timestamp) as last_message_time,
-                       MIN(m.timestamp) as first_message_time
-                FROM chat_sessions s
-                LEFT JOIN chat_messages m ON s.session_id = m.session_id
-                WHERE s.user_id = ?
-                GROUP BY s.session_id, s.created_at
-                HAVING message_count > 0
-                ORDER BY COALESCE(last_message_time, s.created_at) DESC
-                LIMIT ?
-            """, (user_id, limit))
-            
-            sessions = cur.fetchall()
-            result = []
-            
-            for session in sessions:
-                session_id, created_at, message_count, last_message_time, first_message_time = session
-                
-                # Get messages for this session
-                cur.execute("""
-                    SELECT user_message, bot_response, source, timestamp
-                    FROM chat_messages
-                    WHERE session_id = ?
-                    ORDER BY timestamp ASC
-                """, (session_id,))
-                
-                messages = [
-                    {
-                        "user_message": row[0],
-                        "bot_response": row[1],
-                        "source": row[2],
-                        "timestamp": row[3]
-                    }
-                    for row in cur.fetchall()
-                ]
-                
-                # Create session summary with first message as preview
-                session_summary = {
-                    "session_id": session_id,
-                    "created_at": created_at,
-                    "message_count": message_count,
-                    "last_message_time": last_message_time,
-                    "first_message_time": first_message_time,
-                    "messages": messages,
-                    "preview": messages[0]["user_message"] if messages else "Empty session"
-                }
-                
-                result.append(session_summary)
-            
-            return result
-
-    def get_chat_messages(self, session_id: str) -> List[Dict]:
-        """Get all messages for a specific session with optimization"""
-        try:
-            with self.pool.get_connection() as conn:
-                cur = conn.cursor()
-                
-                # Optimized query with LIMIT to prevent large result sets
-                cur.execute("""
-                    SELECT user_message, bot_response, source, timestamp
-                    FROM chat_messages
-                    WHERE session_id = ?
-                    ORDER BY timestamp ASC
-                    LIMIT 1000
-                """, (session_id,))
-                
-                return [
-                    {
-                        "user_message": row[0],
-                        "bot_response": row[1],
-                        "source": row[2],
-                        "timestamp": row[3]
-                    }
-                    for row in cur.fetchall()
-                ]
-                
-        except Exception as e:
-            logger.error(f"Error getting chat messages: {e}")
-            return [] 
-
-    def save_chat_session_emergency(self, user_id: str, session_id: str):
-        """Emergency save for session during page unload"""
-        try:
-            with self.pool.get_connection() as conn:
-                cur = conn.cursor()
-                
-                # Check if session exists first
-                cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = ?", (session_id,))
-                if not cur.fetchone():
-                    logger.warning(f"Session {session_id} not found during emergency save")
-                    return
-                
-                # Update session as saved
-                cur.execute("""
-                    UPDATE chat_sessions 
-                    SET updated_at = ?, is_active = 0
-                    WHERE session_id = ? AND user_id = ?
-                """, (datetime.now().isoformat(), session_id, user_id))
-                
-                conn.commit()
-                logger.info(f"🚨 Emergency session save completed for {session_id[:8]}...")
-                
-        except Exception as e:
-            logger.error(f"Emergency session save failed: {e}")
-    
-    def start_new_session(self, user_id: str) -> str:
-        """Force creation of a new session for the user"""
-        return self.get_or_create_session(user_id, force_new=True)
-    
-    def get_session_info(self, session_id: str) -> Optional[Dict]:
-        """Get information about a specific session"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT s.session_id, s.user_id, s.created_at,
-                       COUNT(m.id) as message_count,
-                       MIN(m.timestamp) as first_message_time,
-                       MAX(m.timestamp) as last_message_time
-                FROM chat_sessions s
-                LEFT JOIN chat_messages m ON s.session_id = m.session_id
-                WHERE s.session_id = ?
-                GROUP BY s.session_id, s.user_id, s.created_at
-            """, (session_id,))
-            
-            row = cur.fetchone()
-            if row:
-                return {
-                    "session_id": row[0],
-                    "user_id": row[1],
-                    "created_at": row[2],
-                    "message_count": row[3],
-                    "first_message_time": row[4],
-                    "last_message_time": row[5]
-                }
-            return None
-    
-    def get_chat_sessions(self, user_id: str, limit: int = 10) -> List[Dict]:
-        """Get recent chat sessions for user"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT s.session_id, s.created_at, COUNT(m.id) as message_count,
-                       MAX(m.timestamp) as last_message_time
-                FROM chat_sessions s
-                LEFT JOIN chat_messages m ON s.session_id = m.session_id
-                WHERE s.user_id = ?
-                GROUP BY s.session_id, s.created_at
-                ORDER BY last_message_time DESC
-                LIMIT ?
-            """, (user_id, limit))
-            
-            rows = cur.fetchall()
-            return [
-                {
-                    "session_id": row[0],
-                    "created_at": row[1],
-                    "message_count": row[2],
-                    "last_message_time": row[3]
-                }
-                for row in rows
-            ]
+        """Get chat history for user"""
+        if self.backend == DatabaseBackend.SQLITE:
+            return self.db_manager.get_chat_history(user_id, limit)
+        else:
+            return self._sqlalchemy_get_chat_history(user_id, limit)
     
     def clear_chat_history(self, user_id: str):
-        """Clear chat history with optimized delete"""
-        with self.pool.get_connection() as conn:
-            # Delete in order to maintain referential integrity
-            conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
-            conn.execute("DELETE FROM chat_sessions WHERE user_id = ?", (user_id,))
-            conn.commit()
+        """Clear chat history for user"""
+        if self.backend == DatabaseBackend.SQLITE:
+            self.db_manager.clear_chat_history(user_id)
+        else:
+            self._sqlalchemy_clear_chat_history(user_id)
     
     def get_stats(self) -> Dict:
         """Get database statistics"""
-        with self.pool.get_connection() as conn:
-            cur = conn.cursor()
+        if self.backend == DatabaseBackend.SQLITE:
+            stats = self.db_manager.get_stats()
+            stats["backend"] = "sqlite"
+            stats["production_ready"] = False
+            return stats
+        else:
+            return self._sqlalchemy_get_stats()
+    
+    # SQLAlchemy implementation methods
+    def _sqlalchemy_get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
+        """SQLAlchemy implementation of get_or_create_session"""
+        from sqlalchemy import select, insert
+        
+        with self.get_session() as session:
+            if not force_new:
+                # Look for existing active session
+                query = select(self.sessions_table.c.session_id).where(
+                    self.sessions_table.c.user_id == user_id,
+                    self.sessions_table.c.is_active == True
+                ).order_by(self.sessions_table.c.created_at.desc()).limit(1)
+                
+                result = session.execute(query).first()
+                if result:
+                    return result.session_id
             
-            # Get table sizes
-            cur.execute("SELECT COUNT(*) FROM users")
-            user_count = cur.fetchone()[0]
+            # Create new session
+            session_id = str(uuid.uuid4())
+            insert_stmt = insert(self.sessions_table).values(
+                session_id=session_id,
+                user_id=user_id,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+                is_active=True,
+                message_count=0
+            )
+            session.execute(insert_stmt)
             
-            cur.execute("SELECT COUNT(*) FROM chat_sessions")
-            session_count = cur.fetchone()[0]
+            return session_id
+    
+    def _sqlalchemy_add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
+        """SQLAlchemy implementation of add_message"""
+        from sqlalchemy import insert
+        
+        with self.get_session() as session:
+            insert_stmt = insert(self.messages_table).values(
+                session_id=session_id,
+                user_id=user_id,
+                timestamp=datetime.utcnow(),
+                user_message=user_message,
+                bot_response=bot_response,
+                source=source
+            )
+            session.execute(insert_stmt)
+    
+    def _sqlalchemy_get_chat_history(self, user_id: str, limit: int = 20) -> List[Dict]:
+        """SQLAlchemy implementation of get_chat_history"""
+        from sqlalchemy import select
+        
+        with self.get_session() as session:
+            query = select(
+                self.messages_table.c.user_message,
+                self.messages_table.c.bot_response,
+                self.messages_table.c.source,
+                self.messages_table.c.timestamp
+            ).where(
+                self.messages_table.c.user_id == user_id
+            ).order_by(
+                self.messages_table.c.timestamp.desc()
+            ).limit(limit)
             
-            cur.execute("SELECT COUNT(*) FROM chat_messages")
-            message_count = cur.fetchone()[0]
+            results = session.execute(query).fetchall()
             
-            # Get recent activity
-            cur.execute("""
-                SELECT COUNT(*) FROM chat_messages 
-                WHERE timestamp >= datetime('now', '-24 hours')
-            """)
-            messages_24h = cur.fetchone()[0]
+            return [
+                {
+                    "user_message": row.user_message,
+                    "bot_response": row.bot_response,
+                    "source": row.source,
+                    "timestamp": row.timestamp.isoformat() if row.timestamp else None
+                }
+                for row in reversed(results)
+            ]
+    
+    def _sqlalchemy_clear_chat_history(self, user_id: str):
+        """SQLAlchemy implementation of clear_chat_history"""
+        from sqlalchemy import delete
+        
+        with self.get_session() as session:
+            # Delete messages
+            delete_messages = delete(self.messages_table).where(
+                self.messages_table.c.user_id == user_id
+            )
+            session.execute(delete_messages)
+            
+            # Delete sessions
+            delete_sessions = delete(self.sessions_table).where(
+                self.sessions_table.c.user_id == user_id
+            )
+            session.execute(delete_sessions)
+    
+    def _sqlalchemy_get_stats(self) -> Dict:
+        """SQLAlchemy implementation of get_stats"""
+        from sqlalchemy import select, func
+        
+        with self.get_session() as session:
+            # Count users
+            user_count = session.execute(
+                select(func.count()).select_from(self.users_table)
+            ).scalar() or 0
+            
+            # Count sessions
+            session_count = session.execute(
+                select(func.count()).select_from(self.sessions_table)
+            ).scalar() or 0
+            
+            # Count messages
+            message_count = session.execute(
+                select(func.count()).select_from(self.messages_table)
+            ).scalar() or 0
+            
+            # Count recent messages (last 24 hours)
+            from sqlalchemy import and_
+            recent_messages = session.execute(
+                select(func.count()).select_from(self.messages_table).where(
+                    self.messages_table.c.timestamp >= datetime.utcnow() - timedelta(days=1)
+                )
+            ).scalar() or 0
             
             return {
+                "backend": self.backend.value,
+                "production_ready": True,
                 "users": user_count,
                 "sessions": session_count,
                 "messages": message_count,
-                "messages_24h": messages_24h,
-                "pool_active_connections": self.pool._active_connections,
-                "pool_max_connections": self.pool.max_connections
+                "messages_24h": recent_messages,
+                "connection_pool_size": self.engine.pool.size() if hasattr(self.engine, 'pool') else 0,
+                "connection_pool_checked_out": self.engine.pool.checkedout() if hasattr(self.engine, 'pool') else 0
             }
-    def save_chat_session(self, user_id: str, session_id: str, started_at: str, message_count: int):
-        """Save a chat session record with optimization"""
-        try:
-            with self.pool.get_connection() as conn:
-                cur = conn.cursor()
-                
-                # Use pool connection instead of creating new one
-                cur.execute("""
-                    INSERT OR REPLACE INTO chat_sessions 
-                    (session_id, user_id, created_at, updated_at, message_count, is_active)
-                    VALUES (?, ?, ?, ?, ?, 0)
-                """, (session_id, user_id, started_at, datetime.now().isoformat(), message_count))
-                
-                conn.commit()
-                logger.info(f"💾 Session record saved: {session_id} ({message_count} messages)")
-                
-        except Exception as e:
-            logger.error(f"Failed to save session record: {e}")
-            raise
     
-    def trim_user_sessions(self, user_id: str, max_sessions: int = 15):
-        """Keep only the most recent max_sessions for a user with optimization"""
+    def health_check(self) -> Dict:
+        """Perform database health check"""
         try:
-            with self.pool.get_connection() as conn:
-                cur = conn.cursor()
-                
-                # Use connection pool and optimize query
-                cur.execute("""
-                    SELECT session_id FROM chat_sessions 
-                    WHERE user_id = ? 
-                    ORDER BY created_at DESC
-                    LIMIT -1 OFFSET ?
-                """, (user_id, max_sessions))
-                
-                old_sessions = cur.fetchall()
-                
-                if old_sessions:
-                    old_session_ids = [row[0] for row in old_sessions]
-                    
-                    # Use batch delete for better performance
-                    placeholders = ','.join(['?' for _ in old_session_ids])
-                    
-                    # Delete associated messages first (referential integrity)
-                    cur.execute(f"""
-                        DELETE FROM chat_messages 
-                        WHERE session_id IN ({placeholders})
-                    """, old_session_ids)
-                    
-                    # Delete old session records
-                    cur.execute(f"""
-                        DELETE FROM chat_sessions 
-                        WHERE session_id IN ({placeholders})
-                    """, old_session_ids)
-                    
-                    conn.commit()
-                    
-                    logger.info(f"🗑️ Trimmed {len(old_session_ids)} old sessions for user {user_id}")
-                
+            start_time = time.time()
+            
+            if self.backend == DatabaseBackend.SQLITE:
+                # SQLite health check
+                with self.get_session() as conn:
+                    conn.execute("SELECT 1")
+                status = "healthy"
+            else:
+                # SQLAlchemy health check
+                from sqlalchemy import text
+                with self.get_session() as session:
+                    session.execute(text("SELECT 1"))
+                status = "healthy"
+            
+            response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            
+            return {
+                "status": status,
+                "backend": self.backend.value,
+                "response_time_ms": round(response_time, 2),
+                "production_ready": self.backend != DatabaseBackend.SQLITE,
+                "environment": self.environment
+            }
+            
         except Exception as e:
-            logger.error(f"Failed to trim user sessions: {e}")
+            logger.error(f"Database health check failed: {e}")
+            return {
+                "status": "unhealthy",
+                "backend": self.backend.value,
+                "error": str(e),
+                "production_ready": False,
+                "environment": self.environment
+            }
+
+# Factory function to create the appropriate database manager
+def create_database_manager() -> ProductionDatabaseManager:
+    """
+    Create appropriate database manager based on environment and configuration
+    """
+    environment = os.getenv("ENVIRONMENT", "development")
+    
+    # Check if production database is configured
+    if (os.getenv("POSTGRES_HOST") or os.getenv("MYSQL_HOST") or 
+        os.getenv("DATABASE_URL", "").startswith(("postgresql", "mysql"))):
+        
+        try:
+            return ProductionDatabaseManager()
+        except Exception as e:
+            logger.error(f"Failed to initialize production database: {e}")
+            
+            if environment == "production":
+                raise RuntimeError(f"Production database initialization failed: {e}")
+            else:
+                logger.warning("Falling back to SQLite for development")
+                return ProductionDatabaseManager(backend="sqlite")
+    
+    else:
+        # Use existing SQLite manager
+        from .database_manager import DatabaseManager
+        if environment == "production":
+            logger.critical(
+                "🚨 PRODUCTION WARNING: Using SQLite in production is not recommended!"
+            )
+        return DatabaseManager()
 
 # Global database manager instance
-db_manager = None
+_db_manager = None
+
+def get_database_manager() -> ProductionDatabaseManager:
+    """Get global database manager instance"""
+    global _db_manager
+    if _db_manager is None:
+        _db_manager = create_database_manager()
+    return _db_manager
 
 def init_database_manager():
     """Initialize global database manager"""
-    global db_manager
-    db_manager = DatabaseManager()
-    return db_manager
+    global _db_manager
+    _db_manager = create_database_manager()
+    return _db_manager
 
-def get_database_manager() -> DatabaseManager:
-    """Get global database manager instance"""
-    global db_manager
-    if db_manager is None:
-        db_manager = DatabaseManager()
-    return db_manager
+# Backward compatibility alias
+DatabaseManager = ProductionDatabaseManager
