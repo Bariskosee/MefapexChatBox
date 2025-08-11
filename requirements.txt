@@ -1,6 +1,6 @@
-# 🚀 MEFAPEX ChatBox - Unified Requirements
-# Python 3.11+ Compatible (3.11, 3.12, 3.13)
-# Optimized and simplified dependency list
+# 🚀 MEFAPEX ChatBox - Optimized Requirements
+# Python 3.11+ Compatible
+# Only includes packages that are actually used
 
 # ================================
 # 🌐 Core Web Framework
@@ -18,19 +18,10 @@ passlib[bcrypt]>=1.7.4
 cryptography>=3.4.8
 
 # ================================
-# 🛡️ Security & Rate Limiting
-# ================================
-slowapi>=0.1.9
-secure>=0.3.0
-limits>=3.6.0
-
-# ================================
 # 🗄️ Database & ORM
 # ================================
 sqlalchemy>=2.0.0
-alembic>=1.12.0
 aiosqlite>=0.19.0
-greenlet>=3.0.0
 
 # ================================
 # 🤖 AI & Machine Learning
@@ -43,17 +34,14 @@ sentence-transformers>=2.3.0
 accelerate>=0.21.0
 
 # ================================
-# 📊 Data Processing
+# 📊 Data Processing (Used by AI models)
 # ================================
 numpy>=1.21.0
-scikit-learn>=1.3.0
-pandas>=2.1.0
 
 # ================================
 # ⚙️ Configuration & Environment
 # ================================
 pydantic>=2.11.0
-pydantic-settings>=2.1.0
 python-dotenv>=1.1.0
 email-validator>=2.0.0
 
@@ -61,30 +49,16 @@ email-validator>=2.0.0
 # 🌐 HTTP & File Handling
 # ================================
 requests>=2.32.0
-aiofiles>=23.2.0
 
 # ================================
 # 💾 Caching & Performance
 # ================================
-redis>=5.0.0
 cachetools>=5.3.0
 
 # ================================
 # 📊 Monitoring & Logging
 # ================================
 psutil>=5.9.0
-structlog>=23.2.0
-
-# ================================
-# 🛠️ Utilities
-# ================================
-click>=8.1.0
-rich>=13.7.0
-
-# ================================
-# 🚀 Production Server
-# ================================
-gunicorn>=21.2.0
 
 # ================================
 # 🧪 Development Tools (Optional)
@@ -105,3 +79,9 @@ gunicorn>=21.2.0
 
 # Uncomment for MySQL:
 # pymysql>=1.1.0
+
+# ================================
+# 🚀 Production Server (Optional)
+# ================================
+# Uncomment for production deployment:
+# gunicorn>=21.2.0
