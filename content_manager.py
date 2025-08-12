@@ -115,19 +115,36 @@ class ContentManager:
             results = cursor.fetchall()
             db_manager._put_connection(conn)
             
-            # Check keyword matches
+            best_match = None
+            best_score = 0
+            
+            # Check keyword matches with scoring
             for row in results:
                 response_text = row["response_text"]
-                keywords = row["keywords"] if isinstance(row["keywords"], list) else []
+                keywords_json = row["keywords"]
                 category = row["category"]
                 
-                # Check if any keyword matches the user message
-                for keyword in keywords:
-                    if keyword.lower() in user_message.lower():
-                        logger.info(f"✅ Dynamic response match: {keyword} -> {category}")
-                        return response_text
+                # Parse keywords (they're stored as JSON)
+                if isinstance(keywords_json, str):
+                    import json
+                    try:
+                        keywords = json.loads(keywords_json)
+                    except:
+                        keywords = [keywords_json]
+                elif isinstance(keywords_json, list):
+                    keywords = keywords_json
+                else:
+                    continue
+                
+                # Calculate match score
+                score = self._calculate_match_score(user_message.lower(), keywords)
+                
+                if score > best_score and score > 0.1:  # Minimum threshold
+                    best_match = response_text
+                    best_score = score
+                    logger.info(f"✅ Dynamic response match: {category} (score: {score:.2f})")
             
-            return None
+            return best_match
             
         except Exception as e:
             logger.error(f"❌ Failed to get dynamic response: {e}")
@@ -180,39 +197,56 @@ class ContentManager:
         best_score = 0
         best_source = "static"
         
-        for category, category_data in self.static_responses.items():
-            responses = category_data.get("responses", [])
+        # Updated to match the actual JSON structure
+        for category, response_data in self.static_responses.items():
+            # Each category directly contains message and keywords
+            keywords = response_data.get("keywords", [])
+            score = self._calculate_match_score(user_message_lower, keywords)
             
-            for response_item in responses:
-                keywords = response_item.get("keywords", [])
-                score = self._calculate_match_score(user_message_lower, keywords)
-                
-                if score > best_score and score > 0.3:  # Minimum threshold
-                    best_match = response_item.get("message", "")
-                    best_score = score
-                    best_source = f"static_{category}"
+            if score > best_score and score > 0.1:  # Lower threshold for better matching
+                best_match = response_data.get("message", "")
+                best_score = score
+                best_source = f"static_{category}"
         
         if best_match:
-            logger.debug(f"🎯 Static match: {best_source} (score: {best_score:.2f})")
+            logger.info(f"🎯 Static match: {best_source} (score: {best_score:.2f})")
         
         return best_match, best_source
 
     def _calculate_match_score(self, user_message: str, keywords: List[str]) -> float:
-        """Calculate keyword match score"""
+        """Calculate keyword match score with improved algorithm"""
         if not keywords:
             return 0
         
-        user_words = set(user_message.lower().split())
-        keyword_words = set()
+        user_message_clean = user_message.lower().strip()
+        
+        # Direct keyword match (highest priority)
+        for keyword in keywords:
+            keyword_clean = keyword.lower().strip()
+            if keyword_clean == user_message_clean:
+                return 1.0  # Perfect match
+            if keyword_clean in user_message_clean:
+                return 0.8  # Substring match
+        
+        # Reverse check - user message contains keyword
+        for keyword in keywords:
+            keyword_clean = keyword.lower().strip()
+            if user_message_clean in keyword_clean:
+                return 0.7  # User message is substring of keyword
+        
+        # Word-based matching
+        user_words = set(user_message_clean.split())
+        total_score = 0
         
         for keyword in keywords:
-            keyword_words.update(keyword.lower().split())
+            keyword_words = set(keyword.lower().split())
+            if keyword_words:
+                matches = len(user_words.intersection(keyword_words))
+                if matches > 0:
+                    word_score = matches / len(keyword_words)
+                    total_score = max(total_score, word_score)
         
-        if not keyword_words:
-            return 0
-        
-        matches = len(user_words.intersection(keyword_words))
-        return matches / len(keyword_words)
+        return total_score
 
     def _get_default_response(self, user_message: str) -> str:
         """Get default response when no match found"""
