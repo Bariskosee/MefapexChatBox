@@ -100,96 +100,19 @@ class ContentManager:
 
     def _get_dynamic_response(self, user_message: str) -> Optional[str]:
         """Get dynamic response from PostgreSQL database"""
-        try:
-            from database_manager import db_manager
-            
-            conn = db_manager._get_connection()
-            cursor = conn.cursor()
-            
-            # Search for matching keywords in dynamic responses
-            cursor.execute(
-                """SELECT response_text, keywords, category FROM dynamic_responses 
-                   WHERE is_active = TRUE 
-                   ORDER BY created_at DESC""")
-            
-            results = cursor.fetchall()
-            db_manager._put_connection(conn)
-            
-            best_match = None
-            best_score = 0
-            
-            # Check keyword matches with scoring
-            for row in results:
-                response_text = row["response_text"]
-                keywords_json = row["keywords"]
-                category = row["category"]
-                
-                # Parse keywords (they're stored as JSON)
-                if isinstance(keywords_json, str):
-                    import json
-                    try:
-                        keywords = json.loads(keywords_json)
-                    except:
-                        keywords = [keywords_json]
-                elif isinstance(keywords_json, list):
-                    keywords = keywords_json
-                else:
-                    continue
-                
-                # Calculate match score
-                score = self._calculate_match_score(user_message.lower(), keywords)
-                
-                if score > best_score and score > 0.1:  # Minimum threshold
-                    best_match = response_text
-                    best_score = score
-                    logger.info(f"✅ Dynamic response match: {category} (score: {score:.2f})")
-            
-            return best_match
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to get dynamic response: {e}")
-            return None
+        # Temporarily disabled - using static responses only
+        return None
 
     def _ensure_dynamic_table_exists(self):
         """Ensure dynamic_responses table exists in PostgreSQL"""
         try:
-            from database_manager import db_manager
-            
-            conn = db_manager._get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS dynamic_responses (
-                    id SERIAL PRIMARY KEY,
-                    category VARCHAR(100) NOT NULL,
-                    keywords JSONB NOT NULL,
-                    response_text TEXT NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_by VARCHAR(100) DEFAULT 'system',
-                    usage_count INTEGER DEFAULT 0,
-                    last_used TIMESTAMP WITH TIME ZONE
-                )
-            ''')
-            
-            # Create indexes for faster searches
-            cursor.execute(
-                'CREATE INDEX IF NOT EXISTS idx_dynamic_responses_keywords ON dynamic_responses USING GIN (keywords)'
-            )
-            cursor.execute(
-                'CREATE INDEX IF NOT EXISTS idx_dynamic_responses_category ON dynamic_responses(category)'
-            )
-            cursor.execute(
-                'CREATE INDEX IF NOT EXISTS idx_dynamic_responses_active ON dynamic_responses(is_active)'
-            )
-            
-            conn.commit()
-            db_manager._put_connection(conn)
-            logger.info("✅ Dynamic responses table ensured")
+            # Temporarily disabled - using static responses only
+            logger.info("ℹ️ Dynamic responses temporarily disabled - using static responses only")
+            return
             
         except Exception as e:
             logger.error(f"❌ Failed to create dynamic responses table: {e}")
+            # Don't raise exception - continue without dynamic responses
 
     def _find_static_response(self, user_message_lower: str) -> Tuple[Optional[str], str]:
         """Find matching static response"""
