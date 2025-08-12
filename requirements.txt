@@ -1,11 +1,6 @@
 # 🚀 MEFAPEX ChatBox - Optimized Requirements
 # Python 3.11+ Compatible
 ## ================================
-# 🗄️ Production Database (PostgreSQL)
-# ================================
-# Production ready PostgreSQL drivers included above
-
-# ================================
 # 🧪 Development Tools (Optional)
 # ================================s packages that are actually used
 
@@ -81,13 +76,6 @@ psutil>=5.9.0
 # ================================
 # 🗄️ Production Databases (Optional)
 # ================================
-# Uncomment for PostgreSQL:
-# psycopg2-binary>=2.9.0
-# asyncpg>=0.29.0
-
-# Uncomment for MySQL:
-# pymysql>=1.1.0
-
 # ================================
 # 🚀 Production Server (Optional)
 # ================================

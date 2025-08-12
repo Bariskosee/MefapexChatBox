@@ -230,18 +230,17 @@ class ContentManager:
     def add_dynamic_response(self, category: str, keywords: List[str], message: str) -> bool:
         """Add a dynamic response to PostgreSQL database"""
         try:
-            import json
             from database_manager import db_manager
             
             conn = db_manager._get_connection()
             cursor = conn.cursor()
             
-            # Insert dynamic response with JSON serialized keywords
+            # Insert dynamic response
             cursor.execute(
                 """INSERT INTO dynamic_responses 
                    (category, keywords, response_text, created_at, is_active) 
                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, TRUE)""",
-                (category, json.dumps(keywords, ensure_ascii=False), message)
+                (category, keywords, message)
             )
             conn.commit()
             db_manager._put_connection(conn)
