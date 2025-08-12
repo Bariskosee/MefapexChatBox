@@ -6,11 +6,12 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 # Import configuration
 from config import config
@@ -27,7 +28,7 @@ from api.health import router as health_router
 from database_manager import db_manager
 from model_manager import model_manager
 from websocket_manager import websocket_manager, message_handler
-from auth_service import init_auth_service
+from auth_service import init_auth_service, get_auth_service, verify_token
 
 # Configure logging
 logging.basicConfig(
@@ -35,6 +36,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Content Manager import
+try:
+    from content_manager import ContentManager
+    content_manager = ContentManager()
+except ImportError:
+    content_manager = None
 
 # Initialize services
 @asynccontextmanager
@@ -132,6 +140,224 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def read_root():
     """Serve the main chat interface"""
     return FileResponse("static/index.html", media_type="text/html; charset=utf-8")
+
+# Legacy login endpoint (for backward compatibility)
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/login")
+async def login_user_simple(login_data: LoginRequest, request: Request):
+    """Simple login endpoint (legacy compatible)"""
+    try:
+        # Get client IP safely
+        client_ip = getattr(request.client, 'host', None) if request.client else None
+        if not client_ip:
+            client_ip = request.headers.get("X-Forwarded-For", "unknown")
+            if "," in client_ip:
+                client_ip = client_ip.split(",")[0].strip()
+        
+        # Authenticate user
+        auth_service = get_auth_service()
+        user = auth_service.authenticate_user(login_data.username, login_data.password)
+        
+        if not user:
+            logger.warning(f"❌ Login failed for {login_data.username} from {client_ip}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials"
+            )
+        
+        # Create access token
+        token_data = {
+            "sub": login_data.username,
+            "user_id": user.get("user_id", login_data.username),
+            "username": login_data.username
+        }
+        
+        access_token = auth_service.create_access_token(data=token_data)
+        
+        logger.info(f"✅ Login successful: {login_data.username}")
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_info": {
+                "username": login_data.username,
+                "user_id": user.get("user_id", login_data.username)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed"
+        )
+
+@app.post("/login-legacy")
+async def login_legacy(login_data: LoginRequest, request: Request):
+    """Legacy login endpoint for compatibility"""
+    try:
+        # Get client IP safely
+        client_ip = getattr(request.client, 'host', None) if request.client else None
+        if not client_ip:
+            client_ip = request.headers.get("X-Forwarded-For", "unknown")
+            if "," in client_ip:
+                client_ip = client_ip.split(",")[0].strip()
+        
+        # Authenticate user
+        auth_service = get_auth_service()
+        user = auth_service.authenticate_user(login_data.username, login_data.password)
+        
+        if not user:
+            logger.warning(f"❌ Legacy login failed for {login_data.username} from {client_ip}")
+            return {"success": False, "message": "Giriş başarısız. Kullanıcı adı ve şifreyi kontrol edin."}
+        
+        logger.info(f"✅ Legacy login successful: {login_data.username}")
+        return {
+            "success": True, 
+            "message": "Giriş başarılı!",
+            "user": {
+                "username": login_data.username,
+                "user_id": user.get("user_id", login_data.username)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Legacy login error: {e}")
+        return {"success": False, "message": "Giriş sırasında bir hata oluştu."}
+
+@app.get("/me")
+async def get_current_user(request: Request):
+    """Get current user info (simplified for demo)"""
+    try:
+        # Extract from Authorization header manually
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+        
+        token = auth_header.split(" ")[1]
+        
+        # Verify token
+        auth_service = get_auth_service()
+        try:
+            from jose import jwt
+            payload = jwt.decode(token, auth_service.secret_key, algorithms=[auth_service.algorithm])
+            username = payload.get("sub")
+            user_id = payload.get("user_id")
+            
+            if not username:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            
+            return {
+                "username": username,
+                "user_id": user_id,
+                "email": f"{username}@mefapex.com"
+            }
+        except Exception as e:
+            logger.warning(f"JWT validation error: {e}")
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+    except Exception as e:
+        logger.error(f"Get current user error: {e}")
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+# Chat endpoints
+class ChatMessage(BaseModel):
+    message: str
+
+@app.post("/chat")
+async def chat_simple(chat_msg: ChatMessage, request: Request):
+    """Simple chat endpoint (no authentication required)"""
+    try:
+        message = chat_msg.message.strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        # Simple response for unauthenticated users
+        if content_manager:
+            response = content_manager.get_response(message)
+            if response:
+                return {"response": response}
+        
+        # Fallback response
+        return {"response": "Merhaba! Size nasıl yardımcı olabilirim? Lütfen giriş yaparak tüm özelliklerden faydalanın."}
+        
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail="Chat error")
+
+@app.post("/chat/authenticated")
+async def chat_authenticated(chat_msg: ChatMessage, request: Request, current_user: dict = Depends(verify_token)):
+    """Authenticated chat endpoint with session management"""
+    try:
+        message = chat_msg.message.strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        # For now, return a simple response
+        # This should integrate with your AI models
+        if content_manager:
+            response = content_manager.get_response(message)
+            if response:
+                return {"response": response}
+        
+        # Generate a helpful response based on the user's message
+        username = current_user.get("username", "Kullanıcı")
+        return {
+            "response": f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır. AI modelleriniz entegre edildiğinde daha akıllı yanıtlar alacaksınız."
+        }
+        
+    except Exception as e:
+        logger.error(f"Authenticated chat error: {e}")
+        raise HTTPException(status_code=500, detail="Chat error")
+
+# Session management endpoints
+@app.post("/chat/sessions/save")
+async def save_session(request: Request, current_user: dict = Depends(verify_token)):
+    """Save current chat session"""
+    try:
+        data = await request.json()
+        session_id = data.get("sessionId")
+        messages = data.get("messages", [])
+        user_id = current_user.get("user_id")
+        
+        if not session_id or not messages:
+            return {"success": True, "message": "No session to save"}
+        
+        # Save session to database
+        # For now, just return success
+        logger.info(f"Saving session {session_id} for user {user_id} with {len(messages)} messages")
+        
+        return {"success": True, "session_id": session_id}
+        
+    except Exception as e:
+        logger.error(f"Save session error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save session")
+
+@app.get("/chat/sessions/{user_id}")
+async def get_user_sessions(user_id: str, current_user: dict = Depends(verify_token)):
+    """Get user's chat sessions"""
+    try:
+        # Return empty sessions for now
+        return {"sessions": []}
+        
+    except Exception as e:
+        logger.error(f"Get sessions error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get sessions")
+
+@app.get("/chat/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str, current_user: dict = Depends(verify_token)):
+    """Get messages from a specific session"""
+    try:
+        # Return empty messages for now
+        return {"messages": [], "session_id": session_id}
+        
+    except Exception as e:
+        logger.error(f"Get session messages error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get session messages")
 
 # WebSocket endpoint for real-time chat
 @app.websocket("/ws/{user_id}")

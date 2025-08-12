@@ -81,7 +81,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.rate_limiter = rate_limiter
     
     async def dispatch(self, request, call_next):
-        client_ip = request.client.host
+        # Get client IP safely with proper fallback
+        client_ip = "unknown"
+        
+        try:
+            if request.client and hasattr(request.client, 'host') and request.client.host:
+                client_ip = request.client.host
+            else:
+                # Fallback to headers for proxy situations
+                forwarded_for = request.headers.get("X-Forwarded-For")
+                if forwarded_for:
+                    client_ip = forwarded_for.split(",")[0].strip()
+                else:
+                    # Additional fallbacks
+                    client_ip = (
+                        request.headers.get("X-Real-IP") or
+                        request.headers.get("X-Forwarded-Host") or
+                        "127.0.0.1"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to get client IP: {e}")
+            client_ip = "127.0.0.1"
+        
         path = request.url.path
         
         # Determine endpoint type
@@ -106,8 +127,30 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         start_time = time.time()
         
+        # Get client IP safely with proper fallback
+        client_ip = "unknown"
+        
+        try:
+            if request.client and hasattr(request.client, 'host') and request.client.host:
+                client_ip = request.client.host
+            else:
+                # Fallback to headers for proxy situations
+                forwarded_for = request.headers.get("X-Forwarded-For")
+                if forwarded_for:
+                    client_ip = forwarded_for.split(",")[0].strip()
+                else:
+                    # Additional fallbacks
+                    client_ip = (
+                        request.headers.get("X-Real-IP") or
+                        request.headers.get("X-Forwarded-Host") or
+                        "127.0.0.1"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to get client IP: {e}")
+            client_ip = "127.0.0.1"
+        
         # Log request
-        logger.info(f"🌐 {request.method} {request.url.path} - Client: {request.client.host}")
+        logger.info(f"🌐 {request.method} {request.url.path} - Client: {client_ip}")
         
         # Process request
         response = await call_next(request)

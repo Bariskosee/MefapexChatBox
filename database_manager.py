@@ -44,21 +44,22 @@ class ProductionDatabaseManager:
     Production-ready database manager with support for multiple backends
     """
     
-    def __init__(self, backend: str = None, connection_string: str = None):
-        self.environment = os.getenv("ENVIRONMENT", "development")
-        self.backend = self._detect_backend(backend)
-        self.connection_string = connection_string or self._build_connection_string()
+    def __init__(self, backend: str = None, environment: str = None):
+        self.backend = DatabaseBackend(backend) if isinstance(backend, str) else backend or DatabaseBackend.SQLITE
+        self.environment = environment or os.getenv("ENVIRONMENT", "development")
         
-        # Validate production setup
-        if self.environment == "production":
-            self._validate_production_setup()
+        # Connection and session management
+        self.connection = None
+        self.engine = None
+        self.SessionLocal = None
         
-        # Initialize based on backend
+        # Initialize appropriate backend
         if self.backend == DatabaseBackend.SQLITE:
-            from .database_manager import DatabaseManager
-            self.db_manager = DatabaseManager(self.connection_string.replace("sqlite:///", ""))
+            self._init_sqlite_backend()
         else:
             self._init_sqlalchemy_backend()
+        
+        logger.info(f"✅ ProductionDatabaseManager initialized with {self.backend.value} backend")
     
     def _detect_backend(self, backend: str = None) -> DatabaseBackend:
         """Detect which database backend to use"""
@@ -156,6 +157,72 @@ class ProductionDatabaseManager:
         
         logger.info(f"✅ Production database validation passed: {self.backend.value}")
     
+    def _init_sqlite_backend(self):
+        """Initialize SQLite backend (development/testing only)"""
+        import sqlite3
+        import os
+        
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else '.', exist_ok=True)
+        
+        # Initialize connection
+        self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.connection.row_factory = sqlite3.Row  # For dict-like access
+        
+        # Create tables if they don't exist
+        self._create_sqlite_tables()
+        
+        logger.info(f"✅ SQLite database initialized: {self.db_path}")
+    
+    def _create_sqlite_tables(self):
+        """Create necessary tables for SQLite backend"""
+        cursor = self.connection.cursor()
+        
+        # Create users table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                email VARCHAR(100),
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_login DATETIME
+            )
+        ''')
+        
+        # Check if last_login column exists, if not add it
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'last_login' not in columns:
+            cursor.execute('ALTER TABLE users ADD COLUMN last_login DATETIME')
+        
+        # Create chat_sessions table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create chat_messages table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                user_message TEXT NOT NULL,
+                bot_response TEXT NOT NULL,
+                source VARCHAR(50) DEFAULT 'unknown',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions (id)
+            )
+        ''')
+        
+        self.connection.commit()
+    
     def _init_sqlalchemy_backend(self):
         """Initialize SQLAlchemy-based backend for PostgreSQL/MySQL"""
         try:
@@ -230,8 +297,7 @@ class ProductionDatabaseManager:
     def get_session(self):
         """Get database session (SQLAlchemy or SQLite)"""
         if self.backend == DatabaseBackend.SQLITE:
-            with self.db_manager.pool.get_connection() as conn:
-                yield conn
+            yield self.connection
         else:
             session = self.SessionLocal()
             try:
@@ -246,41 +312,174 @@ class ProductionDatabaseManager:
     def get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
         """Get or create user session"""
         if self.backend == DatabaseBackend.SQLITE:
-            return self.db_manager.get_or_create_session(user_id, force_new)
+            return self._sqlite_get_or_create_session(user_id, force_new)
         else:
             return self._sqlalchemy_get_or_create_session(user_id, force_new)
     
     def add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
         """Add message to session"""
         if self.backend == DatabaseBackend.SQLITE:
-            self.db_manager.add_message(session_id, user_id, user_message, bot_response, source)
+            self._sqlite_add_message(session_id, user_id, user_message, bot_response, source)
         else:
             self._sqlalchemy_add_message(session_id, user_id, user_message, bot_response, source)
     
     def get_chat_history(self, user_id: str, limit: int = 20) -> List[Dict]:
         """Get chat history for user"""
         if self.backend == DatabaseBackend.SQLITE:
-            return self.db_manager.get_chat_history(user_id, limit)
+            return self._sqlite_get_chat_history(user_id, limit)
         else:
             return self._sqlalchemy_get_chat_history(user_id, limit)
     
     def clear_chat_history(self, user_id: str):
         """Clear chat history for user"""
         if self.backend == DatabaseBackend.SQLITE:
-            self.db_manager.clear_chat_history(user_id)
+            self._sqlite_clear_chat_history(user_id)
         else:
             self._sqlalchemy_clear_chat_history(user_id)
     
     def get_stats(self) -> Dict:
         """Get database statistics"""
         if self.backend == DatabaseBackend.SQLITE:
-            stats = self.db_manager.get_stats()
+            stats = self._sqlite_get_stats()
             stats["backend"] = "sqlite"
             stats["production_ready"] = False
             return stats
         else:
             return self._sqlalchemy_get_stats()
     
+    def authenticate_user(self, username: str, password: str = None) -> Dict:
+        """Authenticate user (for database operations)"""
+        if self.backend == DatabaseBackend.SQLITE:
+            return self._sqlite_authenticate_user(username, password)
+        else:
+            return self._sqlalchemy_authenticate_user(username, password)
+    
+    def update_last_login(self, username: str):
+        """Update user's last login timestamp"""
+        if self.backend == DatabaseBackend.SQLITE:
+            self._sqlite_update_last_login(username)
+        else:
+            self._sqlalchemy_update_last_login(username)
+    
+    # SQLite implementation methods
+    def _sqlite_get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
+        """SQLite implementation of get_or_create_session"""
+        import uuid
+        
+        cursor = self.connection.cursor()
+        
+        if not force_new:
+            # Try to get existing session
+            cursor.execute(
+                "SELECT id FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+        
+        # Create new session
+        session_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO chat_sessions (id, user_id) VALUES (?, ?)",
+            (session_id, user_id)
+        )
+        self.connection.commit()
+        return session_id
+    
+    def _sqlite_add_message(self, session_id: str, user_id: str, user_message: str, bot_response: str, source: str):
+        """SQLite implementation of add_message"""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """INSERT INTO chat_messages 
+               (session_id, user_id, user_message, bot_response, source) 
+               VALUES (?, ?, ?, ?, ?)""",
+            (session_id, user_id, user_message, bot_response, source)
+        )
+        self.connection.commit()
+    
+    def _sqlite_get_chat_history(self, user_id: str, limit: int = 20) -> List[Dict]:
+        """SQLite implementation of get_chat_history"""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """SELECT user_message, bot_response, source, created_at 
+               FROM chat_messages 
+               WHERE user_id = ? 
+               ORDER BY created_at DESC 
+               LIMIT ?""",
+            (user_id, limit)
+        )
+        
+        results = cursor.fetchall()
+        return [
+            {
+                "user_message": row[0],
+                "bot_response": row[1],
+                "source": row[2],
+                "created_at": row[3]
+            }
+            for row in results
+        ]
+    
+    def _sqlite_clear_chat_history(self, user_id: str):
+        """SQLite implementation of clear_chat_history"""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM chat_sessions WHERE user_id = ?", (user_id,))
+        self.connection.commit()
+    
+    def _sqlite_get_stats(self) -> Dict:
+        """SQLite implementation of get_stats"""
+        cursor = self.connection.cursor()
+        
+        # Get user count
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+        
+        # Get session count
+        cursor.execute("SELECT COUNT(*) FROM chat_sessions")
+        session_count = cursor.fetchone()[0]
+        
+        # Get message count
+        cursor.execute("SELECT COUNT(*) FROM chat_messages")
+        message_count = cursor.fetchone()[0]
+        
+        return {
+            "users": user_count,
+            "sessions": session_count,
+            "messages": message_count,
+            "database_path": self.db_path
+        }
+    
+    def _sqlite_authenticate_user(self, username: str, password: str = None) -> Dict:
+        """SQLite implementation of authenticate_user"""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT id, username, password_hash, email, is_active, last_login FROM users WHERE username = ?",
+            (username,)
+        )
+        result = cursor.fetchone()
+        
+        if result:
+            return {
+                "id": result[0],
+                "username": result[1],
+                "password_hash": result[2],
+                "email": result[3],
+                "is_active": bool(result[4]),
+                "last_login": result[5]
+            }
+        return None
+    
+    def _sqlite_update_last_login(self, username: str):
+        """SQLite implementation of update_last_login"""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = ?",
+            (username,)
+        )
+        self.connection.commit()
+
     # SQLAlchemy implementation methods
     def _sqlalchemy_get_or_create_session(self, user_id: str, force_new: bool = False) -> str:
         """SQLAlchemy implementation of get_or_create_session"""
@@ -411,6 +610,37 @@ class ProductionDatabaseManager:
                 "connection_pool_checked_out": self.engine.pool.checkedout() if hasattr(self.engine, 'pool') else 0
             }
     
+    def _sqlalchemy_authenticate_user(self, username: str, password: str = None) -> Dict:
+        """SQLAlchemy implementation of authenticate_user"""
+        from sqlalchemy import select
+        
+        with self.get_session() as session:
+            query = select(self.users_table).where(
+                self.users_table.c.username == username
+            )
+            result = session.execute(query).first()
+            
+            if result:
+                return {
+                    "id": result.id,
+                    "username": result.username,
+                    "password_hash": result.hashed_password,
+                    "email": result.email,
+                    "is_active": result.is_active,
+                    "last_login": result.created_at
+                }
+            return None
+    
+    def _sqlalchemy_update_last_login(self, username: str):
+        """SQLAlchemy implementation of update_last_login"""
+        from sqlalchemy import update
+        
+        with self.get_session() as session:
+            update_stmt = update(self.users_table).where(
+                self.users_table.c.username == username
+            ).values(created_at=datetime.utcnow())
+            session.execute(update_stmt)
+    
     def health_check(self) -> Dict:
         """Perform database health check"""
         try:
@@ -472,12 +702,11 @@ def create_database_manager() -> ProductionDatabaseManager:
     
     else:
         # Use existing SQLite manager
-        from .database_manager import DatabaseManager
         if environment == "production":
             logger.critical(
                 "🚨 PRODUCTION WARNING: Using SQLite in production is not recommended!"
             )
-        return DatabaseManager()
+        return ProductionDatabaseManager(backend="sqlite")
 
 # Global database manager instance
 _db_manager = None
@@ -497,3 +726,6 @@ def init_database_manager():
 
 # Backward compatibility alias
 DatabaseManager = ProductionDatabaseManager
+
+# Global instance for backward compatibility
+db_manager = get_database_manager()
