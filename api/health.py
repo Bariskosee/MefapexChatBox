@@ -12,7 +12,7 @@ from datetime import datetime
 
 from database_manager import db_manager
 from model_manager import model_manager
-from config import config
+from core.configuration import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/health", tags=["health"])
@@ -61,7 +61,7 @@ async def health_check():
         return HealthResponse(
             status=overall_status,
             timestamp=datetime.utcnow().isoformat(),
-            environment=config.ENVIRONMENT,
+            environment=get_config().environment.value,
             uptime_seconds=time.time(),  # This should be calculated from startup time
             services={
                 "database": db_health,
@@ -76,7 +76,7 @@ async def health_check():
         return HealthResponse(
             status="unhealthy",
             timestamp=datetime.utcnow().isoformat(),
-            environment=config.ENVIRONMENT,
+            environment=get_config().environment.value,
             uptime_seconds=0,
             services={"error": str(e)}
         )
@@ -130,7 +130,7 @@ async def get_system_stats():
                     "percent": round((disk.used / disk.total) * 100, 2)
                 }
             },
-            "environment": config.ENVIRONMENT,
+            "environment": get_config().environment.value,
             "debug_mode": config.DEBUG_MODE
         }
         

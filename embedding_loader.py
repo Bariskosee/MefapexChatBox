@@ -1,6 +1,6 @@
 import json
 import os
-from dotenv import load_dotenv
+from core.configuration import get_config
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from sentence_transformers import SentenceTransformer
@@ -11,12 +11,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv()
+# Moved to unified configuration system
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
-    host=os.getenv("QDRANT_HOST", "localhost"),
-    port=int(os.getenv("QDRANT_PORT", 6333))
+    host=get_config().qdrant.host,
+    port=int(get_config().qdrant.port)
 )
 
 # Initialize FREE sentence transformer model

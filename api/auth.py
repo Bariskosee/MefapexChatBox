@@ -11,7 +11,7 @@ import logging
 from auth_service import get_auth_service, verify_token
 from database_manager import db_manager
 from security_config import input_validator
-from config import config
+from core.configuration import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["authentication"])

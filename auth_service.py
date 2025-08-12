@@ -19,6 +19,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple
 from collections import defaultdict
+from core.configuration import get_config
 
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

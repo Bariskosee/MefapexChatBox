@@ -1,93 +1,133 @@
 """
-🔧 MEFAPEX Configuration Manager
-Centralized configuration for the entire application
-"""
-import os
-from typing import Optional
-from dotenv import load_dotenv
+🔧 MEFAPEX Configuration Manager - LEGACY COMPATIBILITY LAYER
+===========================================================
+*** DEPRECATED: Use core.configuration.UnifiedConfig instead ***
 
-# Load environment variables
-load_dotenv()
+This file provides backward compatibility for existing code.
+New code should use the unified configuration system.
+"""
+
+import warnings
+import logging
+from core.configuration import get_config as get_unified_config
+
+# Setup logger
+logger = logging.getLogger(__name__)
+
+# Issue deprecation warning
+warnings.warn(
+    "config.py is deprecated. Use 'from core.configuration import get_config' instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 class Config:
-    """Base configuration class"""
+    """
+    LEGACY: Backward compatibility wrapper for unified configuration
+    *** DEPRECATED: Use core.configuration.UnifiedConfig instead ***
+    """
     
-    # Environment
-    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-    DEBUG_MODE = os.getenv("DEBUG", "False").lower() == "true"
+    def __init__(self):
+        self._unified_config = get_unified_config()
+        logger.warning("⚠️ Using legacy Config class. Migrate to core.configuration.UnifiedConfig")
     
-    # Security
-    SECRET_KEY = os.getenv("SECRET_KEY")
+    @property
+    def ENVIRONMENT(self):
+        return self._unified_config.environment.value
     
-    # AI Configuration
-    USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
-    USE_HUGGINGFACE = os.getenv("USE_HUGGINGFACE", "true").lower() == "true"
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    @property
+    def DEBUG_MODE(self):
+        return self._unified_config.server.debug
     
-    # Database (PostgreSQL only)
-    DATABASE_TYPE = os.getenv("DATABASE_TYPE", "postgresql")
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
-    POSTGRES_USER = os.getenv("POSTGRES_USER", "mefapex")
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-    POSTGRES_DB = os.getenv("POSTGRES_DB", "mefapex_chatbot")
+    @property
+    def SECRET_KEY(self):
+        return self._unified_config.security.secret_key
     
-    # Qdrant
-    QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
-    QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
+    @property
+    def USE_OPENAI(self):
+        return self._unified_config.ai.use_openai
     
-    # Rate Limiting
-    RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "200"))
-    RATE_LIMIT_CHAT = int(os.getenv("RATE_LIMIT_CHAT", "100"))
+    @property
+    def USE_HUGGINGFACE(self):
+        return self._unified_config.ai.use_huggingface
     
-    # CORS Settings
-    ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "https://mefapex.com",
-        "https://www.mefapex.com"
-    ]
+    @property
+    def OPENAI_API_KEY(self):
+        return self._unified_config.ai.openai_api_key
     
-    @classmethod
-    def validate_production_config(cls):
-        """Validate configuration for production environment"""
-        if cls.ENVIRONMENT == "production":
-            if cls.DEBUG_MODE:
-                raise RuntimeError("DEBUG mode must be disabled in production")
-            
-            if not cls.SECRET_KEY:
-                raise RuntimeError("SECRET_KEY is required in production")
-            
-            if not cls.POSTGRES_PASSWORD:
-                raise RuntimeError("POSTGRES_PASSWORD is required for PostgreSQL database")
-            
-            if cls.USE_OPENAI and not cls.OPENAI_API_KEY:
-                raise RuntimeError("OPENAI_API_KEY is required when USE_OPENAI is enabled")
+    @property
+    def DATABASE_TYPE(self):
+        return self._unified_config.database.type
+    
+    @property
+    def DATABASE_URL(self):
+        return self._unified_config.database.url
+    
+    @property
+    def POSTGRES_HOST(self):
+        return self._unified_config.database.host
+    
+    @property
+    def POSTGRES_PORT(self):
+        return self._unified_config.database.port
+    
+    @property
+    def POSTGRES_USER(self):
+        return self._unified_config.database.user
+    
+    @property
+    def POSTGRES_PASSWORD(self):
+        return self._unified_config.database.password
+    
+    @property
+    def POSTGRES_DB(self):
+        return self._unified_config.database.database
+    
+    @property
+    def QDRANT_HOST(self):
+        return self._unified_config.qdrant.host
+    
+    @property
+    def QDRANT_PORT(self):
+        return self._unified_config.qdrant.port
+    
+    @property
+    def RATE_LIMIT_REQUESTS(self):
+        return self._unified_config.rate_limit.requests_per_minute
+    
+    @property
+    def RATE_LIMIT_CHAT(self):
+        return self._unified_config.rate_limit.chat_requests_per_minute
+    
+    @property
+    def ALLOWED_ORIGINS(self):
+        return self._unified_config.server.allowed_origins
+    
+    def validate_production_config(self):
+        """LEGACY: Validate configuration for production environment"""
+        logger.warning("⚠️ Using legacy validate_production_config. The unified config auto-validates.")
+        # The unified config already validates on initialization
+        pass
 
 class DevelopmentConfig(Config):
-    """Development configuration"""
-    DEBUG_MODE = True
+    """LEGACY: Development configuration wrapper"""
+    pass
 
 class ProductionConfig(Config):
-    """Production configuration"""
-    DEBUG_MODE = False
+    """LEGACY: Production configuration wrapper"""
+    pass
 
-# Configuration factory
 def get_config() -> Config:
-    """Get configuration based on environment"""
-    env = os.getenv("ENVIRONMENT", "development")
-    
-    if env == "production":
-        config = ProductionConfig()
-    else:
-        config = DevelopmentConfig()
-    
-    # Validate configuration
-    if env == "production":
-        config.validate_production_config()
-    
-    return config
+    """
+    LEGACY: Get configuration based on environment
+    *** DEPRECATED: Use core.configuration.get_config() instead ***
+    """
+    logger.warning("⚠️ Using legacy get_config(). Use 'from core.configuration import get_config' instead.")
+    return Config()
 
-# Global config instance
+# Global config instance for backward compatibility
 config = get_config()
+
+# Export unified config for easy migration
+from core.configuration import get_config as get_unified_config
+unified_config = get_unified_config()

@@ -13,6 +13,7 @@ from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 from typing import Optional
 from contextlib import contextmanager
+from core.configuration import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,11 @@ class ConnectionService:
     def __init__(self):
         """Initialize PostgreSQL Connection Service"""
         self.connection_pool = None
-        self.host = os.getenv("POSTGRES_HOST", "localhost")
-        self.port = int(os.getenv("POSTGRES_PORT", 5432))
-        self.user = os.getenv("POSTGRES_USER", "mefapex")
-        self.password = os.getenv("POSTGRES_PASSWORD")
-        self.database = os.getenv("POSTGRES_DB", "mefapex_chatbot")
+        self.host = get_config().database.host
+        self.port = int(get_config().database.port)
+        self.user = get_config().database.user
+        self.password = get_config().database.password
+        self.database = get_config().database.database
         
         # Validation
         if not self.password:

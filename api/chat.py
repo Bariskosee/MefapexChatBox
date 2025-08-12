@@ -16,15 +16,15 @@ from response_cache import response_cache
 from security_config import input_validator
 from content_manager import ContentManager
 from qdrant_client import QdrantClient
-from config import config
+from core.configuration import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 # Initialize Qdrant client
 qdrant_client = QdrantClient(
-    host=config.QDRANT_HOST,
-    port=config.QDRANT_PORT
+    host=get_config().qdrant.host,
+    port=get_config().qdrant.port
 )
 
 # Initialize ContentManager
@@ -177,7 +177,7 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
         return static_response, "static_content"
     
     # Try OpenAI if available
-    if config.USE_OPENAI:
+    if get_config().ai.use_openai:
         try:
             openai_response = await model_manager.generate_openai_response(
                 context="You are MEFAPEX AI Assistant, a helpful and knowledgeable assistant.",
@@ -189,7 +189,7 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
             logger.warning(f"OpenAI generation failed: {e}")
     
     # Try HuggingFace as fallback
-    if config.USE_HUGGINGFACE:
+    if get_config().ai.use_huggingface:
         try:
             hf_response = await model_manager.generate_huggingface_response(
                 context="You are MEFAPEX AI Assistant.",

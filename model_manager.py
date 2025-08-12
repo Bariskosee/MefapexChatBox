@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any
 import os
 from functools import lru_cache
 import atexit
+from core.configuration import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class ModelManager:
                 if self._sentence_model is None:
                     try:
                         logger.info("📚 Loading sentence transformer model...")
-                        model_name = os.getenv("SENTENCE_MODEL", "all-MiniLM-L6-v2")
+                        model_name = get_config().ai.sentence_model
                         
                         # Load with reduced memory footprint
                         self._sentence_model = SentenceTransformer(
@@ -105,7 +106,7 @@ class ModelManager:
             with self._model_locks['text_generator']:
                 if self._text_generator is None:
                     try:
-                        model_name = os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-small")
+                        model_name = get_config().ai.huggingface_model
                         logger.info(f"🤖 Loading text generation model: {model_name}")
                         
                         # Load tokenizer separately for better memory control
