@@ -141,6 +141,22 @@ async def read_root():
     """Serve the main chat interface"""
     return FileResponse("static/index.html", media_type="text/html; charset=utf-8")
 
+# Health check for Docker
+@app.get("/health")
+async def health():
+    """Simple health check for Docker"""
+    try:
+        # Basic database connection test
+        db_health = db_manager.health_check() if hasattr(db_manager, 'health_check') else {"status": "unknown"}
+        
+        if db_health.get("status") == "healthy":
+            return {"status": "healthy", "database": "connected"}
+        else:
+            return {"status": "degraded", "database": "connection_issues"}
+            
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
+
 # Legacy login endpoint (for backward compatibility)
 class LoginRequest(BaseModel):
     username: str
