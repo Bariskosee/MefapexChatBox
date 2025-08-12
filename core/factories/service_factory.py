@@ -96,14 +96,13 @@ class DatabaseServiceFactory:
         if db_type == 'postgresql':
             from services.implementations.database_service import PostgreSQLDatabaseManager
             return PostgreSQLDatabaseManager(self.config_service)
-        elif db_type == 'sqlite':
-            from services.implementations.sqlite_database_service import SQLiteDatabaseManager
-            return SQLiteDatabaseManager(self.config_service)
         elif db_type == 'mock':
             from services.implementations.mock_services import MockDatabaseManager
             return MockDatabaseManager()
         else:
-            raise ValueError(f"Unsupported database type: {db_type}")
+            # Force PostgreSQL for all non-mock environments
+            from services.implementations.database_service import PostgreSQLDatabaseManager
+            return PostgreSQLDatabaseManager(self.config_service)
     
     def create_user_repository(self, db_manager: IDatabaseManager):
         """Create user repository for the database manager"""

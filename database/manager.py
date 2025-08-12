@@ -111,11 +111,10 @@ class DatabaseManager:
         user = self.user_repo.get_user_by_username(username)
         if user:
             return {
-                "id": user.id,
-                "user_id": user.user_id,
+                "user_id": str(user.user_id),  # Primary key is now user_id
                 "username": user.username,
-                "password_hash": user.hashed_password,
-                "hashed_password": user.hashed_password,
+                "password_hash": user.password_hash,  # New column name
+                "hashed_password": user.password_hash,  # Backward compatibility
                 "email": user.email,
                 "is_active": user.is_active,
                 "last_login": user.last_login
@@ -127,13 +126,25 @@ class DatabaseManager:
         try:
             user = User(
                 username=username,
-                hashed_password=password_hash,
+                password_hash=password_hash,  # Use new column name
                 email=email
             )
             created_user = self.user_repo.create_user(user)
             return created_user is not None
         except Exception as e:
             logger.error(f"Failed to create user: {e}")
+            return False
+
+    def update_last_login(self, username: str) -> bool:
+        """Update user's last login timestamp (backward compatible)"""
+        try:
+            # First get the user to find their user_id
+            user = self.user_repo.get_user_by_username(username)
+            if user:
+                return self.user_repo.update_last_login(str(user.user_id))
+            return False
+        except Exception as e:
+            logger.error(f"Failed to update last login for {username}: {e}")
             return False
 
     # === Session Management (Backward Compatible) ===
@@ -145,12 +156,12 @@ class DatabaseManager:
         active_sessions = [s for s in sessions if s.is_active]
         
         if active_sessions:
-            return active_sessions[0].session_id
+            return str(active_sessions[0].session_id)  # Convert UUID to string
         
         # Create new session
         session = ChatSession(user_id=user_id)
         created_session = self.session_repo.create_session(session)
-        return created_session.session_id
+        return str(created_session.session_id)  # Convert UUID to string
 
     def get_user_sessions(self, user_id: str) -> List[Dict]:
         """Get user sessions (backward compatible)"""
@@ -171,17 +182,11 @@ class DatabaseManager:
             message = ChatMessage(
                 session_id=session_id,
                 user_id=user_id,
-                user_message=user_message,
-                bot_response=bot_response,
-                source=source
+                message=user_message,  # Use new field name
+                response=bot_response,  # Use new field name
+                message_type="user"
             )
             created_message = self.message_repo.create_message(message)
-            
-            # Update session message count
-            session = self.session_repo.get_session_by_id(session_id)
-            if session:
-                session.increment_message_count()
-                self.session_repo.update_session(session)
             
             return created_message is not None
         except Exception as e:
@@ -222,6 +227,23 @@ class DatabaseManager:
     def get_recent_messages(self, user_id: str, limit: int = 50) -> List[ChatMessage]:
         """Get recent messages for a user"""
         return self.message_repo.get_user_messages(user_id, limit)
+
+    def get_chat_history(self, user_id: str, limit: int = 20) -> List[Dict]:
+        """Get chat history for a user (backward compatible)"""
+        try:
+            messages = self.message_repo.get_user_messages(user_id, limit)
+            return [message.to_dict() for message in messages]
+        except Exception as e:
+            logger.error(f"Failed to get chat history: {e}")
+            return []
+
+    def clear_chat_history(self, user_id: str) -> bool:
+        """Clear chat history for a user"""
+        try:
+            return self.message_repo.clear_user_messages(user_id)
+        except Exception as e:
+            logger.error(f"Failed to clear chat history: {e}")
+            return False
 
 
 # Create singleton instance

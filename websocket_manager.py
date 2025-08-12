@@ -286,15 +286,84 @@ class WebSocketMessageHandler:
         """
         Handle request for chat history
         """
-        # This will be implemented in main.py with database access
-        pass
+        try:
+            from database_manager import db_manager
+            
+            # Get user info from websocket connection
+            user_info = getattr(websocket, 'user_info', None)
+            if not user_info:
+                await self.connection_manager.send_personal_message({
+                    'type': 'error',
+                    'message': 'User not authenticated',
+                    'timestamp': datetime.utcnow().isoformat()
+                }, websocket)
+                return
+            
+            user_id = user_info.get('user_id')
+            limit = message_data.get('limit', 20)
+            
+            # Get chat history from PostgreSQL
+            history = db_manager.get_chat_history(user_id, limit)
+            
+            await self.connection_manager.send_personal_message({
+                'type': 'history',
+                'data': {
+                    'messages': history,
+                    'count': len(history)
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
+            
+        except Exception as e:
+            logger.error(f"Error getting chat history: {e}")
+            await self.connection_manager.send_personal_message({
+                'type': 'error',
+                'message': 'Failed to retrieve chat history',
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
     
     async def handle_clear_history(self, websocket: WebSocket, message_data: dict):
         """
         Handle request to clear chat history
         """
-        # This will be implemented in main.py with database access
-        pass
+        try:
+            from database_manager import db_manager
+            
+            # Get user info from websocket connection
+            user_info = getattr(websocket, 'user_info', None)
+            if not user_info:
+                await self.connection_manager.send_personal_message({
+                    'type': 'error',
+                    'message': 'User not authenticated',
+                    'timestamp': datetime.utcnow().isoformat()
+                }, websocket)
+                return
+            
+            user_id = user_info.get('user_id')
+            
+            # Clear chat history from PostgreSQL
+            success = db_manager.clear_chat_history(user_id)
+            
+            if success:
+                await self.connection_manager.send_personal_message({
+                    'type': 'history_cleared',
+                    'message': 'Chat history cleared successfully',
+                    'timestamp': datetime.utcnow().isoformat()
+                }, websocket)
+            else:
+                await self.connection_manager.send_personal_message({
+                    'type': 'error',
+                    'message': 'Failed to clear chat history',
+                    'timestamp': datetime.utcnow().isoformat()
+                }, websocket)
+                
+        except Exception as e:
+            logger.error(f"Error clearing chat history: {e}")
+            await self.connection_manager.send_personal_message({
+                'type': 'error',
+                'message': 'Failed to clear chat history',
+                'timestamp': datetime.utcnow().isoformat()
+            }, websocket)
     
     async def handle_unknown_message(self, websocket: WebSocket, message_data: dict):
         """

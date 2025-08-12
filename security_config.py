@@ -148,7 +148,7 @@ class SecurityConfig:
             "' or 1=1 --", "' and 1=1 --", "' or true --",
             "exec(", "execute(", "sp_", "xp_", "master..",
             "information_schema", "sysobjects", "syscolumns",
-            "pg_tables", "sqlite_master", "mysql.user",
+            "pg_tables", "mysql.user",
             "' having 1=1 --", "' group by ", "' order by ",
             "waitfor delay", "benchmark(", "sleep(",
             "load_file(", "into outfile", "into dumpfile",

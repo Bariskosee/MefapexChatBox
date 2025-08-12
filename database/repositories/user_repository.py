@@ -35,26 +35,23 @@ class UserRepository:
             Created user with database ID
         """
         query = """
-            INSERT INTO users (user_id, username, email, hashed_password, full_name, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, user_id, created_at, updated_at
+            INSERT INTO users (user_id, username, email, password_hash, is_active)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING user_id, created_at
         """
         
         try:
             result = self.connection_service.execute_query(
                 query,
-                (user.user_id, user.username, user.email, user.hashed_password, 
-                 user.full_name, user.is_active),
+                (user.user_id, user.username, user.email, user.password_hash, user.is_active),
                 fetch_one=True
             )
             
             if result:
-                user.id = result['id']
                 user.user_id = str(result['user_id'])
                 user.created_at = result['created_at']
-                user.updated_at = result['updated_at']
                 
-                logger.info(f"✅ User created: {user.username} (ID: {user.id})")
+                logger.info(f"✅ User created: {user.username} (ID: {user.user_id})")
                 return user
             else:
                 raise RuntimeError("Failed to create user - no result returned")
@@ -74,8 +71,8 @@ class UserRepository:
             User object or None if not found
         """
         query = """
-            SELECT id, user_id, username, email, hashed_password, full_name,
-                   created_at, updated_at, last_login, is_active, failed_login_attempts
+            SELECT user_id, username, email, password_hash, 
+                   created_at, last_login, is_active, preferences
             FROM users 
             WHERE username = %s
         """
@@ -104,8 +101,8 @@ class UserRepository:
             User object or None if not found
         """
         query = """
-            SELECT id, user_id, username, email, hashed_password, full_name,
-                   created_at, updated_at, last_login, is_active, failed_login_attempts
+            SELECT user_id, username, email, password_hash,
+                   created_at, last_login, is_active, preferences
             FROM users 
             WHERE user_id = %s
         """
@@ -135,17 +132,17 @@ class UserRepository:
         """
         query = """
             UPDATE users 
-            SET username = %s, email = %s, hashed_password = %s, full_name = %s,
+            SET username = %s, email = %s, password_hash = %s,
                 updated_at = CURRENT_TIMESTAMP, last_login = %s, is_active = %s,
-                failed_login_attempts = %s
+                preferences = %s
             WHERE user_id = %s
         """
         
         try:
             rows_affected = self.connection_service.execute_query(
                 query,
-                (user.username, user.email, user.hashed_password, user.full_name,
-                 user.last_login, user.is_active, user.failed_login_attempts, user.user_id),
+                (user.username, user.email, user.password_hash,
+                 user.last_login, user.is_active, user.preferences, user.user_id),
                 fetch_all=False
             )
             
@@ -186,61 +183,6 @@ class UserRepository:
             
         except Exception as e:
             logger.error(f"❌ Failed to update last login for user {user_id}: {e}")
-            return False
-
-    def increment_failed_login(self, username: str) -> bool:
-        """
-        Increment failed login attempts for user
-        
-        Args:
-            username: Username to update
-            
-        Returns:
-            True if update successful, False otherwise
-        """
-        query = """
-            UPDATE users 
-            SET failed_login_attempts = failed_login_attempts + 1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE username = %s
-        """
-        
-        try:
-            rows_affected = self.connection_service.execute_query(
-                query, (username,), fetch_all=False
-            )
-            
-            return rows_affected > 0
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to increment failed login for user {username}: {e}")
-            return False
-
-    def reset_failed_login(self, username: str) -> bool:
-        """
-        Reset failed login attempts for user
-        
-        Args:
-            username: Username to update
-            
-        Returns:
-            True if update successful, False otherwise
-        """
-        query = """
-            UPDATE users 
-            SET failed_login_attempts = 0, updated_at = CURRENT_TIMESTAMP
-            WHERE username = %s
-        """
-        
-        try:
-            rows_affected = self.connection_service.execute_query(
-                query, (username,), fetch_all=False
-            )
-            
-            return rows_affected > 0
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to reset failed login for user {username}: {e}")
             return False
 
     def deactivate_user(self, user_id: str) -> bool:
@@ -285,8 +227,8 @@ class UserRepository:
             List of User objects
         """
         query = """
-            SELECT id, user_id, username, email, hashed_password, full_name,
-                   created_at, updated_at, last_login, is_active, failed_login_attempts
+            SELECT user_id, username, email, password_hash,
+                   created_at, last_login, is_active, preferences
             FROM users
         """
         
@@ -316,10 +258,6 @@ class UserRepository:
             'recent_users': """
                 SELECT COUNT(*) as count FROM users 
                 WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
-            """,
-            'users_with_failed_logins': """
-                SELECT COUNT(*) as count FROM users 
-                WHERE failed_login_attempts > 0
             """
         }
         

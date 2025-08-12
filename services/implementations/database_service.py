@@ -177,7 +177,7 @@ class PostgreSQLDatabaseManager(IDatabaseManager):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT user_message, bot_response, source, timestamp, created_at
+                SELECT message, response, message_type, timestamp, created_at
                 FROM chat_messages 
                 WHERE session_id = %s 
                 ORDER BY created_at ASC
@@ -200,21 +200,18 @@ class PostgreSQLDatabaseManager(IDatabaseManager):
             conn = self._get_connection()
             cursor = conn.cursor()
             
+            # Generate message_id 
+            import uuid
+            message_id = str(uuid.uuid4())
+            
             cursor.execute("""
                 INSERT INTO chat_messages 
-                (session_id, user_id, user_message, bot_response, source, metadata, timestamp)
+                (message_id, session_id, user_id, message, response, message_type, metadata)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (
-                session_id, user_id, user_message, bot_response, 
-                source, metadata if metadata else {}, datetime.utcnow()
+                message_id, session_id, user_id, user_message, bot_response, 
+                source, metadata if metadata else {}
             ))
-            
-            # Update session message count
-            cursor.execute("""
-                UPDATE chat_sessions 
-                SET message_count = message_count + 1, updated_at = %s 
-                WHERE session_id = %s
-            """, (datetime.utcnow(), session_id))
             
             conn.commit()
             return True
@@ -235,7 +232,7 @@ class PostgreSQLDatabaseManager(IDatabaseManager):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT session_id, user_message, bot_response, source, timestamp
+                SELECT session_id, message, response, message_type, timestamp
                 FROM chat_messages 
                 WHERE user_id = %s 
                 ORDER BY timestamp DESC 
@@ -347,8 +344,8 @@ class UserRepository(IUserRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT id, user_id, username, email, hashed_password, 
-                       full_name, created_at, last_login, is_active, failed_login_attempts
+                SELECT user_id, username, email, password_hash, 
+                       created_at, last_login, is_active, preferences
                 FROM users WHERE username = %s AND is_active = TRUE
             """, (username,))
             
@@ -369,8 +366,8 @@ class UserRepository(IUserRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT id, user_id, username, email, hashed_password, 
-                       full_name, created_at, last_login, is_active, failed_login_attempts
+                SELECT user_id, username, email, password_hash, 
+                       created_at, last_login, is_active, preferences
                 FROM users WHERE email = %s AND is_active = TRUE
             """, (email,))
             
@@ -533,7 +530,7 @@ class SessionRepository(ISessionRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT session_id, user_id, created_at, updated_at, message_count
+                SELECT session_id, user_id, session_name, created_at, updated_at, metadata
                 FROM chat_sessions 
                 WHERE user_id = %s AND is_active = TRUE
                 ORDER BY updated_at DESC 
@@ -556,7 +553,7 @@ class SessionRepository(ISessionRepository):
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT session_id, user_id, created_at, updated_at, message_count, is_active
+                SELECT session_id, user_id, session_name, created_at, updated_at, metadata, is_active
                 FROM chat_sessions 
                 WHERE session_id = %s
             """, (session_id,))
@@ -582,7 +579,7 @@ class SessionRepository(ISessionRepository):
             values = []
             
             for field, value in data.items():
-                if field in ['message_count', 'is_active']:
+                if field in ['session_name', 'metadata', 'is_active']:
                     update_fields.append(f"{field} = %s")
                     values.append(value)
             

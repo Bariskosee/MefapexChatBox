@@ -623,6 +623,56 @@ async def get_session_messages(session_id: str, current_user: dict = Depends(ver
         logger.error(f"Get session messages error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get session messages")
 
+# Chat history endpoint for frontend
+@app.get("/api/chat/history")
+async def get_chat_history(request: Request, current_user: dict = Depends(verify_token)):
+    """Get recent chat history for the authenticated user"""
+    try:
+        user_id = current_user.get("user_id")
+        
+        # Get recent chat history (last 10 messages)
+        history = db_manager.get_chat_history(user_id, limit=10)
+        
+        return {
+            "messages": history,
+            "user_id": user_id,
+            "count": len(history)
+        }
+        
+    except Exception as e:
+        logger.error(f"Get chat history error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get chat history")
+
+# Session save endpoint for frontend
+@app.post("/chat/sessions/save")
+async def save_session(session_data: dict, current_user: dict = Depends(verify_token)):
+    """Save a chat session"""
+    try:
+        user_id = current_user.get("user_id")
+        session_id = session_data.get("sessionId")
+        messages = session_data.get("messages", [])
+        
+        # Save each message if not already saved
+        for message in messages:
+            success = db_manager.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                user_message=message.get("user_message", ""),
+                bot_response=message.get("bot_response", ""),
+                source=message.get("source", "session_save")
+            )
+            
+        return {
+            "success": True,
+            "session_id": session_id,
+            "saved_messages": len(messages),
+            "message": "Session saved successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Save session error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save session")
+
 # WebSocket endpoint for real-time chat
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):

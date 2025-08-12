@@ -207,17 +207,7 @@ class AuthenticationService:
     def authenticate_user(self, username: str, password: str, users_db: dict = None) -> dict:
         """Authenticate user credentials"""
         try:
-            # Demo user support
-            if self.demo_user_enabled and username == "demo" and password == self.demo_password:
-                logger.info("✅ Demo user authenticated")
-                return {
-                    "username": "demo", 
-                    "user_id": "demo_user_id",
-                    "hashed_password": self.get_password_hash(self.demo_password),
-                    "is_demo": True
-                }
-            
-            # Database user authentication
+            # Database user authentication (including demo user)
             from database_manager import db_manager
             user_data = db_manager.authenticate_user(username)
             
@@ -227,11 +217,21 @@ class AuthenticationService:
                 logger.info(f"✅ User authenticated: {username}")
                 return {
                     "username": username,
-                    "user_id": str(user_data["id"]),
+                    "user_id": str(user_data["user_id"]),  # Use user_id instead of id
                     "email": user_data.get("email"),
                     "is_active": user_data.get("is_active", True),
                     "hashed_password": user_data.get("password_hash") or user_data.get("hashed_password", ""),
-                    "is_demo": False
+                    "is_demo": username == "demo"  # Mark as demo if username is demo
+                }
+            
+            # Demo user fallback support (only if not found in database)
+            if self.demo_user_enabled and username == "demo" and password == self.demo_password:
+                logger.info("✅ Demo user authenticated")
+                return {
+                    "username": "demo", 
+                    "user_id": "demo_user_id",  # Use consistent demo_user_id
+                    "hashed_password": self.get_password_hash(self.demo_password),
+                    "is_demo": True
                 }
             
             # Fallback to provided users_db for compatibility
@@ -242,12 +242,12 @@ class AuthenticationService:
                     return user
             
             logger.warning(f"❌ Authentication failed for user: {username}")
-            return False
+            return None  # Return None instead of False for failed authentication
             
         except Exception as e:
             logger.error(f"Database authentication error: {e}")
             logger.warning(f"❌ Authentication failed for user: {username}")
-            return False
+            return None  # Return None instead of False for exceptions
     
     def authenticate_demo_user(self, username: str, password: str) -> bool:
         """Specific demo user authentication"""
