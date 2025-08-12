@@ -278,7 +278,7 @@ async def chat_simple(chat_msg: ChatMessage, request: Request):
         
         # Simple response for unauthenticated users
         if content_manager:
-            response = content_manager.get_response(message)
+            response, response_type = content_manager.find_response(message)
             if response:
                 return {"response": response}
         
@@ -300,7 +300,7 @@ async def chat_authenticated(chat_msg: ChatMessage, request: Request, current_us
         # For now, return a simple response
         # This should integrate with your AI models
         if content_manager:
-            response = content_manager.get_response(message)
+            response, response_type = content_manager.find_response(message)
             if response:
                 return {"response": response}
         

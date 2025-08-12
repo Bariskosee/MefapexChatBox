@@ -172,7 +172,7 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
         logger.warning(f"Knowledge base search failed: {e}")
     
     # Try static content
-    static_response = content_manager.get_response(message)
+    static_response, response_type = content_manager.find_response(message)
     if static_response:
         return static_response, "static_content"
     

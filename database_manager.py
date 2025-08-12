@@ -162,6 +162,9 @@ class ProductionDatabaseManager:
         import sqlite3
         import os
         
+        # Set db_path from environment or default
+        self.db_path = os.getenv("SQLITE_PATH", "mefapex.db")
+        
         # Ensure data directory exists
         os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else '.', exist_ok=True)
         

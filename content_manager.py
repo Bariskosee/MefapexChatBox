@@ -116,7 +116,7 @@ class ContentManager:
                 best_category = category
         
         # Return best match if score is high enough
-        if best_score > 0.3:  # Threshold for accepting a match
+        if best_score > 0.2:  # Threshold for accepting a match
             logger.debug(f"📍 Static match found: {best_category} (score: {best_score:.2f})")
             return best_match, f"static_{best_category}"
         
@@ -127,22 +127,33 @@ class ContentManager:
         if not keywords:
             return 0.0
         
-        words_in_message = user_message.split()
+        words_in_message = [word.lower() for word in user_message.split()]
         matched_keywords = 0
+        exact_matches = 0
         
         for keyword in keywords:
-            if keyword.lower() in user_message:
+            keyword_lower = keyword.lower()
+            # Check if keyword exists in message (substring match)
+            if keyword_lower in user_message:
                 matched_keywords += 1
+                # Check if it's an exact word match
+                if keyword_lower in words_in_message:
+                    exact_matches += 1
         
-        # Score based on percentage of matched keywords
-        score = matched_keywords / len(keywords)
+        if matched_keywords == 0:
+            return 0.0
         
-        # Bonus for exact word matches
-        for keyword in keywords:
-            if keyword.lower() in words_in_message:
-                score += 0.1
+        # Base score: give high weight to any match found
+        base_score = 0.5 if matched_keywords > 0 else 0.0
         
-        return min(score, 1.0)  # Cap at 1.0
+        # Bonus for exact word matches (up to 0.5 additional)
+        exact_bonus = (exact_matches / len(keywords)) * 0.5
+        
+        # Additional bonus for multiple matches
+        multiple_bonus = min((matched_keywords - 1) * 0.1, 0.3) if matched_keywords > 1 else 0.0
+        
+        total_score = base_score + exact_bonus + multiple_bonus
+        return min(total_score, 1.0)  # Cap at 1.0
     
     def _get_default_response(self, user_message: str) -> str:
         """Get default response when no match found"""
