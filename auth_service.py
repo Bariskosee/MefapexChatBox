@@ -221,7 +221,7 @@ class AuthenticationService:
             from database_manager import db_manager
             user_data = db_manager.authenticate_user(username)
             
-            if user_data and self.verify_password(password, user_data["password_hash"]):
+            if user_data and self.verify_password(password, user_data.get("password_hash") or user_data.get("hashed_password", "")):
                 # Update last login
                 db_manager.update_last_login(username)
                 logger.info(f"✅ User authenticated: {username}")
@@ -230,7 +230,7 @@ class AuthenticationService:
                     "user_id": str(user_data["id"]),
                     "email": user_data.get("email"),
                     "is_active": user_data.get("is_active", True),
-                    "hashed_password": user_data["password_hash"],
+                    "hashed_password": user_data.get("password_hash") or user_data.get("hashed_password", ""),
                     "is_demo": False
                 }
             

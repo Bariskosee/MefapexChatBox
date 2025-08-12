@@ -417,8 +417,15 @@ async function sendMessage() {
         addMessage(data.response, 'bot');
         console.log('Bot response added to chat');
         
-        // 🎯 CORE: Add message to session manager
-        sessionManager.addMessage(message, data.response);
+        // 🎯 CORE: Add message to session manager with auto-save
+        console.log('🔄 About to call sessionManager.addMessage()');
+        try {
+            await sessionManager.addMessage(message, data.response);
+            console.log('✅ Message saved to session and database');
+        } catch (error) {
+            console.error('❌ Failed to save message to session/database:', error);
+            console.warn('⚠️ Message saved to session but failed to save to database:', error);
+        }
         
         // Ensure input stays enabled and focused
         messageInput.disabled = false;

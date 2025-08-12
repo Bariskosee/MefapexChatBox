@@ -297,18 +297,42 @@ async def chat_authenticated(chat_msg: ChatMessage, request: Request, current_us
         if not message:
             raise HTTPException(status_code=400, detail="Message cannot be empty")
         
-        # For now, return a simple response
-        # This should integrate with your AI models
+        user_id = current_user.get("user_id")
+        username = current_user.get("username", "Kullanıcı")
+        
+        # Generate response using content manager
         if content_manager:
             response, response_type = content_manager.find_response(message)
             if response:
-                return {"response": response}
+                ai_response = response
+                source = "static_content"
+            else:
+                ai_response = f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır."
+                source = "fallback"
+        else:
+            ai_response = f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır."
+            source = "fallback"
         
-        # Generate a helpful response based on the user's message
-        username = current_user.get("username", "Kullanıcı")
-        return {
-            "response": f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır. AI modelleriniz entegre edildiğinde daha akıllı yanıtlar alacaksınız."
-        }
+        # Save message to database
+        try:
+            # Get or create session
+            session_id = db_manager.get_or_create_session(user_id)
+            
+            # Save message to database
+            db_manager.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                user_message=message,
+                bot_response=ai_response,
+                source=source
+            )
+            
+            logger.info(f"Chat message saved for user {user_id} in session {session_id}")
+        except Exception as db_error:
+            logger.error(f"Database error (continuing without saving): {db_error}")
+            # Continue without saving to database
+        
+        return {"response": ai_response}
         
     except Exception as e:
         logger.error(f"Authenticated chat error: {e}")
@@ -327,8 +351,16 @@ async def save_session(request: Request, current_user: dict = Depends(verify_tok
         if not session_id or not messages:
             return {"success": True, "message": "No session to save"}
         
-        # Save session to database
-        # For now, just return success
+        # Save each message to the database
+        for message in messages:
+            db_manager.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                user_message=message.get("user_message", ""),
+                bot_response=message.get("bot_response", ""),
+                source=message.get("source", "session_save")
+            )
+        
         logger.info(f"Saving session {session_id} for user {user_id} with {len(messages)} messages")
         
         return {"success": True, "session_id": session_id}
@@ -341,9 +373,18 @@ async def save_session(request: Request, current_user: dict = Depends(verify_tok
 async def get_user_sessions(user_id: str, current_user: dict = Depends(verify_token)):
     """Get user's chat sessions"""
     try:
-        # Return empty sessions for now
-        return {"sessions": []}
+        # Verify user can only access their own sessions
+        if current_user.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
         
+        # Get sessions from database
+        sessions = db_manager.get_user_sessions(user_id)
+        logger.info(f"Retrieved {len(sessions)} sessions for user {user_id}")
+        
+        return {"sessions": sessions}
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Get sessions error: {e}")
         raise HTTPException(status_code=500, detail="Failed to get sessions")
@@ -352,8 +393,29 @@ async def get_user_sessions(user_id: str, current_user: dict = Depends(verify_to
 async def get_session_messages(session_id: str, current_user: dict = Depends(verify_token)):
     """Get messages from a specific session"""
     try:
-        # Return empty messages for now
-        return {"messages": [], "session_id": session_id}
+        user_id = current_user.get("user_id")
+        
+        # Get messages for the session
+        messages = db_manager.get_session_messages(session_id)
+        
+        # Format messages for frontend compatibility
+        formatted_messages = []
+        for msg in messages:
+            formatted_messages.extend([
+                {
+                    "type": "user",
+                    "content": msg["user_message"],
+                    "timestamp": msg["timestamp"]
+                },
+                {
+                    "type": "assistant", 
+                    "content": msg["bot_response"],
+                    "timestamp": msg["timestamp"],
+                    "source": msg.get("source", "unknown")
+                }
+            ])
+        
+        return {"messages": formatted_messages, "session_id": session_id}
         
     except Exception as e:
         logger.error(f"Get session messages error: {e}")

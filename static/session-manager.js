@@ -32,7 +32,7 @@ class SessionManager {
 
     /**
      * CORE: New session on login
-     * Every successful login creates a fresh session
+     * Create fresh session but show recent chat history
      */
     async startNewSessionOnLogin(authToken, userId) {
         console.log('🆕 Starting new session on login');
@@ -48,8 +48,8 @@ class SessionManager {
         // Clear any existing chat UI
         this.clearChatUI();
         
-        // Show welcome message
-        this.showWelcomeMessage();
+        // Load and display recent chat history
+        await this.loadRecentChatHistory();
         
         // Focus composer
         this.focusComposer();
@@ -138,9 +138,91 @@ class SessionManager {
     }
 
     /**
-     * Add message to current session
+     * Load recent chat history and display in current session
      */
-    addMessage(userMessage, botResponse) {
+    async loadRecentChatHistory() {
+        console.log('📚 Loading recent chat history');
+        console.log('🔑 Auth token:', this.authToken ? 'Present' : 'Missing');
+        console.log('👤 User ID:', this.userId);
+        
+        try {
+            // First try to get recent messages from database
+            const response = await fetch(`${this.API_BASE_URL}/api/chat/history`, {
+                headers: {
+                    'Authorization': `Bearer ${this.authToken}`
+                }
+            });
+
+            console.log('📡 History response status:', response.status);
+            console.log('📡 History response headers:', [...response.headers.entries()]);
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('📊 History data received:', data);
+                console.log('📊 Data keys:', Object.keys(data));
+                console.log('📊 Messages array:', data.messages);
+                console.log('📊 Messages length:', data.messages ? data.messages.length : 'undefined');
+                
+                const recentMessages = data.messages || [];
+                console.log(`📝 Recent messages count: ${recentMessages.length}`);
+                
+                if (recentMessages.length > 0) {
+                    // Display recent chat history
+                    const chatMessages = document.getElementById('chatMessages');
+                    if (chatMessages) {
+                        // Add header for history
+                        chatMessages.innerHTML = `
+                            <div style="text-align: center; padding: 15px; margin-bottom: 10px; background: rgba(102,126,234,0.1); border-radius: 10px; color: #667eea; font-weight: 600;">
+                                📚 Son Sohbetleriniz (${recentMessages.length} mesaj)
+                            </div>
+                        `;
+
+                        // Show recent messages (reverse to show oldest first)
+                        recentMessages.reverse().forEach((msg, index) => {
+                            console.log(`📝 Adding message ${index + 1}:`, msg);
+                            console.log(`📝 User message:`, msg.user_message);
+                            console.log(`📝 Bot response:`, msg.bot_response);
+                            
+                            // Safety checks for message content
+                            const userMsg = msg.user_message || msg.message || 'Boş mesaj';
+                            const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
+                            
+                            this.addMessageToUI(userMsg, 'user');
+                            this.addMessageToUI(botMsg, 'bot');
+                        });
+
+                        // Add continuation indicator
+                        const continueDiv = document.createElement('div');
+                        continueDiv.style.cssText = 'text-align: center; padding: 15px; margin: 20px 0; color: #28a745; font-weight: 600; border-top: 2px solid #28a745;';
+                        continueDiv.innerHTML = '💬 Sohbete buradan devam edebilirsiniz...';
+                        chatMessages.appendChild(continueDiv);
+                        
+                        // Scroll to bottom
+                        this.scrollToBottom();
+                    }
+                } else {
+                    console.log('📭 No recent messages found, showing welcome message');
+                    // No history, show welcome message
+                    this.showWelcomeMessage();
+                }
+            } else {
+                const errorText = await response.text();
+                console.error('❌ History request failed:', response.status, errorText);
+                // Fallback to welcome message
+                this.showWelcomeMessage();
+            }
+            
+        } catch (error) {
+            console.error('❌ Failed to load recent chat history:', error);
+            // Fallback to welcome message
+            this.showWelcomeMessage();
+        }
+    }
+
+    /**
+     * Add message to current session and save to database
+     */
+    async addMessage(userMessage, botResponse) {
         if (!this.currentSession) {
             console.warn('⚠️ No active session for message');
             return;
@@ -155,6 +237,48 @@ class SessionManager {
 
         this.messages.push(message);
         console.log(`📝 Message added to session ${this.currentSession} (total: ${this.messages.length})`);
+        
+        // Auto-save to database immediately
+        try {
+            await this.saveMessageToDatabase(message);
+            console.log('✅ Message auto-saved to database');
+        } catch (error) {
+            console.error('❌ Failed to auto-save message:', error);
+            // Continue anyway - message is still in memory for manual save
+        }
+    }
+
+    /**
+     * Save individual message to database
+     */
+    async saveMessageToDatabase(message) {
+        if (!this.authToken || !this.currentSession) {
+            throw new Error('No authentication token or session');
+        }
+
+        const sessionData = {
+            sessionId: this.currentSession,
+            startedAt: this.sessionStartedAt,
+            messages: [message], // Single message
+            messageCount: 1,
+            userId: this.userId
+        };
+
+        const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.authToken}`
+            },
+            body: JSON.stringify(sessionData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        return await response.json();
     }
 
     /**
@@ -450,8 +574,14 @@ class SessionManager {
 
                 // Load messages
                 messages.forEach(msg => {
-                    this.addMessageToUI(msg.user_message, 'user');
-                    this.addMessageToUI(msg.bot_response, 'bot');
+                    console.log('📖 Loading history message:', msg);
+                    
+                    // Safety checks for message content
+                    const userMsg = msg.user_message || msg.message || 'Boş mesaj';
+                    const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
+                    
+                    this.addMessageToUI(userMsg, 'user');
+                    this.addMessageToUI(botMsg, 'bot');
                 });
 
                 // Back button
@@ -483,8 +613,14 @@ class SessionManager {
         if (this.currentSession && this.messages.length > 0) {
             // Restore current session messages
             this.messages.forEach(msg => {
-                this.addMessageToUI(msg.user_message, 'user');
-                this.addMessageToUI(msg.bot_response, 'bot');
+                console.log('🔄 Restoring current message:', msg);
+                
+                // Safety checks for message content
+                const userMsg = msg.user_message || msg.message || 'Boş mesaj';
+                const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
+                
+                this.addMessageToUI(userMsg, 'user');
+                this.addMessageToUI(botMsg, 'bot');
             });
         } else {
             // Show welcome message
@@ -498,6 +634,15 @@ class SessionManager {
     addMessageToUI(text, sender) {
         const chatMessages = document.getElementById('chatMessages');
         if (!chatMessages) return;
+
+        // Safety check for text parameter
+        if (text === null || text === undefined) {
+            console.warn('⚠️ addMessageToUI called with null/undefined text');
+            text = '';
+        }
+        
+        // Convert to string if not already
+        text = String(text);
 
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${sender}`;
@@ -518,6 +663,14 @@ class SessionManager {
     }
 
     formatMessage(text) {
+        // Safety check for text parameter
+        if (text === null || text === undefined) {
+            return '';
+        }
+        
+        // Convert to string if not already
+        text = String(text);
+        
         return text
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
