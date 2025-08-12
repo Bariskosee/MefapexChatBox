@@ -123,7 +123,7 @@ Python 3.13 kullanıyorsanız:
 - **Performance**: Lazy loading + connection pooling
 
 ### 🗄️ **Database & Storage**
-- **Primary DB**: SQLite (optimized with WAL mode)
+- **Primary DB**: PostgreSQL (production-ready relational database)
 - **Vector DB**: Qdrant (document embeddings)  
 - **Cache Layer**: Redis (session & response caching)
 - **File Storage**: Docker volumes for persistence
@@ -250,8 +250,8 @@ MefapexChatBox/
 │       └── websocket_service.py   # WebSocket management
 │
 ├── 🗄️ Database & Storage
-│   ├── database_manager.py   # Optimized DB operations
-│   ├── data/                # SQLite database
+│   ├── database_manager.py   # PostgreSQL operations  
+│   ├── database/            # PostgreSQL init scripts
 │   ├── models_cache/        # AI model cache
 │   └── logs/               # Application logs
 │
@@ -372,7 +372,10 @@ USE_HUGGINGFACE=true
 OPENAI_API_KEY=your-openai-key
 
 # 🗄️ Database URLs
-DATABASE_URL=sqlite:///./data/mefapex.db
+POSTGRES_HOST=postgres
+POSTGRES_USER=mefapex  
+POSTGRES_PASSWORD=secure_password
+POSTGRES_DB=mefapex_chatbot
 QDRANT_HOST=qdrant
 REDIS_HOST=redis
 
@@ -394,6 +397,11 @@ USE_HUGGINGFACE=true
 OPENAI_API_KEY=sk-your-api-key
 
 # Local Services  
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=mefapex
+POSTGRES_PASSWORD=secure_password
+POSTGRES_DB=mefapex_chatbot
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 REDIS_HOST=localhost

@@ -24,12 +24,14 @@ class Config:
     USE_HUGGINGFACE = os.getenv("USE_HUGGINGFACE", "true").lower() == "true"
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     
-    # Database
+    # Database (PostgreSQL only)
+    DATABASE_TYPE = os.getenv("DATABASE_TYPE", "postgresql")
     DATABASE_URL = os.getenv("DATABASE_URL")
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-    POSTGRES_USER = os.getenv("POSTGRES_USER")
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "mefapex")
     POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-    POSTGRES_DB = os.getenv("POSTGRES_DB")
+    POSTGRES_DB = os.getenv("POSTGRES_DB", "mefapex_chatbot")
     
     # Qdrant
     QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
@@ -56,6 +58,9 @@ class Config:
             
             if not cls.SECRET_KEY:
                 raise RuntimeError("SECRET_KEY is required in production")
+            
+            if not cls.POSTGRES_PASSWORD:
+                raise RuntimeError("POSTGRES_PASSWORD is required for PostgreSQL database")
             
             if cls.USE_OPENAI and not cls.OPENAI_API_KEY:
                 raise RuntimeError("OPENAI_API_KEY is required when USE_OPENAI is enabled")

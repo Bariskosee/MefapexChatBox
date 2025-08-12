@@ -17,7 +17,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-class DatabaseManager:
+class PostgreSQLDatabaseManager:
     """PostgreSQL Database Manager for MEFAPEX Chat System"""
     
     def __init__(self):
@@ -467,11 +467,11 @@ class DatabaseManager:
 # Global instance
 db_manager = None
 
-def get_database_manager() -> DatabaseManager:
+def get_database_manager() -> PostgreSQLDatabaseManager:
     """Get or create PostgreSQL database manager instance"""
     global db_manager
     if db_manager is None:
-        db_manager = DatabaseManager()
+        db_manager = PostgreSQLDatabaseManager()
     return db_manager
 
 # Initialize global instance
