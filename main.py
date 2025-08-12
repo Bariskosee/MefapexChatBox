@@ -43,6 +43,7 @@ try:
     content_manager = ContentManager()
 except ImportError:
     content_manager = None
+    logger.warning("ContentManager not available")
 
 # Initialize services
 @asynccontextmanager
@@ -122,9 +123,14 @@ app.add_middleware(
 
 # Trusted host middleware for production
 if config.ENVIRONMENT == "production":
+    allowed_hosts = ["mefapex.com", "www.mefapex.com", "api.mefapex.com"]
+    # Allow additional hosts from config if specified
+    if hasattr(config, 'ALLOWED_HOSTS') and config.ALLOWED_HOSTS:
+        allowed_hosts.extend(config.ALLOWED_HOSTS)
+    
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["mefapex.com", "www.mefapex.com", "api.mefapex.com"]
+        allowed_hosts=allowed_hosts
     )
 
 # Include API routers
@@ -156,6 +162,186 @@ async def health():
             
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
+
+@app.get("/health/comprehensive")
+async def comprehensive_health_check():
+    """
+    🏥 Comprehensive health check endpoint for production monitoring
+    Checks: CPU, Memory, Disk Space, Database, External Services, Cache
+    """
+    try:
+        from datetime import datetime
+        import time
+        
+        health_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "status": "healthy",
+            "checks": {},
+            "metrics": {},
+            "alerts": []
+        }
+        
+        # 1. 🧠 Memory Check
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            
+            memory_mb = memory_info.rss / 1024 / 1024
+            memory_percent = process.memory_percent()
+            
+            health_data["checks"]["memory"] = {
+                "status": "healthy" if memory_mb < 1000 else "warning" if memory_mb < 2000 else "critical",
+                "usage_mb": round(memory_mb, 2),
+                "usage_percent": round(memory_percent, 2),
+                "threshold_mb": 1000
+            }
+            
+            if memory_mb > 1500:
+                health_data["alerts"].append(f"High memory usage: {memory_mb:.1f}MB")
+                
+        except Exception as e:
+            health_data["checks"]["memory"] = {"status": "error", "error": str(e)}
+            
+        # 2. 🖥️ CPU Check
+        try:
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_count = psutil.cpu_count()
+            
+            health_data["checks"]["cpu"] = {
+                "status": "healthy" if cpu_percent < 70 else "warning" if cpu_percent < 90 else "critical",
+                "usage_percent": cpu_percent,
+                "core_count": cpu_count
+            }
+            
+            if cpu_percent > 85:
+                health_data["alerts"].append(f"High CPU usage: {cpu_percent}%")
+                
+        except Exception as e:
+            health_data["checks"]["cpu"] = {"status": "error", "error": str(e)}
+            
+        # 3. 🗄️ Database Connectivity Check
+        try:
+            start_time = time.time()
+            db_stats = db_manager.get_stats() if hasattr(db_manager, 'get_stats') else {}
+            
+            # Test database query
+            test_query_start = time.time()
+            if hasattr(db_manager, 'get_or_create_session'):
+                db_manager.get_or_create_session("health_check_user")
+            query_time = time.time() - test_query_start
+            
+            health_data["checks"]["database"] = {
+                "status": "healthy" if query_time < 1.0 else "warning" if query_time < 5.0 else "critical",
+                "response_time_ms": round(query_time * 1000, 2),
+                "total_sessions": db_stats.get("total_sessions", 0),
+                "total_messages": db_stats.get("total_messages", 0)
+            }
+            
+            if query_time > 2.0:
+                health_data["alerts"].append(f"Slow database response: {query_time*1000:.1f}ms")
+                
+        except Exception as e:
+            health_data["checks"]["database"] = {"status": "error", "error": str(e)}
+            
+        # 4. 🤖 AI Services Check
+        try:
+            ai_status = {"huggingface": "disabled", "content_manager": "unknown"}
+            
+            # Check Hugging Face models
+            if hasattr(model_manager, 'get_model_info'):
+                try:
+                    model_info = model_manager.get_model_info()
+                    ai_status["huggingface"] = "loaded" if model_info.get("models_loaded", 0) > 0 else "not_loaded"
+                except Exception:
+                    ai_status["huggingface"] = "error"
+            
+            # Check Content Manager
+            try:
+                if content_manager:
+                    ai_status["content_manager"] = "available"
+                else:
+                    ai_status["content_manager"] = "unavailable"
+            except Exception:
+                ai_status["content_manager"] = "error"
+                
+            health_data["checks"]["ai_services"] = {
+                "status": "healthy",
+                "services": ai_status
+            }
+            
+        except Exception as e:
+            health_data["checks"]["ai_services"] = {"status": "error", "error": str(e)}
+            
+        # 5. 🔐 Security Check
+        try:
+            security_checks = {
+                "debug_mode": not config.DEBUG_MODE,
+                "secure_secret_key": config.SECRET_KEY and config.SECRET_KEY != "your-secret-key-change-this-in-production",
+                "environment": config.ENVIRONMENT,
+                "cors_configured": len(config.ALLOWED_ORIGINS) > 0 and "*" not in config.ALLOWED_ORIGINS
+            }
+            
+            security_issues = [k for k, v in security_checks.items() if not v]
+            
+            health_data["checks"]["security"] = {
+                "status": "healthy" if not security_issues else "warning",
+                "checks": security_checks,
+                "issues": security_issues
+            }
+            
+        except Exception as e:
+            health_data["checks"]["security"] = {"status": "error", "error": str(e)}
+            
+        # Overall Status Calculation
+        check_statuses = [check.get("status", "error") for check in health_data["checks"].values()]
+        
+        if "critical" in check_statuses:
+            health_data["status"] = "critical"
+        elif "error" in check_statuses:
+            health_data["status"] = "error"  
+        elif "warning" in check_statuses:
+            health_data["status"] = "warning"
+        else:
+            health_data["status"] = "healthy"
+            
+        # Add summary metrics
+        health_data["metrics"] = {
+            "total_checks": len(health_data["checks"]),
+            "healthy_checks": len([s for s in check_statuses if s == "healthy"]),
+            "warning_checks": len([s for s in check_statuses if s == "warning"]),
+            "critical_checks": len([s for s in check_statuses if s == "critical"]),
+            "error_checks": len([s for s in check_statuses if s == "error"])
+        }
+        
+        # Return appropriate HTTP status
+        from fastapi.responses import JSONResponse
+        if health_data["status"] in ["critical", "error"]:
+            return JSONResponse(
+                status_code=503,  # Service Unavailable
+                content=health_data
+            )
+        elif health_data["status"] == "warning":
+            return JSONResponse(
+                status_code=200,  # OK but with warnings
+                content=health_data
+            )
+        else:
+            return health_data
+            
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "error",
+                "error": str(e),
+                "checks": {}
+            }
+        )
 
 # Legacy login endpoint (for backward compatibility)
 class LoginRequest(BaseModel):

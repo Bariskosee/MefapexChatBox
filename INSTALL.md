@@ -15,11 +15,7 @@ python setup.py
 
 ### 3️⃣ Sistemi Başlatın
 ```bash
-# Linux/macOS
-./run.sh
-
-# Windows
-./run.bat
+python main.py
 ```
 
 🎉 **Tamamlandı!** → http://localhost:8000
@@ -124,8 +120,7 @@ notepad .env  # Windows
 
 ### 🎯 Basit Çalıştırma
 ```bash
-./run.sh        # Linux/macOS
-./run.bat       # Windows
+python main.py
 ```
 
 ### 🐍 Manuel Çalıştırma
@@ -136,10 +131,7 @@ python main.py             # Uygulamayı başlat
 
 ### 🐳 Docker ile Çalıştırma
 ```bash
-# Tek komutla başlatma
-./start-docker.sh
-
-# Manuel Docker
+# Docker compose ile başlatma
 docker-compose up -d
 ```
 

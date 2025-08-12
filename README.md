@@ -31,17 +31,15 @@ cd MefapexChatBox
 # Otomatik kurulum scriptini çalıştırın
 python setup.py
 
-# Sistemi başlatın
-./run.sh        # Linux/macOS
-# VEYA
-./run.bat       # Windows
+# Uygulamayı başlatın
+python main.py
 ```
 
 ### 🐳 Docker ile Hızlı Başlatma
 ```bash
 git clone https://github.com/Bariskosee/MefapexChatBox.git
 cd MefapexChatBox
-./start-docker.sh
+docker-compose up -d
 ```
 
 🎉 **İşte bu kadar!** Sistem `http://localhost:8000` adresinde hazır.
@@ -232,38 +230,38 @@ MefapexChatBox/
 ├── 🐳 Docker Infrastructure
 │   ├── docker-compose.yml      # Multi-container orchestration
 │   ├── Dockerfile             # Production-optimized image
-│   ├── start-docker.sh        # One-command startup script
-│   ├── .env.docker           # Environment template
 │   ├── nginx/nginx.conf      # Reverse proxy config
 │   └── monitoring/           # Prometheus setup
 │
 ├── 🏗️ Modular Architecture  
-│   ├── main_optimized.py     # New modular entry point
-│   ├── routers/              # API endpoint modules
+│   ├── main.py              # Modern unified entry point
+│   ├── api/                 # API endpoint modules
 │   │   ├── auth.py          # Authentication endpoints
 │   │   ├── chat.py          # Chat functionality
 │   │   └── health.py        # Health checks
 │   └── services/            # Business logic layer
-│       ├── ai_service.py    # Lazy AI service
-│       ├── cache_service.py # Advanced caching
-│       ├── performance_monitor.py # System monitoring
-│       └── websocket_service.py   # WebSocket management
+│       ├── auth_service.py    # Authentication service
+│       ├── model_manager.py   # AI model management
+│       ├── database_manager.py # Database operations
+│       └── websocket_manager.py # WebSocket management
 │
 ├── 🗄️ Database & Storage
-│   ├── database_manager.py   # PostgreSQL operations  
 │   ├── database/            # PostgreSQL init scripts
 │   ├── models_cache/        # AI model cache
+│   ├── content/            # Static responses
 │   └── logs/               # Application logs
 │
-├── 🌐 Frontend (Legacy)
+├── 🌐 Frontend
 │   ├── static/index.html    # Main web interface
 │   ├── static/script.js     # Frontend JavaScript
-│   └── main.py             # Legacy monolithic app
+│   └── static/session-manager.js # Session management
 │
 └── 📋 Configuration
     ├── requirements.txt     # Python dependencies
-    ├── .dockerignore       # Docker build optimization
-    └── DOCKER_GUIDE.md     # Complete Docker guide
+    ├── .env.example        # Environment template
+    ├── config.py           # Configuration management
+    ├── middleware.py       # Security middleware
+    └── security_config.py  # Security settings
 ```
 
 ## 📊 **Performance & Monitoring**
