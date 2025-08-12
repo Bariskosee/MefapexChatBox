@@ -2,6 +2,19 @@
 🚀 MEFAPEX PostgreSQL Database Manager
 =====================================
 Production-ready PostgreSQL database manager for MEFAPEX Chat System
+
+This is the consolidated database manager that supports only PostgreSQL.
+All other database backends have been removed for simplicity and consistency.
+
+Features:
+- PostgreSQL connection pooling
+- Async/sync operation support
+- Transaction management
+- Comprehensive error handling
+- Health monitoring
+- Chat session management
+- User authentication
+- Message history tracking
 """
 
 import os
@@ -18,9 +31,23 @@ import time
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    """PostgreSQL Database Manager for MEFAPEX Chat System"""
+    """
+    PostgreSQL Database Manager for MEFAPEX Chat System
+    
+    This is the consolidated database manager that supports only PostgreSQL.
+    All SQLite and MySQL support has been removed for production use.
+    
+    Features:
+    - Connection pooling with automatic reconnection
+    - Transaction management with rollback support
+    - Comprehensive error handling and logging
+    - Chat session and message management
+    - User authentication and session tracking
+    - Database health monitoring
+    """
     
     def __init__(self):
+        """Initialize PostgreSQL Database Manager"""
         self.connection_pool = None
         self.host = os.getenv("POSTGRES_HOST", "localhost")
         self.port = int(os.getenv("POSTGRES_PORT", 5432))
@@ -28,12 +55,16 @@ class DatabaseManager:
         self.password = os.getenv("POSTGRES_PASSWORD")
         self.database = os.getenv("POSTGRES_DB", "mefapex_chatbot")
         
+        # Validation
         if not self.password:
-            raise ValueError("POSTGRES_PASSWORD environment variable is required")
+            raise ValueError("❌ POSTGRES_PASSWORD environment variable is required for PostgreSQL connection")
         
+        # Initialize connection pool and ensure tables exist
         self._init_connection_pool()
         self._ensure_tables_exist()
-        logger.info(f"📊 PostgreSQL Database Manager initialized: {self.host}:{self.port}/{self.database}")
+        
+        logger.info(f"✅ PostgreSQL Database Manager initialized: {self.host}:{self.port}/{self.database}")
+        logger.info("🎯 All other database backends removed - PostgreSQL only")
 
     def _init_connection_pool(self):
         """Initialize PostgreSQL connection pool"""
@@ -420,7 +451,8 @@ class DatabaseManager:
                 "messages": message_count,
                 "database_type": "PostgreSQL",
                 "database_host": f"{self.host}:{self.port}",
-                "database_name": self.database
+                "database_name": self.database,
+                "status": "✅ PostgreSQL Only - Consolidated Database Manager"
             }
             
         except Exception as e:
@@ -449,7 +481,8 @@ class DatabaseManager:
                 "status": "healthy",
                 "database": "PostgreSQL",
                 "connection": "active",
-                "test_query": "passed"
+                "test_query": "passed",
+                "message": "✅ Consolidated PostgreSQL Database Manager - All other backends removed"
             }
             
         except Exception as e:
@@ -464,15 +497,36 @@ class DatabaseManager:
             if conn:
                 self._put_connection(conn)
 
-# Global instance
+# Global database manager instance
 db_manager = None
 
 def get_database_manager() -> DatabaseManager:
-    """Get or create PostgreSQL database manager instance"""
+    """
+    Get or create PostgreSQL database manager instance
+    
+    Returns:
+        DatabaseManager: Singleton PostgreSQL database manager instance
+    """
     global db_manager
     if db_manager is None:
         db_manager = DatabaseManager()
     return db_manager
 
-# Initialize global instance
-db_manager = get_database_manager()
+def init_database_manager() -> DatabaseManager:
+    """
+    Initialize the global database manager instance
+    
+    Returns:
+        DatabaseManager: Initialized PostgreSQL database manager
+    """
+    global db_manager
+    db_manager = DatabaseManager()
+    return db_manager
+
+# Initialize global instance for immediate use
+try:
+    db_manager = get_database_manager()
+    logger.info("🎯 Global PostgreSQL Database Manager initialized successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to initialize global database manager: {e}")
+    db_manager = None
