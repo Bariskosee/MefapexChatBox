@@ -22,19 +22,15 @@ class SessionRepository:
     def create_session(self, session: ChatSession) -> ChatSession:
         """Create a new chat session"""
         query = """
-            INSERT INTO chat_sessions (session_id, user_id, session_name, is_active, metadata)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO chat_sessions (session_id, user_id, is_active)
+            VALUES (%s, %s, %s)
             RETURNING session_id, created_at, updated_at
         """
         
         try:
-            # Convert metadata to JSON
-            import json
-            metadata_json = json.dumps(session.metadata) if session.metadata else '{}'
-            
             result = self.connection_service.execute_query(
                 query,
-                (session.session_id, session.user_id, session.session_name, session.is_active, metadata_json),
+                (session.session_id, session.user_id, session.is_active),
                 fetch_one=True
             )
             
@@ -54,7 +50,7 @@ class SessionRepository:
     def get_session_by_id(self, session_id: str) -> Optional[ChatSession]:
         """Get session by ID"""
         query = """
-            SELECT session_id, user_id, session_name, created_at, updated_at, is_active, metadata
+            SELECT session_id, user_id, created_at, updated_at, is_active, message_count, last_activity
             FROM chat_sessions 
             WHERE session_id = %s
         """
@@ -72,7 +68,7 @@ class SessionRepository:
     def get_user_sessions(self, user_id: str) -> List[ChatSession]:
         """Get all sessions for a user"""
         query = """
-            SELECT session_id, user_id, session_name, created_at, updated_at, is_active, metadata
+            SELECT session_id, user_id, created_at, updated_at, is_active, message_count, last_activity
             FROM chat_sessions 
             WHERE user_id = %s 
             ORDER BY updated_at DESC
@@ -80,7 +76,10 @@ class SessionRepository:
         
         try:
             results = self.connection_service.execute_query(query, (user_id,))
-            return [ChatSession.from_dict(dict(row)) for row in results]
+            sessions = []
+            for row in results:
+                sessions.append(ChatSession.from_dict(dict(row)))
+            return sessions
             
         except Exception as e:
             logger.error(f"❌ Failed to get sessions for user {user_id}: {e}")
@@ -90,17 +89,13 @@ class SessionRepository:
         """Update session information"""
         query = """
             UPDATE chat_sessions 
-            SET updated_at = CURRENT_TIMESTAMP, session_name = %s, is_active = %s, metadata = %s
+            SET updated_at = CURRENT_TIMESTAMP, is_active = %s, last_activity = CURRENT_TIMESTAMP
             WHERE session_id = %s
         """
         
         try:
-            # Convert metadata to JSON
-            import json
-            metadata_json = json.dumps(session.metadata) if session.metadata else '{}'
-            
             rows_affected = self.connection_service.execute_query(
-                query, (session.session_name, session.is_active, metadata_json, session.session_id),
+                query, (session.is_active, session.session_id),
                 fetch_all=False
             )
             return rows_affected > 0

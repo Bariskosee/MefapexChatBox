@@ -24,7 +24,13 @@ class Config:
     
     # Security
     SECRET_KEY = os.getenv("SECRET_KEY", "mefapex-secret-key-change-in-production")
-    ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
+    ALLOWED_ORIGINS = [
+        "http://localhost:8000", 
+        "http://127.0.0.1:8000",
+        "http://0.0.0.0:8000",
+        "http://10.0.0.69:8000",
+        "*"  # Geçici olarak tüm originlere izin ver - Safari için
+    ]
     
     # PostgreSQL Database
     POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")

@@ -300,8 +300,10 @@ async function logout() {
     chatMessages.innerHTML = `
         <div class="welcome-message">
             👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
-            ${saveResult.reason === 'saved' ? 'Oturumunuz geçmişe kaydedildi.' : 'Yeni oturuma hazırsınız.'}<br>
-            Size nasıl yardımcı olabilirim?
+            ${saveResult.reason === 'saved' ? 
+                '<span style="color: #28a745;">✅ Oturumunuz geçmişe kaydedildi.</span>' : 
+                '<span style="color: #667eea;">🆕 Yeni oturuma hazırsınız.</span>'}<br><br>
+            Giriş yapın ve sohbetinizi başlatın!
         </div>
     `;
     
@@ -524,8 +526,50 @@ window.addEventListener('unhandledrejection', function(event) {
 
 // Sidebar open/close logic - Updated for session manager
 function openChatHistorySidebar() {
-    document.getElementById('chatHistorySidebar').style.transform = 'translateX(0)';
-    sessionManager.loadHistoryPanel();
+    console.log('🔍 openChatHistorySidebar called');
+    console.log('🔍 sessionManager exists:', !!window.sessionManager);
+    console.log('🔍 sessionManager.authToken:', !!sessionManager?.authToken);
+    console.log('🔍 sessionManager.userId:', sessionManager?.userId);
+    console.log('🔍 isLoggedIn:', isLoggedIn);
+    
+    const sidebar = document.getElementById('chatHistorySidebar');
+    const historyList = document.getElementById('chatHistoryList');
+    
+    console.log('🔍 sidebar element found:', !!sidebar);
+    console.log('🔍 historyList element found:', !!historyList);
+    
+    if (sidebar) {
+        sidebar.style.transform = 'translateX(0)';
+    }
+    
+    if (!isLoggedIn) {
+        console.log('🔍 User not logged in, showing login message');
+        if (historyList) {
+            historyList.innerHTML = `
+                <li style="padding: 40px; text-align: center; color: #ffd700;">
+                    🔒 Geçmiş sohbetleri görmek için giriş yapın
+                </li>
+            `;
+        }
+        return;
+    }
+    
+    if (window.sessionManager && typeof sessionManager.loadHistoryPanel === 'function') {
+        console.log('🔍 Calling sessionManager.loadHistoryPanel()');
+        sessionManager.loadHistoryPanel();
+    } else {
+        console.error('❌ SessionManager or loadHistoryPanel not available');
+        if (historyList) {
+            historyList.innerHTML = `
+                <li style="padding: 40px; text-align: center; color: #e74c3c;">
+                    ❌ SessionManager yüklenemedi<br>
+                    <button onclick="location.reload()" style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Sayfayı Yenile
+                    </button>
+                </li>
+            `;
+        }
+    }
 }
 
 function closeChatHistorySidebar() {
@@ -540,13 +584,21 @@ window.closeChatHistorySidebar = closeChatHistorySidebar;
 function updateHistoryButtonVisibility() {
     const historyBtn = document.getElementById('openHistoryBtn');
     
+    console.log('🔍 updateHistoryButtonVisibility called');
+    console.log('🔍 historyBtn element found:', !!historyBtn);
+    console.log('🔍 isLoggedIn:', isLoggedIn);
+    
     if (historyBtn) {
+        // Only show history button when user is logged in (like logout button)
         if (isLoggedIn) {
             historyBtn.style.display = 'block';
+            console.log('🔍 History button made visible (user logged in)');
         } else {
             historyBtn.style.display = 'none';
-            closeChatHistorySidebar();
+            console.log('🔍 History button hidden (user not logged in)');
         }
+    } else {
+        console.error('❌ History button element not found');
     }
 }
 

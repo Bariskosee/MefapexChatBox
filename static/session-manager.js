@@ -32,7 +32,7 @@ class SessionManager {
 
     /**
      * CORE: New session on login
-     * Create fresh session but show recent chat history
+     * Create fresh session - clean start, no history display
      */
     async startNewSessionOnLogin(authToken, userId) {
         console.log('🆕 Starting new session on login');
@@ -48,8 +48,8 @@ class SessionManager {
         // Clear any existing chat UI
         this.clearChatUI();
         
-        // Load and display recent chat history
-        await this.loadRecentChatHistory();
+        // Show welcome message only - no history display
+        this.showWelcomeMessage();
         
         // Focus composer
         this.focusComposer();
@@ -113,111 +113,41 @@ class SessionManager {
      */
     async loadHistoryPanel() {
         console.log('📚 Loading history panel');
+        console.log('📚 Auth token exists:', !!this.authToken);
+        console.log('📚 User ID:', this.userId);
         
         if (!this.authToken || !this.userId) {
+            console.error('❌ Missing auth token or user ID');
             this.showHistoryError('Lütfen önce giriş yapın');
             return;
         }
 
         // Show loading state
         this.showHistoryLoading();
+        console.log('📚 Loading state shown, fetching history...');
 
         try {
             const history = await this.fetchUserHistory();
+            console.log('📚 History fetched:', history.length, 'sessions');
+            console.log('📚 History data:', history);
             
             if (history.length === 0) {
+                console.log('📚 No history found, showing empty state');
                 this.showHistoryEmpty();
             } else {
+                console.log('📚 Rendering history list');
                 this.renderHistoryList(history);
             }
             
         } catch (error) {
             console.error('❌ Failed to load history:', error);
-            this.showHistoryError('Geçmiş yüklenemedi');
+            this.showHistoryError('Geçmiş yüklenemedi: ' + error.message);
         }
     }
 
     /**
-     * Load recent chat history and display in current session
+     * Manual save action for retry scenarios
      */
-    async loadRecentChatHistory() {
-        console.log('📚 Loading recent chat history');
-        console.log('🔑 Auth token:', this.authToken ? 'Present' : 'Missing');
-        console.log('👤 User ID:', this.userId);
-        
-        try {
-            // First try to get recent messages from database
-            const response = await fetch(`${this.API_BASE_URL}/api/chat/history`, {
-                headers: {
-                    'Authorization': `Bearer ${this.authToken}`
-                }
-            });
-
-            console.log('📡 History response status:', response.status);
-            console.log('📡 History response headers:', [...response.headers.entries()]);
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('📊 History data received:', data);
-                console.log('📊 Data keys:', Object.keys(data));
-                console.log('📊 Messages array:', data.messages);
-                console.log('📊 Messages length:', data.messages ? data.messages.length : 'undefined');
-                
-                const recentMessages = data.messages || [];
-                console.log(`📝 Recent messages count: ${recentMessages.length}`);
-                
-                if (recentMessages.length > 0) {
-                    // Display recent chat history
-                    const chatMessages = document.getElementById('chatMessages');
-                    if (chatMessages) {
-                        // Add header for history
-                        chatMessages.innerHTML = `
-                            <div style="text-align: center; padding: 15px; margin-bottom: 10px; background: rgba(102,126,234,0.1); border-radius: 10px; color: #667eea; font-weight: 600;">
-                                📚 Son Sohbetleriniz (${recentMessages.length} mesaj)
-                            </div>
-                        `;
-
-                        // Show recent messages (reverse to show oldest first)
-                        recentMessages.reverse().forEach((msg, index) => {
-                            console.log(`📝 Adding message ${index + 1}:`, msg);
-                            console.log(`📝 User message:`, msg.user_message);
-                            console.log(`📝 Bot response:`, msg.bot_response);
-                            
-                            // Safety checks for message content
-                            const userMsg = msg.user_message || msg.message || 'Boş mesaj';
-                            const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
-                            
-                            this.addMessageToUI(userMsg, 'user');
-                            this.addMessageToUI(botMsg, 'bot');
-                        });
-
-                        // Add continuation indicator
-                        const continueDiv = document.createElement('div');
-                        continueDiv.style.cssText = 'text-align: center; padding: 15px; margin: 20px 0; color: #28a745; font-weight: 600; border-top: 2px solid #28a745;';
-                        continueDiv.innerHTML = '💬 Sohbete buradan devam edebilirsiniz...';
-                        chatMessages.appendChild(continueDiv);
-                        
-                        // Scroll to bottom
-                        this.scrollToBottom();
-                    }
-                } else {
-                    console.log('📭 No recent messages found, showing welcome message');
-                    // No history, show welcome message
-                    this.showWelcomeMessage();
-                }
-            } else {
-                const errorText = await response.text();
-                console.error('❌ History request failed:', response.status, errorText);
-                // Fallback to welcome message
-                this.showWelcomeMessage();
-            }
-            
-        } catch (error) {
-            console.error('❌ Failed to load recent chat history:', error);
-            // Fallback to welcome message
-            this.showWelcomeMessage();
-        }
-    }
 
     /**
      * Add message to current session and save to database
@@ -381,6 +311,8 @@ class SessionManager {
         }
 
         console.log('📡 Fetching fresh history from backend');
+        console.log('📡 API URL:', `${this.API_BASE_URL}/chat/sessions/${this.userId}`);
+        console.log('📡 Auth token available:', !!this.authToken);
         
         const response = await fetch(`${this.API_BASE_URL}/chat/sessions/${this.userId}`, {
             headers: {
@@ -388,16 +320,25 @@ class SessionManager {
             }
         });
 
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response headers:', [...response.headers.entries()]);
+
         if (!response.ok) {
-            throw new Error(`Failed to fetch history: ${response.status}`);
+            const errorText = await response.text();
+            console.error('📡 Response error:', errorText);
+            throw new Error(`Failed to fetch history: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
+        console.log('📡 Response data:', data);
+        
         const sessions = data.sessions || [];
+        console.log('📡 Extracted sessions:', sessions.length);
         
         // Cache the result
         this.historyCache = sessions;
         this.historyCacheExpiry = Date.now() + this.CACHE_DURATION_MS;
+        console.log('📡 History cached for', this.CACHE_DURATION_MS / 1000, 'seconds');
         
         return sessions;
     }
@@ -786,6 +727,13 @@ class SessionManager {
 
 // Global instance
 window.sessionManager = new SessionManager();
+
+// Debug: Check if SessionManager is properly loaded
+console.log('✅ SessionManager instance created:', !!window.sessionManager);
+console.log('✅ SessionManager methods available:');
+console.log('  - loadHistoryPanel:', typeof window.sessionManager.loadHistoryPanel);
+console.log('  - fetchUserHistory:', typeof window.sessionManager.fetchUserHistory);
+console.log('  - startNewSessionOnLogin:', typeof window.sessionManager.startNewSessionOnLogin);
 
 // Add CSS animations
 const style = document.createElement('style');

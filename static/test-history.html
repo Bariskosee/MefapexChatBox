@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test History API</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #2c3e50; color: white; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; background: #34495e; border-radius: 8px; }
+        .output { background: #1a202c; padding: 10px; border-radius: 4px; margin-top: 10px; white-space: pre-wrap; font-family: monospace; }
+        .error { color: #e74c3c; }
+        .success { color: #27ae60; }
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #2980b9; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 MEFAPEX History API Test</h1>
+        
+        <div class="test-section">
+            <h3>1. Login Test</h3>
+            <button onclick="testLogin()">Test Login</button>
+            <div id="loginOutput" class="output"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. Sessions API Test</h3>
+            <button onclick="testSessions()">Test Sessions API</button>
+            <div id="sessionsOutput" class="output"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. Frontend Session Manager Test</h3>
+            <button onclick="testSessionManager()">Test SessionManager</button>
+            <div id="sessionManagerOutput" class="output"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>4. Manual History Panel Test</h3>
+            <button onclick="loadHistoryManually()">Load History Panel</button>
+            <div id="historyOutput" class="output"></div>
+            <div id="chatHistoryList" style="border: 1px solid #555; margin-top: 10px; min-height: 200px; padding: 10px;"></div>
+        </div>
+    </div>
+
+    <script src="session-manager.js"></script>
+    <script>
+        const API_BASE_URL = window.location.origin;
+        let testToken = null;
+        let testUserId = null;
+
+        async function testLogin() {
+            const output = document.getElementById('loginOutput');
+            output.textContent = 'Testing login...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: 'demo', password: '1234' })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    testToken = data.access_token;
+                    testUserId = data.user_info.user_id;
+                    
+                    output.innerHTML = `<span class="success">✅ Login successful!</span>\n`;
+                    output.innerHTML += `Token: ${testToken.substring(0, 50)}...\n`;
+                    output.innerHTML += `User ID: ${testUserId}`;
+                } else {
+                    const errorText = await response.text();
+                    output.innerHTML = `<span class="error">❌ Login failed: ${response.status}</span>\n${errorText}`;
+                }
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        async function testSessions() {
+            const output = document.getElementById('sessionsOutput');
+            
+            if (!testToken || !testUserId) {
+                output.innerHTML = `<span class="error">❌ Please login first!</span>`;
+                return;
+            }
+            
+            output.textContent = 'Testing sessions API...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/chat/sessions/${testUserId}`, {
+                    headers: { 'Authorization': `Bearer ${testToken}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    output.innerHTML = `<span class="success">✅ Sessions API successful!</span>\n`;
+                    output.innerHTML += `Response: ${JSON.stringify(data, null, 2)}`;
+                } else {
+                    const errorText = await response.text();
+                    output.innerHTML = `<span class="error">❌ Sessions API failed: ${response.status}</span>\n${errorText}`;
+                }
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        async function testSessionManager() {
+            const output = document.getElementById('sessionManagerOutput');
+            
+            if (!testToken || !testUserId) {
+                output.innerHTML = `<span class="error">❌ Please login first!</span>`;
+                return;
+            }
+            
+            output.textContent = 'Testing SessionManager...';
+            
+            try {
+                // Initialize session manager
+                sessionManager.authToken = testToken;
+                sessionManager.userId = testUserId;
+                
+                output.innerHTML = `<span class="success">✅ SessionManager initialized!</span>\n`;
+                output.innerHTML += `Auth Token: ${!!sessionManager.authToken}\n`;
+                output.innerHTML += `User ID: ${sessionManager.userId}\n`;
+                
+                // Test fetchUserHistory method
+                const history = await sessionManager.fetchUserHistory();
+                output.innerHTML += `History count: ${history.length}\n`;
+                output.innerHTML += `History: ${JSON.stringify(history, null, 2)}`;
+                
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        async function loadHistoryManually() {
+            const output = document.getElementById('historyOutput');
+            
+            if (!testToken || !testUserId) {
+                output.innerHTML = `<span class="error">❌ Please login first!</span>`;
+                return;
+            }
+            
+            output.textContent = 'Loading history panel...';
+            
+            try {
+                // Initialize session manager
+                sessionManager.authToken = testToken;
+                sessionManager.userId = testUserId;
+                
+                // Call loadHistoryPanel
+                await sessionManager.loadHistoryPanel();
+                
+                output.innerHTML = `<span class="success">✅ History panel loaded!</span>\n`;
+                output.innerHTML += `Check the panel below for results.`;
+                
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                console.error('History panel error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

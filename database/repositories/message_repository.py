@@ -22,9 +22,9 @@ class MessageRepository:
     def create_message(self, message: ChatMessage) -> ChatMessage:
         """Create a new chat message"""
         query = """
-            INSERT INTO chat_messages (message_id, session_id, user_id, message, response, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING message_id, timestamp
+            INSERT INTO chat_messages (message_id, session_id, user_id, user_message, bot_response, source, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING message_id, timestamp, created_at
         """
         
         try:
@@ -39,18 +39,24 @@ class MessageRepository:
                 import json
                 metadata_json = json.dumps(metadata_json)
             
+            # Extract source from metadata or use default
+            source = "unknown"
+            if isinstance(message.metadata, dict):
+                source = message.metadata.get("source", "unknown")
+            
             result = self.connection_service.execute_query(
                 query,
                 (message.message_id, message.session_id, message.user_id, message.message, 
-                 message.response, metadata_json),
+                 message.response, source, metadata_json),
                 fetch_one=True
             )
             
             if result:
                 message.message_id = result['message_id']
-                message.timestamp = result['timestamp']
-                message.created_at = result['created_at']
-                logger.info(f"✅ Message created: {message.id}")
+                message.timestamp = result['timestamp'] 
+                if 'created_at' in result:
+                    message.created_at = result['created_at']
+                logger.info(f"✅ Message created: {message.message_id}")
                 return message
             else:
                 raise RuntimeError("Failed to create message")
@@ -62,7 +68,7 @@ class MessageRepository:
     def get_session_messages(self, session_id: str) -> List[ChatMessage]:
         """Get all messages for a session"""
         query = """
-            SELECT message_id, session_id, user_id, message, response, message_type,
+            SELECT message_id, session_id, user_id, user_message, bot_response, source,
                    timestamp, metadata
             FROM chat_messages 
             WHERE session_id = %s 
@@ -71,7 +77,14 @@ class MessageRepository:
         
         try:
             results = self.connection_service.execute_query(query, (session_id,))
-            return [ChatMessage.from_dict(dict(row)) for row in results]
+            messages = []
+            for row in results:
+                row_dict = dict(row)
+                # Map database columns to ChatMessage fields
+                row_dict['message'] = row_dict.pop('user_message', '')
+                row_dict['response'] = row_dict.pop('bot_response', '')
+                messages.append(ChatMessage.from_dict(row_dict))
+            return messages
             
         except Exception as e:
             logger.error(f"❌ Failed to get messages for session {session_id}: {e}")
@@ -80,7 +93,7 @@ class MessageRepository:
     def get_user_messages(self, user_id: str, limit: int = 100) -> List[ChatMessage]:
         """Get recent messages for a user"""
         query = """
-            SELECT message_id, session_id, user_id, message, response, message_type,
+            SELECT message_id, session_id, user_id, user_message, bot_response, source,
                    timestamp, metadata
             FROM chat_messages 
             WHERE user_id = %s 
@@ -90,7 +103,14 @@ class MessageRepository:
         
         try:
             results = self.connection_service.execute_query(query, (user_id, limit))
-            return [ChatMessage.from_dict(dict(row)) for row in results]
+            messages = []
+            for row in results:
+                row_dict = dict(row)
+                # Map database columns to ChatMessage fields
+                row_dict['message'] = row_dict.pop('user_message', '')
+                row_dict['response'] = row_dict.pop('bot_response', '')
+                messages.append(ChatMessage.from_dict(row_dict))
+            return messages
             
         except Exception as e:
             logger.error(f"❌ Failed to get messages for user {user_id}: {e}")

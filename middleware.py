@@ -53,16 +53,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         
         # Security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"  # Safari için daha esnek
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"  # Safari uyumlu
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: ws: wss: http: https:; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
+            "img-src 'self' data: https: http:; "
             "font-src 'self' data:; "
-            "connect-src 'self' ws: wss:; "
+            "connect-src 'self' ws: wss: http: https:; "
             "object-src 'none'; "
             "base-uri 'self';"
         )

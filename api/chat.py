@@ -10,25 +10,43 @@ import asyncio
 import time
 
 from auth_service import verify_token
-from database_manager import db_manager
+# Use new database manager
+from database.manager import DatabaseManager
 from model_manager import model_manager
 from response_cache import response_cache
 from security_config import input_validator
 from content_manager import ContentManager
 from qdrant_client import QdrantClient
-from core.configuration import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+# Initialize database manager
+db_manager = DatabaseManager()
+
 # Initialize Qdrant client
-qdrant_client = QdrantClient(
-    host=get_config().qdrant.host,
-    port=get_config().qdrant.port
-)
+try:
+    try:
+        from core.configuration import get_config
+        config = get_config()
+    except ImportError:
+        # Fallback to simple config
+        from config import config
+    
+    qdrant_client = QdrantClient(
+        host=getattr(config, 'qdrant', {}).get('host', 'localhost'),
+        port=getattr(config, 'qdrant', {}).get('port', 6333)
+    )
+except Exception as e:
+    logger.warning(f"Failed to initialize Qdrant client: {e}")
+    qdrant_client = None
 
 # Initialize ContentManager
-content_manager = ContentManager()
+try:
+    content_manager = ContentManager()
+except Exception as e:
+    logger.warning(f"Failed to initialize ContentManager: {e}")
+    content_manager = None
 
 # Rate limiter will be imported from main
 rate_limiter = None
@@ -177,28 +195,50 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
         return static_response, "static_content"
     
     # Try OpenAI if available
-    if get_config().ai.use_openai:
+    try:
         try:
-            openai_response = await model_manager.generate_openai_response(
-                context="You are MEFAPEX AI Assistant, a helpful and knowledgeable assistant.",
-                query=message
-            )
-            if openai_response:
-                return openai_response, "openai"
-        except Exception as e:
-            logger.warning(f"OpenAI generation failed: {e}")
+            from core.configuration import get_config
+            config = get_config()
+            use_openai = config.ai.use_openai
+        except (ImportError, AttributeError):
+            from config import config
+            use_openai = getattr(config, 'USE_OPENAI', False)
+            
+        if use_openai:
+            try:
+                openai_response = await model_manager.generate_openai_response(
+                    context="You are MEFAPEX AI Assistant, a helpful and knowledgeable assistant.",
+                    query=message
+                )
+                if openai_response:
+                    return openai_response, "openai"
+            except Exception as e:
+                logger.warning(f"OpenAI generation failed: {e}")
+    except Exception as e:
+        logger.warning(f"OpenAI config check failed: {e}")
     
     # Try HuggingFace as fallback
-    if get_config().ai.use_huggingface:
+    try:
         try:
-            hf_response = await model_manager.generate_huggingface_response(
-                context="You are MEFAPEX AI Assistant.",
-                query=message
-            )
-            if hf_response:
-                return hf_response, "huggingface"
-        except Exception as e:
-            logger.warning(f"HuggingFace generation failed: {e}")
+            from core.configuration import get_config
+            config = get_config()
+            use_huggingface = config.ai.use_huggingface
+        except (ImportError, AttributeError):
+            from config import config
+            use_huggingface = getattr(config, 'USE_HUGGINGFACE', True)
+            
+        if use_huggingface:
+            try:
+                hf_response = await model_manager.generate_huggingface_response(
+                    context="You are MEFAPEX AI Assistant.",
+                    query=message
+                )
+                if hf_response:
+                    return hf_response, "huggingface"
+            except Exception as e:
+                logger.warning(f"HuggingFace generation failed: {e}")
+    except Exception as e:
+        logger.warning(f"HuggingFace config check failed: {e}")
     
     # Final fallback
     return "Üzgünüm, şu anda sorunuza uygun bir yanıt üretemiyorum. Lütfen daha sonra tekrar deneyin.", "fallback"
