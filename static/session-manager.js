@@ -530,8 +530,8 @@ class SessionManager {
                     const userMsg = msg.user_message || msg.message || 'Boş mesaj';
                     const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
                     
-                    this.addMessageToUI(userMsg, 'user');
-                    this.addMessageToUI(botMsg, 'bot');
+                    addMessageToUI(userMsg, 'user');
+                    addMessageToUI(botMsg, 'bot');
                 });
 
                 // Back button
@@ -569,8 +569,8 @@ class SessionManager {
                 const userMsg = msg.user_message || msg.message || 'Boş mesaj';
                 const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
                 
-                this.addMessageToUI(userMsg, 'user');
-                this.addMessageToUI(botMsg, 'bot');
+                addMessageToUI(userMsg, 'user');
+                addMessageToUI(botMsg, 'bot');
             });
         } else {
             // Show welcome message
@@ -578,47 +578,7 @@ class SessionManager {
         }
         
         this.focusComposer();
-        this.scrollToBottom();
-    }
-
-    addMessageToUI(text, sender) {
-        const chatMessages = document.getElementById('chatMessages');
-        if (!chatMessages) return;
-
-        // Safety check for text parameter
-        if (text === null || text === undefined) {
-            console.warn('⚠️ addMessageToUI called with null/undefined text');
-            text = '';
-        }
-        
-        // Convert to string if not already
-        text = String(text);
-
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${sender}`;
-        
-        const bubbleDiv = document.createElement('div');
-        bubbleDiv.className = 'message-bubble';
-        bubbleDiv.innerHTML = formatMessage(text);
-        
-        messageDiv.appendChild(bubbleDiv);
-        
-        // Remove welcome message if exists
-        const welcomeMessage = chatMessages.querySelector('.welcome-message');
-        if (welcomeMessage) {
-            welcomeMessage.remove();
-        }
-        
-        chatMessages.appendChild(messageDiv);
-    }
-
-    scrollToBottom() {
-        const chatMessages = document.getElementById('chatMessages');
-        if (chatMessages) {
-            setTimeout(() => {
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            }, 100);
-        }
+        scrollToBottom();
     }
 
     closeHistorySidebar() {

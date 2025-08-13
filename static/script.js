@@ -377,7 +377,7 @@ async function sendMessage() {
     messageInput.disabled = false;
     
     // Add user message to chat UI
-    addMessage(message, 'user');
+    addMessageToUI(message, 'user');
     console.log('User message added to chat');
     
     // Show typing indicator
@@ -416,7 +416,7 @@ async function sendMessage() {
         hideTyping();
         
         // Add bot response to chat UI
-        addMessage(data.response, 'bot');
+        addMessageToUI(data.response, 'bot');
         console.log('Bot response added to chat');
         
         // 🎯 CORE: Add message to session manager with auto-save
@@ -436,45 +436,12 @@ async function sendMessage() {
     } catch (error) {
         console.error('Chat error:', error);
         hideTyping();
-        addMessage('Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.', 'bot');
+        addMessageToUI('Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.', 'bot');
         
         // Ensure input stays enabled even on error
         messageInput.disabled = false;
         messageInput.focus();
     }
-}
-
-// Add message to chat UI (updated for session manager)
-function addMessage(text, sender) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${sender}`;
-    
-    const bubbleDiv = document.createElement('div');
-    bubbleDiv.className = 'message-bubble';
-    
-    // Support for markdown-like formatting
-    const formattedText = formatMessage(text);
-    bubbleDiv.innerHTML = formattedText;
-    
-    messageDiv.appendChild(bubbleDiv);
-    
-    // Remove welcome message if it exists
-    const welcomeMessage = chatMessages.querySelector('.welcome-message');
-    if (welcomeMessage) {
-        welcomeMessage.remove();
-    }
-    
-    chatMessages.appendChild(messageDiv);
-    
-    // Auto-scroll to bottom with smooth animation
-    scrollToBottom();
-}
-
-// Smooth scroll to bottom
-function scrollToBottom() {
-    setTimeout(() => {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }, 100);
 }
 
 // Show typing indicator
