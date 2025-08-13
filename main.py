@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from database.interface import DatabaseOperationsMixin
+from database.utils import get_database_helper
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -338,24 +340,19 @@ async def chat_authenticated(chat_msg: ChatMessage, request: Request, current_us
             ai_response = f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır."
             source = "fallback"
         
-        # Save message to database
-        try:
-            # Get or create session
-            session_id = db_manager.get_or_create_session(user_id)
-            
-            # Save message to database
-            db_manager.add_message(
-                session_id=session_id,
-                user_id=user_id,
-                user_message=message,
-                bot_response=ai_response,
-                source=source
-            )
-            
-            logger.info(f"Chat message saved for user {user_id} in session {session_id}")
-        except Exception as db_error:
-            logger.error(f"Database error (continuing without saving): {db_error}")
-            # Continue without saving to database
+        # Save message to database with unified helper
+        db_helper = get_database_helper(db_manager)
+        save_result = db_helper.save_chat_interaction(
+            user_id=user_id,
+            message=message,
+            response=ai_response,
+            source=source
+        )
+        
+        if save_result["success"]:
+            logger.info(f"Chat message saved for user {user_id} in session {save_result['session_id']}")
+        else:
+            logger.error(f"Database save failed: {save_result.get('error', 'Unknown error')}")
         
         return {"response": ai_response}
         

@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
+from database.utils import get_database_helper
 
 from auth_service import get_auth_service, verify_token
 from database_manager import db_manager
@@ -282,24 +283,24 @@ class HTTPRouteHandlers:
             
             user_id = current_user["user_id"]
             
-            # Get or create session for the user
-            session_id = db_manager.get_or_create_session(user_id)
-            
             # Process message with AI
             ai_response = await HTTPRouteHandlers._process_ai_message(message, user_id)
             
-            # Save to database
-            db_manager.add_message(
-                session_id=session_id,
+            # Save to database with unified helper
+            db_helper = get_database_helper(db_manager)
+            save_result = db_helper.save_chat_interaction(
                 user_id=user_id,
-                user_message=message,
-                bot_response=ai_response,
+                message=message,
+                response=ai_response,
                 source="authenticated_chat"
             )
             
+            if not save_result["success"]:
+                logger.warning(f"Failed to save authenticated chat: {save_result.get('error')}")
+            
             return {
                 "response": ai_response,
-                "session_id": session_id,
+                "session_id": save_result["session_id"],
                 "user_id": user_id
             }
             

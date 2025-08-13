@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 import logging
 import asyncio
 import time
+from database.utils import get_database_helper
 
 from auth_service import verify_token
 # Use new database manager
@@ -142,14 +143,18 @@ async def chat_message(
         # Calculate response time
         response_time_ms = int((time.time() - start_time) * 1000)
         
-        # Save to database
-        db_manager.add_message(
-            session_id=session_id,
+        # Save to database with unified helper
+        db_helper = get_database_helper(db_manager)
+        save_result = db_helper.save_chat_interaction(
             user_id=user_id,
-            user_message=sanitized_message,
-            bot_response=ai_response,
-            source=response_source
+            message=sanitized_message,
+            response=ai_response,
+            source=response_source,
+            session_id=session_id
         )
+        
+        if not save_result["success"]:
+            logger.warning(f"Failed to save message: {save_result.get('error')}")
         
         logger.info(f"Chat response generated for user {user_id}: {response_time_ms}ms")
         

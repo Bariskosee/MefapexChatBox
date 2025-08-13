@@ -9,6 +9,7 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from database.interface import DatabaseInterface
 import asyncpg
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -16,7 +17,7 @@ import bcrypt
 
 logger = logging.getLogger(__name__)
 
-class PostgreSQLManager:
+class PostgreSQLManager(DatabaseInterface):
     """PostgreSQL Database Manager for MEFAPEX Chat System"""
     
     def __init__(self):
@@ -443,6 +444,181 @@ class PostgreSQLManager:
         if self.sync_connection:
             self.sync_connection.close()
         logger.info("📊 PostgreSQL connections closed")
+
+    # === Required Abstract Method Implementations ===
+    
+    def connect(self) -> bool:
+        """Establish database connection"""
+        return self.test_connection()
+        
+    def disconnect(self) -> None:
+        """Close database connection"""
+        self.close()
+        
+    def test_connection(self) -> bool:
+        """Test if database connection is working"""
+        try:
+            cursor = self.sync_connection.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            return True
+        except Exception as e:
+            logger.error(f"Connection test failed: {e}")
+            return False
+    
+    def create_user(self, username: str, email: str, password_hash: str) -> str:
+        """Create new user and return user_id"""
+        user_id = str(uuid.uuid4())
+        try:
+            cursor = self.sync_connection.cursor()
+            cursor.execute(
+                """INSERT INTO users (id, username, email, password_hash) 
+                   VALUES (%s, %s, %s, %s)""",
+                (user_id, username, email, password_hash)
+            )
+            return user_id
+        except Exception as e:
+            logger.error(f"Failed to create user: {e}")
+            raise
+    
+    def get_user(self, username: str) -> Optional[Dict]:
+        """Get user by username"""
+        return self.get_user_by_username(username)
+        
+    def get_user_by_id(self, user_id: str) -> Optional[Dict]:
+        """Get user by user_id"""
+        try:
+            cursor = self.sync_connection.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+            result = cursor.fetchone()
+            return dict(result) if result else None
+        except Exception as e:
+            logger.error(f"Failed to get user by ID: {e}")
+            return None
+    
+    def create_session(self, user_id: str, session_id: Optional[str] = None) -> str:
+        """Create new chat session and return session_id"""
+        return self.get_or_create_session(user_id, session_id)
+        
+    def get_user_sessions(self, user_id: str, limit: int = 15) -> List[Dict]:
+        """Get all sessions for a user"""
+        return self.get_sessions(user_id, limit)
+        
+    def get_session_messages(self, session_id: str) -> List[Dict]:
+        """Get all messages in a session"""
+        return self.get_messages(session_id)
+        
+    def delete_old_sessions(self, user_id: str, keep_count: int = 15) -> int:
+        """Delete old sessions keeping only specified count"""
+        try:
+            cursor = self.sync_connection.cursor()
+            
+            # Get sessions to delete (keep most recent ones)
+            cursor.execute(
+                """SELECT session_id FROM chat_sessions 
+                   WHERE user_id = %s 
+                   ORDER BY created_at DESC OFFSET %s""",
+                (user_id, keep_count)
+            )
+            old_sessions = cursor.fetchall()
+            
+            if not old_sessions:
+                return 0
+            
+            # Delete old sessions and their messages
+            old_session_ids = [session[0] for session in old_sessions]
+            cursor.execute(
+                "DELETE FROM chat_messages WHERE session_id = ANY(%s)",
+                (old_session_ids,)
+            )
+            cursor.execute(
+                "DELETE FROM chat_sessions WHERE session_id = ANY(%s)",
+                (old_session_ids,)
+            )
+            
+            return len(old_session_ids)
+            
+        except Exception as e:
+            logger.error(f"Failed to delete old sessions: {e}")
+            return 0
+    
+    def save_session_bulk(self, session_data: Dict) -> bool:
+        """Save multiple messages in a session at once"""
+        try:
+            session_id = session_data.get('sessionId')
+            user_id = session_data.get('userId')
+            messages = session_data.get('messages', [])
+            
+            if not session_id or not user_id or not messages:
+                return False
+            
+            # Ensure session exists
+            self.get_or_create_session(user_id, session_id)
+            
+            # Save all messages
+            cursor = self.sync_connection.cursor()
+            for msg in messages:
+                cursor.execute(
+                    """INSERT INTO chat_messages 
+                       (session_id, user_id, user_message, bot_response, source) 
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (session_id, user_id, 
+                     msg.get('user_message', ''), 
+                     msg.get('bot_response', ''),
+                     msg.get('source', 'bulk_save'))
+                )
+            
+            # Update session message count
+            cursor.execute(
+                """UPDATE chat_sessions 
+                   SET message_count = %s, last_activity = CURRENT_TIMESTAMP
+                   WHERE session_id = %s""",
+                (len(messages), session_id)
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save session bulk: {e}")
+            return False
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Comprehensive health check"""
+        try:
+            # Test connection
+            connection_ok = self.test_connection()
+            
+            # Get basic stats
+            cursor = self.sync_connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users")
+            user_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM chat_sessions")
+            session_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM chat_messages")
+            message_count = cursor.fetchone()[0]
+            
+            return {
+                "status": "healthy" if connection_ok else "unhealthy",
+                "database": "postgresql",
+                "connection": connection_ok,
+                "stats": {
+                    "users": user_count,
+                    "sessions": session_count,
+                    "messages": message_count
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return {
+                "status": "unhealthy",
+                "database": "postgresql", 
+                "connection": False,
+                "error": str(e)
+            }
+
 
 # Global instance
 postgresql_manager = None
