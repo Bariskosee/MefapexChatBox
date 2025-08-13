@@ -179,7 +179,7 @@ class HTTPRouteHandlers:
                 
                 # Log successful login
                 if hasattr(auth_service, 'brute_force_protection'):
-                    auth_service.brute_force_protection.reset_attempts(client_ip)
+                    auth_service.brute_force_protection.reset_failed_attempts(client_ip)
                 
                 return {
                     "access_token": token,

@@ -1,0 +1,87 @@
+# 🚀 MEFAPEX ChatBox - Optimized Requirements
+# Python 3.11+ Compatible
+# Only includes packages that are actually used
+
+# ================================
+# 🌐 Core Web Framework
+# ================================
+fastapi>=0.116.0
+uvicorn[standard]>=0.35.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# ================================
+# 🔒 Authentication & Security
+# ================================
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+cryptography>=3.4.8
+
+# ================================
+# 🗄️ Database & ORM
+# ================================
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+
+# ================================
+# 🤖 AI & Machine Learning
+# ================================
+openai>=1.98.0
+transformers>=4.40.0
+torch>=2.0.0
+qdrant-client>=1.15.0
+sentence-transformers>=2.3.0
+accelerate>=0.21.0
+
+# ================================
+# 📊 Data Processing (Used by AI models)
+# ================================
+numpy>=1.21.0
+
+# ================================
+# ⚙️ Configuration & Environment
+# ================================
+pydantic>=2.11.0
+python-dotenv>=1.1.0
+email-validator>=2.0.0
+
+# ================================
+# 🌐 HTTP & File Handling
+# ================================
+requests>=2.32.0
+
+# ================================
+# 💾 Caching & Performance
+# ================================
+cachetools>=5.3.0
+
+# ================================
+# 📊 Monitoring & Logging
+# ================================
+psutil>=5.9.0
+
+# ================================
+# 🧪 Development Tools (Optional)
+# ================================
+# Uncomment for development:
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# httpx>=0.25.0
+# black>=23.11.0
+# isort>=5.12.0
+
+# ================================
+# 🗄️ Production Databases (PostgreSQL)
+# ================================
+# PostgreSQL drivers
+psycopg2-binary>=2.9.0
+asyncpg>=0.29.0
+
+# Uncomment for MySQL:
+# pymysql>=1.1.0
+
+# ================================
+# 🚀 Production Server (Optional)
+# ================================
+# Uncomment for production deployment:
+# gunicorn>=21.2.0
