@@ -78,10 +78,12 @@ class DatabaseManager:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS chat_messages (
                         id SERIAL PRIMARY KEY,
+                        message_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
                         session_id VARCHAR(255) NOT NULL,
                         user_id VARCHAR(255) NOT NULL,
-                        user_message TEXT NOT NULL,
-                        bot_response TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        response TEXT NOT NULL,
+                        message_type VARCHAR(50) DEFAULT 'user',
                         source VARCHAR(50) DEFAULT 'unknown',
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -92,10 +94,12 @@ class DatabaseManager:
                 # Create indexes
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_sessions_session_id ON chat_sessions(session_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_message_id ON chat_messages(message_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp)')
                 
                 logger.info("✅ Database tables and indexes created/verified")
@@ -184,7 +188,8 @@ class DatabaseManager:
                 user_id=user_id,
                 message=user_message,  # Use new field name
                 response=bot_response,  # Use new field name
-                message_type="user"
+                message_type="user",
+                metadata={"source": source}  # Store source in metadata
             )
             created_message = self.message_repo.create_message(message)
             
@@ -232,7 +237,21 @@ class DatabaseManager:
         """Get chat history for a user (backward compatible)"""
         try:
             messages = self.message_repo.get_user_messages(user_id, limit)
-            return [message.to_dict() for message in messages]
+            # Convert to backward compatible format
+            chat_history = []
+            for message in messages:
+                chat_dict = {
+                    "message_id": message.message_id,
+                    "session_id": message.session_id,
+                    "user_id": message.user_id,
+                    "user_message": message.message,  # Convert message -> user_message
+                    "bot_response": message.response,  # Convert response -> bot_response
+                    "source": message.get_metadata("source", "unknown"),  # Extract source from metadata
+                    "timestamp": message.timestamp,
+                    "metadata": message.metadata
+                }
+                chat_history.append(chat_dict)
+            return chat_history
         except Exception as e:
             logger.error(f"Failed to get chat history: {e}")
             return []
