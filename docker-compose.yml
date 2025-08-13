@@ -12,7 +12,12 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DEBUG=${DEBUG:-true}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/mefapex.db}
+      - DATABASE_URL=postgresql://mefapex:mefapex@postgres:5432/mefapex_chatbot
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=mefapex
+      - POSTGRES_PASSWORD=mefapex
+      - POSTGRES_DB=mefapex_chatbot
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - REDIS_HOST=redis
@@ -27,6 +32,7 @@ services:
       - ./logs:/app/logs
       - ./content:/app/content
     depends_on:
+      - postgres
       - qdrant
       - redis
     restart: unless-stopped
@@ -36,6 +42,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - mefapex-network
+
+  # 🗄️ PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: mefapex-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=mefapex_chatbot
+      - POSTGRES_USER=mefapex
+      - POSTGRES_PASSWORD=mefapex
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mefapex -d mefapex_chatbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - mefapex-network
 
@@ -103,6 +132,8 @@ services:
       - production
 
 volumes:
+  postgres_data:
+    driver: local
   qdrant_data:
     driver: local
   redis_data:
