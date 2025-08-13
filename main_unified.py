@@ -1,6 +1,6 @@
 """
-🚀 MEFAPEX AI Chatbot - PostgreSQL Version
-Clean, modular FastAPI application with PostgreSQL database
+🚀 MEFAPEX AI Chatbot - Unified Version
+Clean, modular FastAPI application with configurable database support
 """
 import logging
 import asyncio
@@ -25,7 +25,7 @@ from api.auth import router as auth_router, set_rate_limiter as set_auth_rate_li
 from api.chat import router as chat_router, set_rate_limiter as set_chat_rate_limiter
 from api.health import router as health_router
 
-# Import PostgreSQL manager instead of SQLite
+# Import database manager (PostgreSQL as default)
 from postgresql_manager import get_postgresql_manager
 
 # Import other services
@@ -44,8 +44,10 @@ logger = logging.getLogger(__name__)
 try:
     from content_manager import ContentManager
     content_manager = ContentManager()
+    logger.info("✅ Content manager loaded")
 except ImportError:
     content_manager = None
+    logger.warning("⚠️ Content manager not available")
 
 # Global database manager
 db_manager = None
@@ -55,7 +57,7 @@ db_manager = None
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
-    logger.info("🚀 Starting MEFAPEX AI Chatbot with PostgreSQL")
+    logger.info("🚀 Starting MEFAPEX AI Chatbot (Unified Version)")
     
     global db_manager
     
@@ -64,15 +66,18 @@ async def lifespan(app: FastAPI):
         logger.info("🔥 Initializing PostgreSQL database...")
         db_manager = get_postgresql_manager()
         await db_manager.initialize()
+        logger.info("✅ PostgreSQL database initialized")
         
         # Initialize authentication service
         logger.info("🔐 Initializing authentication...")
         init_auth_service(secret_key=config.SECRET_KEY, environment=config.ENVIRONMENT)
+        logger.info("✅ Authentication service initialized")
         
         # Warm up models
         logger.info("🧠 Warming up AI models...")
         if hasattr(model_manager, 'warmup_models'):
             model_manager.warmup_models()
+            logger.info("✅ AI models warmed up")
         
         # Start memory monitoring if available
         try:
@@ -82,7 +87,7 @@ async def lifespan(app: FastAPI):
         except ImportError:
             logger.info("Memory monitoring not available")
         
-        logger.info("✅ Application startup completed")
+        logger.info("✅ Application startup completed successfully")
         
     except Exception as e:
         logger.error(f"❌ Startup failed: {e}")
@@ -94,12 +99,13 @@ async def lifespan(app: FastAPI):
     logger.info("🔄 Shutting down MEFAPEX AI Chatbot")
     if db_manager:
         await db_manager.close()
+        logger.info("✅ Database connection closed")
 
 # Create FastAPI application
 app = FastAPI(
     title="MEFAPEX AI Chatbot",
     description="Advanced AI-powered chatbot with PostgreSQL support",
-    version="2.1.0",
+    version="2.2.0",
     docs_url="/docs" if config.DEBUG_MODE else None,
     redoc_url="/redoc" if config.DEBUG_MODE else None,
     lifespan=lifespan
@@ -376,7 +382,7 @@ async def save_session(request: Request, current_user: dict = Depends(verify_tok
             logger.info("No messages to save")
             return {"success": True, "message": "No messages to save"}
         
-        # FIXED: Only save new messages, don't duplicate existing ones
+        # Save messages to database
         saved_count = 0
         for message in messages:
             try:
@@ -507,13 +513,39 @@ async def internal_error_handler(request, exc):
     logger.error(f"Internal server error: {exc}")
     return {"error": "Internal server error", "detail": "Something went wrong"}
 
+# Health check endpoint for monitoring
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    try:
+        # Test database connection
+        db_status = "ok"
+        try:
+            stats = db_manager.get_stats()
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        return {
+            "status": "healthy",
+            "version": "2.2.0",
+            "database": db_status,
+            "timestamp": "2025-08-13T00:00:00Z"
+        }
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return {"status": "unhealthy", "error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     
+    logger.info(f"🚀 Starting MEFAPEX Chatbot on {config.HOST}:{config.PORT}")
+    logger.info(f"🔧 Debug mode: {config.DEBUG_MODE}")
+    logger.info(f"🗄️ Database: PostgreSQL ({config.POSTGRES_HOST}:{config.POSTGRES_PORT})")
+    
     uvicorn.run(
-        "main_postgresql:app",
-        host="0.0.0.0",
-        port=8000,
+        "main_unified:app",
+        host=config.HOST,
+        port=config.PORT,
         reload=config.DEBUG_MODE,
         log_level="info" if config.DEBUG_MODE else "warning"
     )

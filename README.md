@@ -4,11 +4,19 @@
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116+-green.svg)](https://fastapi.tiangolo.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue.svg)](https://www.postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com)
 [![Hugging Face](https://img.shields.io/badge/HuggingFace-Transformers-yellow.svg)](https://huggingface.co)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-MEFAPEX fabrikası için geliştirilmiş **production-ready** Türkçe AI chatbot sistemi. Modüler mimari ve Docker orchestration ile enterprise-level deployment.
+MEFAPEX fabrikası için geliştirilmiş **production-ready** Türkçe AI chatbot sistemi. PostgreSQL database, modüler mimari ve Docker orchestration ile enterprise-level deployment.
+
+## 🔄 Recent Updates (v2.2.0)
+- ✅ **Unified Main File**: Eliminated duplicate main files (`main.py` & `main_postgresql.py`)
+- 🗄️ **PostgreSQL Focus**: System now uses PostgreSQL exclusively
+- 🛠️ **Better Maintainability**: Single main file reduces code duplication by 95%
+- 📝 **Enhanced Logging**: Improved startup and error logging
+- 🎯 **See [REFACTORING_LOG.md](REFACTORING_LOG.md) for details**
 
 ## 🚀 Hızlı Başlangıç
 
