@@ -470,26 +470,6 @@ function addMessage(text, sender) {
     scrollToBottom();
 }
 
-// Format message text (basic markdown support)
-function formatMessage(text) {
-    return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // Bold
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')              // Italic
-        .replace(/\n/g, '<br>')                            // Line breaks
-        .replace(/•/g, '&bull;')                           // Bullet points
-        .replace(/✅/g, '&#x2705;')                        // Check mark
-        .replace(/❌/g, '&#x274C;')                        // Cross mark
-        .replace(/🚀/g, '&#x1F680;')                       // Rocket
-        .replace(/💡/g, '&#x1F4A1;')                       // Light bulb
-        .replace(/📋/g, '&#x1F4CB;')                       // Clipboard
-        .replace(/🛡️/g, '&#x1F6E1;&#xFE0F;')             // Shield
-        .replace(/🍽️/g, '&#x1F37D;&#xFE0F;')             // Fork and knife
-        .replace(/🔄/g, '&#x1F504;')                       // Arrows
-        .replace(/📦/g, '&#x1F4E6;')                       // Package
-        .replace(/🔧/g, '&#x1F527;')                       // Wrench
-        .replace(/🎯/g, '&#x1F3AF;');                      // Target
-}
-
 // Smooth scroll to bottom
 function scrollToBottom() {
     setTimeout(() => {

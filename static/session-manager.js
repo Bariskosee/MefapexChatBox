@@ -599,7 +599,7 @@ class SessionManager {
         
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
-        bubbleDiv.innerHTML = this.formatMessage(text);
+        bubbleDiv.innerHTML = formatMessage(text);
         
         messageDiv.appendChild(bubbleDiv);
         
@@ -610,21 +610,6 @@ class SessionManager {
         }
         
         chatMessages.appendChild(messageDiv);
-    }
-
-    formatMessage(text) {
-        // Safety check for text parameter
-        if (text === null || text === undefined) {
-            return '';
-        }
-        
-        // Convert to string if not already
-        text = String(text);
-        
-        return text
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\n/g, '<br>');
     }
 
     scrollToBottom() {
