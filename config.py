@@ -1,133 +1,59 @@
 """
-🔧 MEFAPEX Configuration Manager - LEGACY COMPATIBILITY LAYER
-===========================================================
-*** DEPRECATED: Use core.configuration.UnifiedConfig instead ***
-
-This file provides backward compatibility for existing code.
-New code should use the unified configuration system.
+🔧 Simple Configuration for MEFAPEX Chatbot
+Simplified configuration without complex factory patterns
 """
+import os
+from pathlib import Path
 
-import warnings
-import logging
-from core.configuration import get_config as get_unified_config
+# Base directories
+BASE_DIR = Path(__file__).parent
+STATIC_DIR = BASE_DIR / "static"
+LOGS_DIR = BASE_DIR / "logs"
 
-# Setup logger
-logger = logging.getLogger(__name__)
-
-# Issue deprecation warning
-warnings.warn(
-    "config.py is deprecated. Use 'from core.configuration import get_config' instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
+# Ensure directories exist
+LOGS_DIR.mkdir(exist_ok=True)
 
 class Config:
-    """
-    LEGACY: Backward compatibility wrapper for unified configuration
-    *** DEPRECATED: Use core.configuration.UnifiedConfig instead ***
-    """
+    """Simple configuration class"""
     
-    def __init__(self):
-        self._unified_config = get_unified_config()
-        logger.warning("⚠️ Using legacy Config class. Migrate to core.configuration.UnifiedConfig")
+    # Server settings
+    DEBUG_MODE = os.getenv("DEBUG_MODE", "true").lower() == "true"
+    HOST = os.getenv("HOST", "0.0.0.0")
+    PORT = int(os.getenv("PORT", 8000))
+    WORKERS = int(os.getenv("WORKERS", 1))
     
-    @property
-    def ENVIRONMENT(self):
-        return self._unified_config.environment.value
+    # Security
+    SECRET_KEY = os.getenv("SECRET_KEY", "mefapex-secret-key-change-in-production")
+    ALLOWED_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
     
-    @property
-    def DEBUG_MODE(self):
-        return self._unified_config.server.debug
+    # PostgreSQL Database
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+    POSTGRES_DB = os.getenv("POSTGRES_DB", "mefapex_chatbot")
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "mefapex")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "mefapex")
     
-    @property
-    def SECRET_KEY(self):
-        return self._unified_config.security.secret_key
+    # AI Settings
+    USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    USE_HUGGINGFACE = os.getenv("USE_HUGGINGFACE", "true").lower() == "true"
     
-    @property
-    def USE_OPENAI(self):
-        return self._unified_config.ai.use_openai
+    # Rate limiting
+    RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", 100))
+    RATE_LIMIT_CHAT = int(os.getenv("RATE_LIMIT_CHAT", 50))
+    RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", 3600))
     
-    @property
-    def USE_HUGGINGFACE(self):
-        return self._unified_config.ai.use_huggingface
+    # Environment
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     
-    @property
-    def OPENAI_API_KEY(self):
-        return self._unified_config.ai.openai_api_key
+    # Brute force protection
+    MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", 5))
+    LOCKOUT_DURATION = int(os.getenv("LOCKOUT_DURATION", 900))  # 15 minutes
     
-    @property
-    def DATABASE_TYPE(self):
-        return self._unified_config.database.type
-    
-    @property
-    def DATABASE_URL(self):
-        return self._unified_config.database.url
-    
-    @property
-    def POSTGRES_HOST(self):
-        return self._unified_config.database.host
-    
-    @property
-    def POSTGRES_PORT(self):
-        return self._unified_config.database.port
-    
-    @property
-    def POSTGRES_USER(self):
-        return self._unified_config.database.user
-    
-    @property
-    def POSTGRES_PASSWORD(self):
-        return self._unified_config.database.password
-    
-    @property
-    def POSTGRES_DB(self):
-        return self._unified_config.database.database
-    
-    @property
-    def QDRANT_HOST(self):
-        return self._unified_config.qdrant.host
-    
-    @property
-    def QDRANT_PORT(self):
-        return self._unified_config.qdrant.port
-    
-    @property
-    def RATE_LIMIT_REQUESTS(self):
-        return self._unified_config.rate_limit.requests_per_minute
-    
-    @property
-    def RATE_LIMIT_CHAT(self):
-        return self._unified_config.rate_limit.chat_requests_per_minute
-    
-    @property
-    def ALLOWED_ORIGINS(self):
-        return self._unified_config.server.allowed_origins
-    
-    def validate_production_config(self):
-        """LEGACY: Validate configuration for production environment"""
-        logger.warning("⚠️ Using legacy validate_production_config. The unified config auto-validates.")
-        # The unified config already validates on initialization
-        pass
+    # Demo user
+    DEMO_USER_ENABLED = os.getenv("DEMO_USER_ENABLED", "true").lower() == "true"
+    DEMO_USERNAME = os.getenv("DEMO_USERNAME", "demo")
+    DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "1234")
 
-class DevelopmentConfig(Config):
-    """LEGACY: Development configuration wrapper"""
-    pass
-
-class ProductionConfig(Config):
-    """LEGACY: Production configuration wrapper"""
-    pass
-
-def get_config() -> Config:
-    """
-    LEGACY: Get configuration based on environment
-    *** DEPRECATED: Use core.configuration.get_config() instead ***
-    """
-    logger.warning("⚠️ Using legacy get_config(). Use 'from core.configuration import get_config' instead.")
-    return Config()
-
-# Global config instance for backward compatibility
-config = get_config()
-
-# Export unified config for easy migration
-from core.configuration import get_config as get_unified_config
-unified_config = get_unified_config()
+# Global config instance
+config = Config()
