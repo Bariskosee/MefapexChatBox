@@ -502,11 +502,84 @@ class PostgreSQLManager(DatabaseInterface):
         
     def get_user_sessions(self, user_id: str, limit: int = 15) -> List[Dict]:
         """Get all sessions for a user"""
-        return self.get_sessions(user_id, limit)
+        # Use the existing get_user_sessions method (line 319)
+        # Note: limit parameter is not used in the existing implementation
+        try:
+            cursor = self.sync_connection.cursor()
+            
+            # FIXED: Get sessions with ACTUAL message counts from chat_messages table
+            cursor.execute(
+                """SELECT DISTINCT s.session_id, s.created_at, 
+                          COALESCE(COUNT(m.id), 0) as actual_message_count,
+                          MAX(m.timestamp) as last_message_time
+                   FROM chat_sessions s
+                   LEFT JOIN chat_messages m ON s.session_id = m.session_id
+                   WHERE s.user_id = %s
+                   GROUP BY s.session_id, s.created_at
+                   HAVING COUNT(m.id) > 0
+                   ORDER BY MAX(m.timestamp) DESC, s.created_at DESC
+                   LIMIT %s""",
+                (user_id, limit)
+            )
+            
+            results = cursor.fetchall()
+            sessions = []
+            
+            for row in results:
+                session_id = str(row["session_id"])
+                
+                # Get first message for preview
+                cursor.execute(
+                    "SELECT user_message FROM chat_messages WHERE session_id = %s ORDER BY timestamp ASC LIMIT 1",
+                    (session_id,)
+                )
+                first_msg = cursor.fetchone()
+                preview = first_msg["user_message"] if first_msg else "Boş sohbet"
+                
+                sessions.append({
+                    "sessionId": session_id,
+                    "session_id": session_id,
+                    "title": preview[:50] + "..." if len(preview) > 50 else preview,
+                    "lastMessage": preview,
+                    "timestamp": row["last_message_time"] or row["created_at"],
+                    "messageCount": row["actual_message_count"]
+                })
+            
+            return sessions
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get user sessions: {e}")
+            return []
         
     def get_session_messages(self, session_id: str) -> List[Dict]:
-        """Get all messages in a session"""
-        return self.get_messages(session_id)
+        """Get all messages in a session - delegates to the main implementation"""
+        # Delegate to the existing get_session_messages method (line 371)
+        try:
+            cursor = self.sync_connection.cursor()
+            cursor.execute(
+                """SELECT user_message, bot_response, source, timestamp 
+                   FROM chat_messages 
+                   WHERE session_id = %s 
+                   ORDER BY timestamp ASC""",
+                (session_id,)
+            )
+            
+            results = cursor.fetchall()
+            messages = []
+            
+            for row in results:
+                messages.append({
+                    "user_message": row["user_message"],
+                    "bot_response": row["bot_response"],
+                    "source": row["source"],
+                    "timestamp": row["timestamp"]
+                })
+            
+            return messages
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get session messages: {e}")
+            return []
         
     def delete_old_sessions(self, user_id: str, keep_count: int = 15) -> int:
         """Delete old sessions keeping only specified count"""

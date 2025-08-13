@@ -35,8 +35,8 @@ try:
         from config import config
     
     qdrant_client = QdrantClient(
-        host=getattr(config, 'qdrant', {}).get('host', 'localhost'),
-        port=getattr(config, 'qdrant', {}).get('port', 6333)
+        host=getattr(config.qdrant, 'host', 'localhost'),
+        port=getattr(config.qdrant, 'port', 6333)
     )
 except Exception as e:
     logger.warning(f"Failed to initialize Qdrant client: {e}")

@@ -100,18 +100,99 @@ class ContentManager:
 
     def _get_dynamic_response(self, user_message: str) -> Optional[str]:
         """Get dynamic response from PostgreSQL database"""
-        # Temporarily disabled - using static responses only
-        return None
+        try:
+            import json
+            from postgresql_manager import get_postgresql_manager
+            
+            db = get_postgresql_manager()
+            
+            # Check if sync connection is available
+            if not hasattr(db, 'sync_connection') or db.sync_connection is None:
+                return None
+                
+            cursor = db.sync_connection.cursor()
+            
+            # Search for matching dynamic responses
+            cursor.execute(
+                """SELECT response_text, keywords, category, usage_count 
+                   FROM dynamic_responses 
+                   WHERE is_active = TRUE 
+                   ORDER BY usage_count DESC"""
+            )
+            
+            results = cursor.fetchall()
+            best_match = None
+            best_score = 0
+            
+            for row in results:
+                try:
+                    keywords = json.loads(row["keywords"]) if row["keywords"] else []
+                    score = self._calculate_match_score(user_message, keywords)
+                    
+                    if score > best_score and score > 0.3:  # Minimum threshold
+                        best_match = row["response_text"]
+                        best_score = score
+                        
+                        # Update usage statistics
+                        self.update_response_usage(row["response_text"])
+                        
+                except Exception as e:
+                    logger.debug(f"Error processing dynamic response: {e}")
+                    continue
+            
+            if best_match:
+                logger.info(f"🎯 Dynamic match found (score: {best_score:.2f})")
+            
+            return best_match
+            
+        except Exception as e:
+            logger.debug(f"Dynamic response error: {e}")
+            return None
 
     def _ensure_dynamic_table_exists(self):
         """Ensure dynamic_responses table exists in PostgreSQL"""
         try:
-            # Temporarily disabled - using static responses only
-            logger.info("ℹ️ Dynamic responses temporarily disabled - using static responses only")
-            return
+            from postgresql_manager import get_postgresql_manager
+            
+            db = get_postgresql_manager()
+            
+            # Ensure sync connection exists
+            if not hasattr(db, 'sync_connection') or db.sync_connection is None:
+                logger.info("ℹ️ PostgreSQL not available, dynamic responses will be disabled")
+                return
+                
+            cursor = db.sync_connection.cursor()
+            
+            # Create dynamic_responses table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dynamic_responses (
+                    id SERIAL PRIMARY KEY,
+                    category VARCHAR(100) NOT NULL,
+                    keywords JSONB NOT NULL,
+                    response_text TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used TIMESTAMP,
+                    usage_count INTEGER DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE
+                )
+            """)
+            
+            # Create index for better performance
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dynamic_responses_category 
+                ON dynamic_responses(category)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dynamic_responses_active 
+                ON dynamic_responses(is_active)
+            """)
+            
+            db.sync_connection.commit()
+            logger.info("✅ Dynamic responses table initialized")
             
         except Exception as e:
-            logger.error(f"❌ Failed to create dynamic responses table: {e}")
+            logger.warning(f"⚠️ Dynamic responses not available: {e}")
             # Don't raise exception - continue without dynamic responses
 
     def _find_static_response(self, user_message_lower: str) -> Tuple[Optional[str], str]:
@@ -188,10 +269,16 @@ class ContentManager:
         """Add a dynamic response to PostgreSQL database"""
         try:
             import json
-            from database_manager import db_manager
+            from postgresql_manager import get_postgresql_manager
             
-            conn = db_manager._get_connection()
-            cursor = conn.cursor()
+            db = get_postgresql_manager()
+            
+            # Check if sync connection is available
+            if not hasattr(db, 'sync_connection') or db.sync_connection is None:
+                logger.warning("PostgreSQL not available for adding dynamic response")
+                return False
+                
+            cursor = db.sync_connection.cursor()
             
             # Insert dynamic response with JSON serialized keywords
             cursor.execute(
@@ -200,8 +287,7 @@ class ContentManager:
                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, TRUE)""",
                 (category, json.dumps(keywords, ensure_ascii=False), message)
             )
-            conn.commit()
-            db_manager._put_connection(conn)
+            db.sync_connection.commit()
             
             # Clear cache to ensure new response is used
             self._cache.clear()
@@ -216,10 +302,10 @@ class ContentManager:
     def update_response_usage(self, response_text: str):
         """Update usage statistics for dynamic responses"""
         try:
-            from database_manager import db_manager
+            from postgresql_manager import get_postgresql_manager
             
-            conn = db_manager._get_connection()
-            cursor = conn.cursor()
+            db = get_postgresql_manager()
+            cursor = db.sync_connection.cursor()
             
             cursor.execute(
                 """UPDATE dynamic_responses 
@@ -228,8 +314,7 @@ class ContentManager:
                    WHERE response_text = %s AND is_active = TRUE""",
                 (response_text,)
             )
-            conn.commit()
-            db_manager._put_connection(conn)
+            db.sync_connection.commit()
             
         except Exception as e:
             logger.error(f"❌ Failed to update usage stats: {e}")
@@ -241,10 +326,10 @@ class ContentManager:
     def get_stats(self) -> Dict:
         """Get content manager statistics"""
         try:
-            from database_manager import db_manager
+            from postgresql_manager import get_postgresql_manager
             
-            conn = db_manager._get_connection()
-            cursor = conn.cursor()
+            db = get_postgresql_manager()
+            cursor = db.sync_connection.cursor()
             
             # Get dynamic responses count
             cursor.execute("SELECT COUNT(*) as count FROM dynamic_responses WHERE is_active = TRUE")
@@ -259,8 +344,6 @@ class ContentManager:
                    LIMIT 5"""
             )
             top_dynamic = cursor.fetchall()
-            
-            db_manager._put_connection(conn)
             
             return {
                 "static_responses": len(self.static_responses),
@@ -282,6 +365,7 @@ class ContentManager:
             logger.error(f"❌ Failed to get stats: {e}")
             return {
                 "static_responses": len(self.static_responses),
+                "dynamic_responses": 0,
                 "error": str(e)
             }
 
