@@ -540,7 +540,7 @@ if __name__ == "__main__":
     logger.info(f"🗄️ Database: PostgreSQL ({config.POSTGRES_HOST}:{config.POSTGRES_PORT})")
     
     uvicorn.run(
-        "main_unified:app",
+        "main:app",
         host=config.HOST,
         port=config.PORT,
         reload=config.DEBUG_MODE,

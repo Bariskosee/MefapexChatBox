@@ -106,11 +106,16 @@ class ContentManager:
             
             db = get_postgresql_manager()
             
-            # Check if sync connection is available
+            # Check if sync connection is available and working
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:
                 return None
                 
-            cursor = db.sync_connection.cursor()
+            try:
+                cursor = db.sync_connection.cursor()
+                cursor.execute("SELECT 1")  # Test connection
+            except Exception:
+                logger.debug("PostgreSQL connection not available for dynamic responses")
+                return None
             
             # Search for matching dynamic responses
             cursor.execute(
@@ -161,8 +166,15 @@ class ContentManager:
                 logger.info("ℹ️ PostgreSQL not available, dynamic responses will be disabled")
                 return
                 
-            cursor = db.sync_connection.cursor()
-            
+            # Test connection is actually working
+            try:
+                cursor = db.sync_connection.cursor()
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            except Exception as conn_error:
+                logger.warning(f"⚠️ PostgreSQL connection test failed: {conn_error}")
+                return
+                
             # Create dynamic_responses table if it doesn't exist
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS dynamic_responses (
@@ -273,12 +285,17 @@ class ContentManager:
             
             db = get_postgresql_manager()
             
-            # Check if sync connection is available
+            # Check if sync connection is available and working
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:
                 logger.warning("PostgreSQL not available for adding dynamic response")
                 return False
                 
-            cursor = db.sync_connection.cursor()
+            try:
+                cursor = db.sync_connection.cursor()
+                cursor.execute("SELECT 1")  # Test connection
+            except Exception:
+                logger.warning("PostgreSQL connection not working for adding dynamic response")
+                return False
             
             # Insert dynamic response with JSON serialized keywords
             cursor.execute(
@@ -305,7 +322,17 @@ class ContentManager:
             from postgresql_manager import get_postgresql_manager
             
             db = get_postgresql_manager()
-            cursor = db.sync_connection.cursor()
+            
+            # Check if sync connection is available and working
+            if not hasattr(db, 'sync_connection') or db.sync_connection is None:
+                return
+                
+            try:
+                cursor = db.sync_connection.cursor()
+                cursor.execute("SELECT 1")  # Test connection
+            except Exception:
+                logger.debug("PostgreSQL connection not available for updating usage stats")
+                return
             
             cursor.execute(
                 """UPDATE dynamic_responses 
@@ -329,7 +356,30 @@ class ContentManager:
             from postgresql_manager import get_postgresql_manager
             
             db = get_postgresql_manager()
-            cursor = db.sync_connection.cursor()
+            
+            # Check if sync connection is available and working
+            if not hasattr(db, 'sync_connection') or db.sync_connection is None:
+                return {
+                    "static_responses": len(self.static_responses),
+                    "dynamic_responses": 0,
+                    "categories": len(self.categories),
+                    "cache_entries": len(self._cache),
+                    "cache_enabled": self._cache_enabled,
+                    "database_status": "unavailable"
+                }
+                
+            try:
+                cursor = db.sync_connection.cursor()
+                cursor.execute("SELECT 1")  # Test connection
+            except Exception:
+                return {
+                    "static_responses": len(self.static_responses),
+                    "dynamic_responses": 0,
+                    "categories": len(self.categories),
+                    "cache_entries": len(self._cache),
+                    "cache_enabled": self._cache_enabled,
+                    "database_status": "connection_error"
+                }
             
             # Get dynamic responses count
             cursor.execute("SELECT COUNT(*) as count FROM dynamic_responses WHERE is_active = TRUE")
@@ -351,13 +401,13 @@ class ContentManager:
                 "categories": len(self.categories),
                 "cache_entries": len(self._cache),
                 "cache_enabled": self._cache_enabled,
+                "database_status": "connected",
                 "top_dynamic_responses": [
                     {
                         "category": row["category"],
                         "response": row["response_text"][:50] + "...",
                         "usage_count": row["usage_count"]
-                    }
-                    for row in top_dynamic
+                    } for row in top_dynamic
                 ]
             }
             
@@ -366,7 +416,10 @@ class ContentManager:
             return {
                 "static_responses": len(self.static_responses),
                 "dynamic_responses": 0,
-                "error": str(e)
+                "categories": len(self.categories),
+                "cache_entries": len(self._cache),
+                "cache_enabled": self._cache_enabled,
+                "database_status": f"error: {str(e)}"
             }
 
     def clear_cache(self):

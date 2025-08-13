@@ -37,7 +37,7 @@ class MemoryMonitor:
     
     def __init__(self, 
                  check_interval: int = 60,  # seconds
-                 memory_threshold_mb: float = 512.0,  # MB
+                 memory_threshold_mb: float = 1536.0,  # MB - Increased for AI models (was 512.0)
                  leak_detection_window: int = 10):  # snapshots
         self.check_interval = check_interval
         self.memory_threshold_mb = memory_threshold_mb
@@ -279,8 +279,12 @@ class MemoryMonitor:
             obj_type = name or type(obj).__name__
             self.object_counts[obj_type] = max(0, self.object_counts[obj_type] - 1)
 
-# Global memory monitor instance
-memory_monitor = MemoryMonitor()
+# Global memory monitor instance with AI model optimized settings
+memory_monitor = MemoryMonitor(
+    check_interval=60,  # Check every 60 seconds
+    memory_threshold_mb=1536.0,  # 1.5GB threshold for AI models (was 512MB)
+    leak_detection_window=10
+)
 
 # Memory leak detection utilities
 class MemoryLeakDetector:
@@ -404,24 +408,41 @@ def track_memory(operation_name: str = None):
 
 # Example usage functions
 def setup_memory_monitoring():
-    """Setup memory monitoring for production"""
+    """Setup memory monitoring for production with AI model optimizations"""
+    global memory_monitor
+    
+    # Reinitialize with correct settings
+    memory_monitor = MemoryMonitor(
+        check_interval=60,  # Check every 60 seconds
+        memory_threshold_mb=1536.0,  # 1.5GB threshold for AI models
+        leak_detection_window=10
+    )
+    
     memory_monitor.start_monitoring()
     
-    # Schedule periodic deep analysis
+    # Schedule periodic deep analysis - less frequent for AI workloads
     def periodic_analysis():
         while memory_monitor.monitoring:
-            time.sleep(300)  # Every 5 minutes
+            time.sleep(600)  # Every 10 minutes (was 5 minutes)
             try:
                 MemoryLeakDetector.check_circular_references()
-                MemoryLeakDetector.analyze_large_objects(5.0)  # 5MB threshold
+                MemoryLeakDetector.analyze_large_objects(10.0)  # 10MB threshold (was 5MB)
                 MemoryLeakDetector.check_unclosed_resources()
+                
+                # Additional AI model specific cleanup
+                try:
+                    import gc
+                    gc.collect()  # Force garbage collection
+                except:
+                    pass
+                    
             except Exception as e:
                 logger.error(f"Periodic analysis error: {e}")
                 
     analysis_thread = threading.Thread(target=periodic_analysis, daemon=True)
     analysis_thread.start()
     
-    logger.info("🧠 Memory monitoring and analysis setup complete")
+    logger.info("🧠 Memory monitoring and analysis setup complete for AI workloads")
 
 if __name__ == "__main__":
     # Test the memory monitor

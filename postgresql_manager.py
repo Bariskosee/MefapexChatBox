@@ -655,6 +655,10 @@ class PostgreSQLManager(DatabaseInterface):
             logger.error(f"Failed to save session bulk: {e}")
             return False
     
+    def get_sessions(self, user_id: str) -> List[Dict]:
+        """Alias for get_user_sessions for backward compatibility"""
+        return self.get_user_sessions(user_id)
+
     def health_check(self) -> Dict[str, Any]:
         """Comprehensive health check"""
         try:

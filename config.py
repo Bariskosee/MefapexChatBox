@@ -60,6 +60,12 @@ class Config:
     DEMO_USER_ENABLED = os.getenv("DEMO_USER_ENABLED", "true").lower() == "true"
     DEMO_USERNAME = os.getenv("DEMO_USERNAME", "demo")
     DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "1234")
+    
+    # Memory Management Settings for AI Models
+    MEMORY_THRESHOLD_MB = int(os.getenv("MEMORY_THRESHOLD_MB", 1536))  # 1.5GB for AI models
+    MODEL_CACHE_SIZE = int(os.getenv("MODEL_CACHE_SIZE", 100))  # Reduced cache size
+    FORCE_GC_INTERVAL = int(os.getenv("FORCE_GC_INTERVAL", 50))  # Every N operations
+    MEMORY_MONITOR_INTERVAL = int(os.getenv("MEMORY_MONITOR_INTERVAL", 60))  # seconds
 
 # Global config instance
 config = Config()

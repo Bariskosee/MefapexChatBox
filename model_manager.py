@@ -46,8 +46,12 @@ class ModelManager:
                         'text_generator': threading.Lock()
                     }
                     self._memory_monitor = True
-                    self._max_cache_size = 500  # Reduced cache size
+                    self._max_cache_size = 100  # Reduced cache size from 500 to 100
                     self._initialized = True
+                    
+                    # Model cache directory for persistence
+                    self._cache_dir = os.path.join(os.getcwd(), "models_cache")
+                    os.makedirs(self._cache_dir, exist_ok=True)
                     
                     # Register cleanup on exit
                     atexit.register(self.cleanup_resources)
@@ -79,11 +83,17 @@ class ModelManager:
                         logger.info("📚 Loading sentence transformer model...")
                         model_name = get_config().ai.sentence_model
                         
+                        # Force garbage collection before loading
+                        self._force_gc()
+                        
                         # Load with reduced memory footprint
                         self._sentence_model = SentenceTransformer(
                             model_name,
                             device=self.device if self.device != "mps" else "cpu"  # MPS fix
                         )
+                        
+                        # Optimize model for inference
+                        self._sentence_model.eval()  # Set to evaluation mode
                         
                         self._model_config['sentence_model'] = model_name
                         logger.info(f"✅ Sentence transformer loaded: {model_name}")
@@ -152,7 +162,7 @@ class ModelManager:
         
         return self._text_generator
     
-    @lru_cache(maxsize=500)  # Reduced cache size
+    @lru_cache(maxsize=100)  # Further reduced cache size for memory efficiency
     def generate_embedding(self, text: str) -> list:
         """
         Generate embedding with reduced caching for memory efficiency
@@ -167,6 +177,15 @@ class ModelManager:
                     convert_to_tensor=False,  # Return numpy array
                     show_progress_bar=False
                 )[0].tolist()
+            
+            # Force garbage collection periodically
+            if hasattr(self, '_embedding_counter'):
+                self._embedding_counter += 1
+            else:
+                self._embedding_counter = 1
+                
+            if self._embedding_counter % 50 == 0:  # Every 50 embeddings
+                self._force_gc()
             
             return embedding
             
