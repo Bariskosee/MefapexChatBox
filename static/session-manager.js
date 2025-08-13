@@ -186,13 +186,16 @@ class SessionManager {
             throw new Error('No authentication token or session');
         }
 
-        const sessionData = {
+        // FIXED: Use the message object directly for immediate saving
+        const messageData = {
             sessionId: this.currentSession,
-            startedAt: this.sessionStartedAt,
-            messages: [message], // Single message
-            messageCount: 1,
-            userId: this.userId
+            user_message: message.user_message,
+            bot_response: message.bot_response,
+            source: message.source || 'auto_save',
+            timestamp: message.timestamp
         };
+
+        console.log('💾 Saving individual message:', messageData);
 
         const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, {
             method: 'POST',
@@ -200,7 +203,13 @@ class SessionManager {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.authToken}`
             },
-            body: JSON.stringify(sessionData)
+            body: JSON.stringify({
+                sessionId: this.currentSession,
+                messages: [messageData],
+                messageCount: 1,
+                userId: this.userId,
+                startedAt: this.sessionStartedAt
+            })
         });
 
         if (!response.ok) {

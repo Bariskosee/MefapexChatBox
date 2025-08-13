@@ -246,13 +246,41 @@ class PostgreSQLManager:
         """Add a chat message to the database (synchronous)"""
         try:
             cursor = self.sync_connection.cursor()
+            
+            # FIXED: First ensure the session exists, if not create it
+            cursor.execute(
+                "SELECT session_id FROM chat_sessions WHERE session_id = %s",
+                (session_id,)
+            )
+            session_exists = cursor.fetchone()
+            
+            if not session_exists:
+                # Create the session if it doesn't exist
+                logger.info(f"Creating missing session: {session_id} for user: {user_id}")
+                cursor.execute(
+                    "INSERT INTO chat_sessions (session_id, user_id) VALUES (%s, %s)",
+                    (session_id, user_id)
+                )
+            
+            # Insert the message
             cursor.execute(
                 """INSERT INTO chat_messages 
                    (session_id, user_id, user_message, bot_response, source) 
                    VALUES (%s, %s, %s, %s, %s)""",
                 (session_id, user_id, user_message, bot_response, source)
             )
-            logger.debug(f"💬 Message saved: {len(user_message)} chars -> {len(bot_response)} chars")
+            
+            # FIXED: Update the session's message count and last activity
+            cursor.execute(
+                """UPDATE chat_sessions 
+                   SET message_count = message_count + 1, 
+                       last_activity = CURRENT_TIMESTAMP,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE session_id = %s""",
+                (session_id,)
+            )
+            
+            logger.debug(f"💬 Message saved: {len(user_message)} chars -> {len(bot_response)} chars, session updated")
             
         except Exception as e:
             logger.error(f"❌ Failed to save message: {e}")
@@ -292,15 +320,18 @@ class PostgreSQLManager:
         try:
             cursor = self.sync_connection.cursor()
             
-            # Get sessions with message counts
+            # FIXED: Get sessions with ACTUAL message counts from chat_messages table
             cursor.execute(
-                """SELECT s.session_id, s.created_at, COUNT(m.id) as message_count,
+                """SELECT DISTINCT s.session_id, s.created_at, 
+                          COALESCE(COUNT(m.id), 0) as actual_message_count,
                           MAX(m.timestamp) as last_message_time
                    FROM chat_sessions s
                    LEFT JOIN chat_messages m ON s.session_id = m.session_id
                    WHERE s.user_id = %s
                    GROUP BY s.session_id, s.created_at
-                   ORDER BY s.created_at DESC""",
+                   HAVING COUNT(m.id) > 0
+                   ORDER BY MAX(m.timestamp) DESC, s.created_at DESC
+                   LIMIT 15""",
                 (user_id,)
             )
             
@@ -308,25 +339,28 @@ class PostgreSQLManager:
             sessions = []
             
             for row in results:
+                session_id = str(row["session_id"])
+                
                 # Get first message for preview
                 cursor.execute(
                     "SELECT user_message FROM chat_messages WHERE session_id = %s ORDER BY timestamp ASC LIMIT 1",
-                    (row["session_id"],)
+                    (session_id,)
                 )
                 first_msg = cursor.fetchone()
                 preview = first_msg["user_message"] if first_msg else "Boş sohbet"
                 
                 sessions.append({
-                    "sessionId": str(row["session_id"]),
-                    "session_id": str(row["session_id"]),
+                    "sessionId": session_id,
+                    "session_id": session_id,
                     "created_at": row["created_at"],
                     "startedAt": row["created_at"],
-                    "messageCount": row["message_count"],
-                    "message_count": row["message_count"],
+                    "messageCount": row["actual_message_count"],
+                    "message_count": row["actual_message_count"],
                     "lastMessageTime": row["last_message_time"],
                     "preview": preview[:50] + "..." if len(preview) > 50 else preview
                 })
             
+            logger.info(f"📚 Retrieved {len(sessions)} sessions with messages for user {user_id}")
             return sessions
             
         except Exception as e:

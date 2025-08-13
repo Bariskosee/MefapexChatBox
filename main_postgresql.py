@@ -367,25 +367,37 @@ async def save_session(request: Request, current_user: dict = Depends(verify_tok
         messages = data.get("messages", [])
         user_id = current_user.get("user_id")
         
-        if not session_id or not messages:
-            return {"success": True, "message": "No session to save"}
+        logger.info(f"📝 Save session request: {session_id}, {len(messages)} messages for user {user_id}")
         
-        # Save each message to the database
+        if not session_id:
+            return {"success": True, "message": "No session ID provided"}
+        
+        if not messages:
+            logger.info("No messages to save")
+            return {"success": True, "message": "No messages to save"}
+        
+        # FIXED: Only save new messages, don't duplicate existing ones
+        saved_count = 0
         for message in messages:
-            db_manager.add_message(
-                session_id=session_id,
-                user_id=user_id,
-                user_message=message.get("user_message", ""),
-                bot_response=message.get("bot_response", ""),
-                source=message.get("source", "session_save")
-            )
+            try:
+                db_manager.add_message(
+                    session_id=session_id,
+                    user_id=user_id,
+                    user_message=message.get("user_message", ""),
+                    bot_response=message.get("bot_response", ""),
+                    source=message.get("source", "session_save")
+                )
+                saved_count += 1
+            except Exception as msg_error:
+                logger.warning(f"Failed to save individual message: {msg_error}")
+                # Continue with other messages
         
-        logger.info(f"Saving session {session_id} for user {user_id} with {len(messages)} messages")
+        logger.info(f"✅ Saved session {session_id} with {saved_count}/{len(messages)} messages")
         
-        return {"success": True, "session_id": session_id}
+        return {"success": True, "session_id": session_id, "messages_saved": saved_count}
         
     except Exception as e:
-        logger.error(f"Save session error: {e}")
+        logger.error(f"❌ Save session error: {e}")
         raise HTTPException(status_code=500, detail="Failed to save session")
 
 @app.get("/chat/sessions/{user_id}")
