@@ -41,7 +41,7 @@ class SessionManager {
         this.userId = userId;
         
         // Always create fresh session on login
-        this.currentSession = this.generateSessionId();
+        this.currentSession = generateSessionId();
         this.sessionStartedAt = new Date().toISOString();
         this.messages = [];
         
@@ -227,7 +227,7 @@ class SessionManager {
         console.log('💾 Manual save triggered');
         
         if (!this.currentSession || this.messages.length === 0) {
-            this.showToast('Kaydedilecek mesaj yok', 'info');
+            showToast('Kaydedilecek mesaj yok', 'info');
             return;
         }
 
@@ -236,7 +236,7 @@ class SessionManager {
             const result = await this.saveToBackendWithRetry(sessionData);
             
             if (result.success) {
-                this.showToast('Oturum başarıyla kaydedildi', 'success');
+                showToast('Oturum başarıyla kaydedildi', 'success');
                 this.invalidateHistoryCache();
             } else {
                 throw new Error(result.error);
@@ -244,17 +244,13 @@ class SessionManager {
             
         } catch (error) {
             console.error('❌ Manual save failed:', error);
-            this.showToast('Kaydetme başarısız: ' + error.message, 'error');
+            showToast('Kaydetme başarısız: ' + error.message, 'error');
         }
     }
 
     /**
      * PRIVATE METHODS
      */
-
-    generateSessionId() {
-        return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }
 
     buildSessionData() {
         return {
@@ -551,7 +547,7 @@ class SessionManager {
             
         } catch (error) {
             console.error('❌ Failed to load history session:', error);
-            this.showToast('Geçmiş sohbet yüklenemedi', 'error');
+            showToast('Geçmiş sohbet yüklenemedi', 'error');
         }
     }
 
@@ -615,53 +611,7 @@ class SessionManager {
     }
 
     showSaveErrorToast(message) {
-        this.showToast(`Kaydetme başarısız: ${message}`, 'error');
-    }
-
-    showToast(message, type = 'info') {
-        // Create toast element
-        const toast = document.createElement('div');
-        toast.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: 500;
-            z-index: 10000;
-            max-width: 300px;
-            animation: slideIn 0.3s ease;
-        `;
-
-        // Style based on type
-        switch (type) {
-            case 'success':
-                toast.style.background = '#28a745';
-                break;
-            case 'error':
-                toast.style.background = '#dc3545';
-                break;
-            case 'warning':
-                toast.style.background = '#ffc107';
-                toast.style.color = '#000';
-                break;
-            default:
-                toast.style.background = '#6c757d';
-        }
-
-        toast.textContent = message;
-        document.body.appendChild(toast);
-
-        // Auto remove after 5 seconds
-        setTimeout(() => {
-            toast.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
-        }, 5000);
+        showToast(`Kaydetme başarısız: ${message}`, 'error');
     }
 
     /**

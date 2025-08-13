@@ -444,28 +444,6 @@ async function sendMessage() {
     }
 }
 
-// Show typing indicator
-function showTyping() {
-    isTyping = true;
-    sendButton.disabled = true;
-    messageInput.disabled = true;
-    typingIndicator.style.display = 'block';
-    
-    // Scroll to bottom to show typing indicator
-    scrollToBottom();
-}
-
-// Hide typing indicator
-function hideTyping() {
-    isTyping = false;
-    sendButton.disabled = false;
-    messageInput.disabled = false;
-    typingIndicator.style.display = 'none';
-    
-    // Ensure input is ready for next message
-    messageInput.focus();
-}
-
 // Error handling for fetch requests
 window.addEventListener('unhandledrejection', function(event) {
     console.error('Unhandled promise rejection:', event.reason);
