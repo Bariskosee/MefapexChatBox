@@ -290,6 +290,9 @@ async function logout() {
         // Non-blocking error - user can still logout
     }
     
+    // Close history sidebar if it's open
+    closeChatHistorySidebar();
+    
     // Clear UI state
     isLoggedIn = false;
     loginContainer.style.display = 'flex';
