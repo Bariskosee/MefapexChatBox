@@ -470,12 +470,18 @@ function openChatHistorySidebar() {
         sidebar.style.transform = 'translateX(0)';
     }
     
-    if (!isLoggedIn) {
-        console.log('🔍 User not logged in, showing login message');
+    // Check login state first
+    if (!isLoggedIn || !authToken) {
+        console.log('🔍 User not logged in, showing login required message');
         if (historyList) {
             historyList.innerHTML = `
                 <li style="padding: 40px; text-align: center; color: #ffd700;">
-                    🔒 Geçmiş sohbetleri görmek için giriş yapın
+                    🔒 Geçmiş sohbetleri görüntülemek için<br>
+                    giriş yapmanız gerekiyor<br><br>
+                    <button onclick="closeChatHistorySidebar()" 
+                            style="margin-top: 10px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                        Tamam
+                    </button>
                 </li>
             `;
         }
@@ -515,15 +521,16 @@ function updateHistoryButtonVisibility() {
     console.log('🔍 updateHistoryButtonVisibility called');
     console.log('🔍 historyBtn element found:', !!historyBtn);
     console.log('🔍 isLoggedIn:', isLoggedIn);
+    console.log('🔍 authToken exists:', !!authToken);
     
     if (historyBtn) {
-        // Only show history button when user is logged in (like logout button)
-        if (isLoggedIn) {
+        // Only show history button when user is logged in AND has valid token
+        if (isLoggedIn && authToken) {
             historyBtn.style.display = 'block';
-            console.log('🔍 History button made visible (user logged in)');
+            console.log('🔍 History button made visible (user logged in with token)');
         } else {
             historyBtn.style.display = 'none';
-            console.log('🔍 History button hidden (user not logged in)');
+            console.log('🔍 History button hidden (user not logged in or no token)');
         }
     } else {
         console.error('❌ History button element not found');

@@ -36,9 +36,14 @@ class SessionManager {
      */
     async startNewSessionOnLogin(authToken, userId) {
         console.log('🆕 Starting new session on login');
+        console.log('🔑 Auth token provided:', !!authToken);
+        console.log('👤 User ID provided:', userId);
         
         this.authToken = authToken;
         this.userId = userId;
+        
+        console.log('🔑 Auth token set in sessionManager:', !!this.authToken);
+        console.log('👤 User ID set in sessionManager:', this.userId);
         
         // Always create fresh session on login
         this.currentSession = generateSessionId();
@@ -116,9 +121,10 @@ class SessionManager {
         console.log('📚 Auth token exists:', !!this.authToken);
         console.log('📚 User ID:', this.userId);
         
+        // Check if user is logged in first
         if (!this.authToken || !this.userId) {
-            console.error('❌ Missing auth token or user ID');
-            this.showHistoryError('Lütfen önce giriş yapın');
+            console.warn('⚠️ No auth token or user ID - user not logged in');
+            this.showHistoryLoginRequired();
             return;
         }
 
@@ -141,7 +147,13 @@ class SessionManager {
             
         } catch (error) {
             console.error('❌ Failed to load history:', error);
-            this.showHistoryError('Geçmiş yüklenemedi: ' + error.message);
+            
+            // Check if it's an authentication error
+            if (error.message.includes('401') || error.message.includes('403')) {
+                this.showHistoryLoginRequired();
+            } else {
+                this.showHistoryError('Geçmiş yüklenemedi: ' + error.message);
+            }
         }
     }
 
@@ -430,6 +442,22 @@ class SessionManager {
         }
     }
 
+    showHistoryLoginRequired() {
+        const historyList = document.getElementById('chatHistoryList');
+        if (historyList) {
+            historyList.innerHTML = `
+                <li style="padding: 40px; text-align: center; color: #ffd700;">
+                    🔒 Geçmiş sohbetleri görüntülemek için<br>
+                    giriş yapmanız gerekiyor<br><br>
+                    <button onclick="closeChatHistorySidebar()" 
+                            style="margin-top: 10px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                        Tamam
+                    </button>
+                </li>
+            `;
+        }
+    }
+
     renderHistoryList(sessions) {
         const historyList = document.getElementById('chatHistoryList');
         if (!historyList) return;
@@ -619,12 +647,17 @@ class SessionManager {
      */
     
     cleanup() {
+        console.log('🧹 Cleaning up SessionManager...');
+        console.log('🧹 Before cleanup - authToken:', !!this.authToken, 'userId:', this.userId);
+        
         this.currentSession = null;
         this.authToken = null;
         this.userId = null;
         this.sessionStartedAt = null;
         this.messages = [];
         this.invalidateHistoryCache();
+        
+        console.log('🧹 After cleanup - authToken:', !!this.authToken, 'userId:', this.userId);
         console.log('🧹 SessionManager cleaned up');
     }
 }
