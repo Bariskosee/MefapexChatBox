@@ -31,7 +31,7 @@ try:
         from core.configuration import get_config
         config = get_config()
     except ImportError:
-        # Fallback to simple config
+        # Fallback to simple config - TODO: Remove after migration
         from config import config
     
     qdrant_client = QdrantClient(
@@ -206,7 +206,7 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
             config = get_config()
             use_openai = config.ai.use_openai
         except (ImportError, AttributeError):
-            from config import config
+            from config import config  # TODO: Remove after migration
             use_openai = getattr(config, 'USE_OPENAI', False)
             
         if use_openai:
@@ -229,7 +229,7 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
             config = get_config()
             use_huggingface = config.ai.use_huggingface
         except (ImportError, AttributeError):
-            from config import config
+            from config import config  # TODO: Remove after migration
             use_huggingface = getattr(config, 'USE_HUGGINGFACE', True)
             
         if use_huggingface:

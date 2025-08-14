@@ -131,7 +131,7 @@ async def get_system_stats():
                 }
             },
             "environment": get_config().environment.value,
-            "debug_mode": config.DEBUG_MODE
+            "debug_mode": get_config().server.debug
         }
         
     except Exception as e:

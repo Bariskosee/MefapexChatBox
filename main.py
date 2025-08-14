@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # Import configuration
-from config import config
+from core.configuration import get_config, Environment
 
 # Import middleware
 from middleware import SecurityHeadersMiddleware, RateLimitMiddleware, LoggingMiddleware, RateLimiter
@@ -36,8 +36,9 @@ from websocket_manager import websocket_manager, message_handler
 from auth_service import init_auth_service, get_auth_service, verify_token
 
 # Configure logging
+config = get_config()
 logging.basicConfig(
-    level=logging.INFO if config.DEBUG_MODE else logging.WARNING,
+    level=logging.INFO if config.server.debug else logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ async def lifespan(app: FastAPI):
         
         # Initialize authentication service
         logger.info("🔐 Initializing authentication...")
-        init_auth_service(secret_key=config.SECRET_KEY, environment=config.ENVIRONMENT)
+        init_auth_service(secret_key=config.security.secret_key, environment=config.environment.value)
         logger.info("✅ Authentication service initialized")
         
         # Warm up models
@@ -108,15 +109,15 @@ app = FastAPI(
     title="MEFAPEX AI Chatbot",
     description="Advanced AI-powered chatbot with PostgreSQL support",
     version="2.2.0",
-    docs_url="/docs" if config.DEBUG_MODE else None,
-    redoc_url="/redoc" if config.DEBUG_MODE else None,
+    docs_url="/docs" if config.server.debug else None,
+    redoc_url="/redoc" if config.server.debug else None,
     lifespan=lifespan
 )
 
 # Initialize rate limiter
 rate_limiter = RateLimiter(
-    max_requests_per_minute=config.RATE_LIMIT_REQUESTS,
-    max_chat_requests_per_minute=config.RATE_LIMIT_CHAT
+    max_requests_per_minute=config.rate_limit.requests_per_minute,
+    max_chat_requests_per_minute=config.rate_limit.chat_requests_per_minute
 )
 
 # Set rate limiter for API routes
@@ -131,14 +132,14 @@ app.add_middleware(SecurityHeadersMiddleware)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.ALLOWED_ORIGINS,
+    allow_origins=config.server.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
 # Trusted host middleware for production
-if config.ENVIRONMENT == "production":
+if config.environment == Environment.PRODUCTION:
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=["mefapex.com", "www.mefapex.com", "api.mefapex.com"]
@@ -546,14 +547,14 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     
-    logger.info(f"🚀 Starting MEFAPEX Chatbot on {config.HOST}:{config.PORT}")
-    logger.info(f"🔧 Debug mode: {config.DEBUG_MODE}")
-    logger.info(f"🗄️ Database: PostgreSQL ({config.POSTGRES_HOST}:{config.POSTGRES_PORT})")
+    logger.info(f"🚀 Starting MEFAPEX Chatbot on {config.server.host}:{config.server.port}")
+    logger.info(f"🔧 Debug mode: {config.server.debug}")
+    logger.info(f"🗄️ Database: PostgreSQL ({config.database.host}:{config.database.port})")
     
     uvicorn.run(
         "main:app",
-        host=config.HOST,
-        port=config.PORT,
-        reload=config.DEBUG_MODE,
-        log_level="info" if config.DEBUG_MODE else "warning"
+        host=config.server.host,
+        port=config.server.port,
+        reload=config.server.debug,
+        log_level="info" if config.server.debug else "warning"
     )
