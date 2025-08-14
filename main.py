@@ -450,13 +450,13 @@ async def get_session_messages(session_id: str, current_user: dict = Depends(ver
             formatted_messages.extend([
                 {
                     "type": "user",
-                    "content": msg["user_message"],
-                    "timestamp": msg["timestamp"]
+                    "content": msg.get("message", msg.get("user_message", "")),
+                    "timestamp": msg.get("timestamp", msg.get("created_at"))
                 },
                 {
                     "type": "assistant", 
-                    "content": msg["bot_response"],
-                    "timestamp": msg["timestamp"],
+                    "content": msg.get("response", msg.get("bot_response", "")),
+                    "timestamp": msg.get("timestamp", msg.get("created_at")),
                     "source": msg.get("source", "unknown")
                 }
             ])

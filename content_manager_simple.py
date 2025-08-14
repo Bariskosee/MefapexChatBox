@@ -90,25 +90,22 @@ class ContentManager:
         best_match = None
         best_score = 0
         
-        for category, response_data in self.static_responses.items():
-            if isinstance(response_data, dict):
-                keywords = response_data.get("keywords", [])
-                response_text = response_data.get("message", "")
-                
-                # Calculate match score
-                score = self._calculate_match_score(user_message_lower, keywords)
-                
-                if score > best_score:
-                    best_match = response_text
-                    best_score = score
+        for category, responses in self.static_responses.items():
+            for response_data in responses:
+                if isinstance(response_data, dict):
+                    keywords = response_data.get("keywords", [])
+                    response_text = response_data.get("response", "")
                     
-                # Also check for category name match
-                if category.lower() in user_message_lower:
-                    return response_text, "static"
-            elif isinstance(response_data, str):
-                # Simple string response
-                if category.lower() in user_message_lower:
-                    return response_data, "static"
+                    # Calculate match score
+                    score = self._calculate_match_score(user_message_lower, keywords)
+                    
+                    if score > best_score:
+                        best_match = response_text
+                        best_score = score
+                elif isinstance(response_data, str):
+                    # Simple string response
+                    if category.lower() in user_message_lower:
+                        return response_data, "static"
         
         if best_match and best_score > 0.2:  # Minimum threshold
             return best_match, "static"

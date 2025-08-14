@@ -188,7 +188,7 @@ class DatabaseManager:
             created_session = self.session_repo.create_session(session)
             return str(created_session.session_id)
 
-    def get_user_sessions(self, user_id: str) -> List[Dict]:
+    def get_user_sessions(self, user_id: str, limit: int = None) -> List[Dict]:
         """Get user sessions (backward compatible)"""
         sessions = self.session_repo.get_user_sessions(user_id)
         enriched_sessions = []
@@ -223,6 +223,10 @@ class DatabaseManager:
         
         # Sort by creation date, newest first
         enriched_sessions.sort(key=lambda x: x.get('created_at', datetime.min), reverse=True)
+        
+        # Apply limit if specified
+        if limit is not None and limit > 0:
+            enriched_sessions = enriched_sessions[:limit]
         
         return enriched_sessions
 
