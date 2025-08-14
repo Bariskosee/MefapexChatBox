@@ -4,6 +4,7 @@ Database Manager Compatibility Test
 Tests if database/manager.py has all required methods for unification
 """
 
+import pytest
 from database.manager import db_manager
 import sys
 
@@ -37,7 +38,7 @@ def test_compatibility():
     
     if missing_methods:
         print(f"\n❌ Missing methods: {missing_methods}")
-        return False
+        assert False, f"Missing required methods: {missing_methods}"
     
     # Test basic functionality
     try:
@@ -50,13 +51,12 @@ def test_compatibility():
         print(f"✅ Health check: {health.get('status', 'unknown')}")
         
         print("\n🎉 Compatibility test PASSED!")
-        return True
         
     except Exception as e:
         print(f"\n❌ Compatibility test FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Compatibility test failed: {e}"
 
 if __name__ == "__main__":
     if test_compatibility():

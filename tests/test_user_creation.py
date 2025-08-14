@@ -9,9 +9,11 @@ import sys
 import asyncio
 import bcrypt
 import uuid
+import pytest
 from database.manager import db_manager
 from auth_service import init_auth_service
 
+@pytest.mark.asyncio
 async def test_create_user():
     """Test creating a new user and logging in"""
     
@@ -101,22 +103,21 @@ async def test_create_user():
                 
             else:
                 print("❌ Password verification failed!")
-                return False
+                assert False, "Password verification failed"
                 
         else:
             print("❌ User not found in database!")
-            return False
+            assert False, "User not found in database"
             
         # Close database connection
         await db_manager.close()
         print("\n✅ User creation test completed successfully!")
-        return True
         
     except Exception as e:
         print(f"❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Test failed with error: {e}"
 
 if __name__ == "__main__":
     # Set environment variables

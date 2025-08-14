@@ -7,9 +7,11 @@ Simple test script to verify login functionality with PostgreSQL
 import os
 import sys
 import asyncio
+import pytest
 from database.manager import db_manager
 from auth_service import init_auth_service
 
+@pytest.mark.asyncio
 async def test_login():
     """Test login functionality"""
     
@@ -74,11 +76,11 @@ async def test_login():
                 
             else:
                 print("❌ Password verification failed!")
-                return False
+                assert False, "Password verification failed"
                 
         else:
             print("❌ User not found in database!")
-            return False
+            assert False, "User not found in database"
             
         # Test database stats
         print("\n📊 Database statistics:")
@@ -89,13 +91,12 @@ async def test_login():
         # Close database connection
         await db_manager.close()
         print("\n✅ Test completed successfully!")
-        return True
         
     except Exception as e:
         print(f"❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Test failed with error: {e}"
 
 if __name__ == "__main__":
     # Set environment variables

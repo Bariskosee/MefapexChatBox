@@ -5,9 +5,11 @@ Tests all functionality to ensure unification was successful
 """
 
 import asyncio
+import pytest
 from database.manager import db_manager
 import sys
 
+@pytest.mark.asyncio
 async def test_unified_database():
     """Comprehensive test of unified database manager"""
     
@@ -85,13 +87,11 @@ async def test_unified_database():
         print("   - Backward compatibility ✅")
         print("   - Performance maintained ✅")
         
-        return True
-        
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Test failed with error: {e}"
 
 if __name__ == "__main__":
     success = asyncio.run(test_unified_database())
