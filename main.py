@@ -52,6 +52,15 @@ except ImportError:
     content_manager = None
     logger.warning("⚠️ Content manager not available")
 
+# Distributed Cache import
+try:
+    from distributed_cache import create_distributed_cache
+    distributed_cache = create_distributed_cache(config)
+    logger.info("✅ Distributed cache initialized")
+except ImportError as e:
+    distributed_cache = None
+    logger.warning(f"⚠️ Distributed cache not available: {e}")
+
 # Global database manager already imported above
 # db_manager is available globally from the import
 
@@ -77,6 +86,13 @@ async def lifespan(app: FastAPI):
         init_auth_service(secret_key=config.security.secret_key, environment=config.environment.value)
         logger.info("✅ Authentication service initialized")
         
+        # Initialize distributed cache
+        if distributed_cache and hasattr(distributed_cache, 'initialize'):
+            logger.info("🔄 Initializing distributed cache...")
+            await distributed_cache.initialize()
+            cache_health = await distributed_cache.health_check() if hasattr(distributed_cache, 'health_check') else {'status': 'unknown'}
+            logger.info(f"✅ Distributed cache ready: {cache_health}")
+        
         # Warm up models
         logger.info("🧠 Warming up AI models...")
         if hasattr(model_manager, 'warmup_models'):
@@ -101,6 +117,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🔄 Shutting down MEFAPEX AI Chatbot")
+    
+    # Cleanup distributed cache
+    if distributed_cache and hasattr(distributed_cache, 'shutdown'):
+        try:
+            await distributed_cache.shutdown()
+            logger.info("✅ Distributed cache shutdown completed")
+        except Exception as e:
+            logger.error(f"❌ Cache shutdown error: {e}")
+    
     # Database manager cleanup is handled automatically
     logger.info("✅ Application shutdown completed")
 
@@ -521,6 +546,57 @@ async def internal_error_handler(request, exc):
     """Custom 500 handler"""
     logger.error(f"Internal server error: {exc}")
     return {"error": "Internal server error", "detail": "Something went wrong"}
+
+# Cache management endpoints
+@app.get("/admin/cache/stats")
+async def get_cache_stats(request: Request, user_id: str = Depends(verify_token)):
+    """Get comprehensive cache statistics"""
+    try:
+        if distributed_cache:
+            if hasattr(distributed_cache, 'get_stats') and asyncio.iscoroutinefunction(distributed_cache.get_stats):
+                stats = await distributed_cache.get_stats()
+            elif hasattr(distributed_cache, 'get_stats'):
+                stats = distributed_cache.get_stats()
+            else:
+                stats = {"error": "No stats method available"}
+            return {"status": "success", "cache_stats": stats}
+        else:
+            return {"status": "error", "message": "Cache not available"}
+    except Exception as e:
+        logger.error(f"Cache stats error: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.post("/admin/cache/clear")
+async def clear_cache(request: Request, user_id: str = Depends(verify_token)):
+    """Clear all cache entries"""
+    try:
+        if distributed_cache:
+            if hasattr(distributed_cache, 'clear') and asyncio.iscoroutinefunction(distributed_cache.clear):
+                await distributed_cache.clear()
+            elif hasattr(distributed_cache, 'clear'):
+                distributed_cache.clear()
+            else:
+                return {"status": "error", "message": "No clear method available"}
+            logger.info(f"🗑️ Cache cleared by admin user: {user_id}")
+            return {"status": "success", "message": "Cache cleared successfully"}
+        else:
+            return {"status": "error", "message": "Cache not available"}
+    except Exception as e:
+        logger.error(f"Cache clear error: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/admin/cache/health")
+async def get_cache_health(request: Request, user_id: str = Depends(verify_token)):
+    """Check cache layer health"""
+    try:
+        if distributed_cache and hasattr(distributed_cache, 'health_check'):
+            health = await distributed_cache.health_check()
+            return {"status": "success", "cache_health": health}
+        else:
+            return {"status": "success", "cache_health": {"local_cache": True, "redis_cache": False}}
+    except Exception as e:
+        logger.error(f"Cache health check error: {e}")
+        return {"status": "error", "error": str(e)}
 
 # Health check endpoint for monitoring
 @app.get("/health")

@@ -14,13 +14,48 @@ from auth_service import verify_token
 # Use new database manager
 from database.manager import DatabaseManager
 from model_manager import model_manager
-from response_cache import response_cache
 from security_config import input_validator
 from content_manager import ContentManager
 from qdrant_client import QdrantClient
 
 logger = logging.getLogger(__name__)
+
+# Import cache with fallback
+try:
+    from distributed_cache import create_distributed_cache
+    distributed_cache = None  # Will be initialized later
+    logger.info("✅ Distributed cache available")
+except ImportError:
+    from response_cache import response_cache
+    distributed_cache = None
+    logger.warning("⚠️ Using fallback local cache")
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+# Rate limiter placeholder (will be set by main.py)
+rate_limiter = None
+
+def set_rate_limiter(limiter):
+    """Set rate limiter from main app"""
+    global rate_limiter
+    rate_limiter = limiter
+
+# Cache initialization with global access
+def get_cache():
+    """Get appropriate cache instance"""
+    # Try to get from main app first
+    try:
+        from main import distributed_cache as main_cache
+        if main_cache:
+            return main_cache
+    except ImportError:
+        pass
+    
+    # Fallback to local response_cache
+    try:
+        from response_cache import response_cache
+        return response_cache
+    except ImportError:
+        return None
 
 # Initialize database manager
 db_manager = DatabaseManager()
@@ -49,9 +84,6 @@ except Exception as e:
     logger.warning(f"Failed to initialize ContentManager: {e}")
     content_manager = None
 
-# Rate limiter will be imported from main
-rate_limiter = None
-
 # Pydantic models
 class ChatMessage(BaseModel):
     message: str
@@ -61,11 +93,6 @@ class ChatResponse(BaseModel):
     source: str
     session_id: str
     response_time_ms: Optional[int] = None
-
-def set_rate_limiter(limiter):
-    """Set rate limiter from main app"""
-    global rate_limiter
-    rate_limiter = limiter
 
 @router.post("/message", response_model=ChatResponse)
 async def chat_message(
@@ -125,8 +152,21 @@ async def chat_message(
         # Get or create session
         session_id = db_manager.get_or_create_session(user_id)
         
+        # Get appropriate cache instance
+        cache_instance = get_cache()
+        
         # Try to get cached response
-        cached = response_cache.get(sanitized_message)
+        cached = None
+        if cache_instance:
+            try:
+                if hasattr(cache_instance, 'get') and asyncio.iscoroutinefunction(cache_instance.get):
+                    # Async cache (distributed)
+                    cached = await cache_instance.get(sanitized_message)
+                else:
+                    # Sync cache (local)
+                    cached = cache_instance.get(sanitized_message)
+            except Exception as e:
+                logger.warning(f"Cache get error: {e}")
         
         if cached:
             ai_response, response_source = cached
@@ -137,7 +177,16 @@ async def chat_message(
             ai_response, response_source = await generate_ai_response(sanitized_message)
             
             # Cache the response
-            response_cache.set(sanitized_message, ai_response, source=response_source)
+            if cache_instance:
+                try:
+                    if hasattr(cache_instance, 'set') and asyncio.iscoroutinefunction(cache_instance.set):
+                        # Async cache (distributed)
+                        await cache_instance.set(sanitized_message, ai_response, source=response_source)
+                    else:
+                        # Sync cache (local)
+                        cache_instance.set(sanitized_message, ai_response, source=response_source)
+                except Exception as e:
+                    logger.warning(f"Cache set error: {e}")
         
         # Calculate response time
         response_time_ms = int((time.time() - start_time) * 1000)

@@ -52,6 +52,22 @@ class Config:
     # Environment
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     
+    # Redis Cache Settings
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")  # Default to localhost for local development
+    REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+    REDIS_DB = int(os.getenv("REDIS_DB", 0))
+    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+    REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    
+    # Cache Configuration
+    CACHE_TYPE = os.getenv("CACHE_TYPE", "hybrid")  # hybrid, redis, local
+    CACHE_SIZE = int(os.getenv("CACHE_SIZE", 1000))  # For local cache
+    CACHE_TTL = int(os.getenv("CACHE_TTL", 3600))  # 1 hour default TTL
+    CACHE_LOCAL_SIZE = int(os.getenv("CACHE_LOCAL_SIZE", 500))  # Local cache in hybrid mode
+    CACHE_LOCAL_TTL = int(os.getenv("CACHE_LOCAL_TTL", 1800))  # 30 minutes for local cache
+    CACHE_REDIS_TTL = int(os.getenv("CACHE_REDIS_TTL", 3600))  # 1 hour for Redis cache
+    NODE_ID = os.getenv("NODE_ID", f"node-{os.getpid()}")  # Unique node identifier
+    
     # Brute force protection
     MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", 5))
     LOCKOUT_DURATION = int(os.getenv("LOCKOUT_DURATION", 900))  # 15 minutes

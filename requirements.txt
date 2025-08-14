@@ -57,6 +57,7 @@ requests>=2.32.0
 # 💾 Caching & Performance
 # ================================
 cachetools>=5.3.0
+redis>=5.0.0
 
 # ================================
 # 📊 Monitoring & Logging
