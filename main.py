@@ -395,6 +395,17 @@ async def save_session(request: Request, current_user: dict = Depends(verify_tok
                 logger.warning(f"Failed to save individual message: {msg_error}")
                 # Continue with other messages
         
+        # 🎯 CONVERSATION HISTORY MANAGEMENT
+        # Clean up old conversations to maintain limit of 15
+        try:
+            # Delete old sessions beyond the limit of 15
+            deleted_count = db_manager.delete_old_sessions(user_id, keep_count=15)
+            if deleted_count > 0:
+                logger.info(f"🧹 Cleaned up {deleted_count} old sessions for user {user_id}")
+        except Exception as cleanup_error:
+            logger.warning(f"⚠️ Session cleanup failed: {cleanup_error}")
+            # Don't fail the save operation if cleanup fails
+        
         logger.info(f"✅ Saved session {session_id} with {saved_count}/{len(messages)} messages")
         
         return {"success": True, "session_id": session_id, "messages_saved": saved_count}

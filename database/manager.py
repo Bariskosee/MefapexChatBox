@@ -7,6 +7,7 @@ This maintains backward compatibility while using the new modular architecture.
 """
 
 import logging
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 from .services.connection_service import connection_service
 from .repositories.user_repository import user_repository
@@ -69,6 +70,7 @@ class DatabaseManager:
                         user_id VARCHAR(255) NOT NULL,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        last_activity TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                         is_active BOOLEAN DEFAULT TRUE,
                         message_count INTEGER DEFAULT 0
                     )
@@ -81,8 +83,8 @@ class DatabaseManager:
                         message_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
                         session_id VARCHAR(255) NOT NULL,
                         user_id VARCHAR(255) NOT NULL,
-                        message TEXT NOT NULL,
-                        response TEXT NOT NULL,
+                        user_message TEXT NOT NULL,
+                        bot_response TEXT NOT NULL,
                         message_type VARCHAR(50) DEFAULT 'user',
                         source VARCHAR(50) DEFAULT 'unknown',
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -167,10 +169,62 @@ class DatabaseManager:
         created_session = self.session_repo.create_session(session)
         return str(created_session.session_id)  # Convert UUID to string
 
+    def get_or_create_session_by_id(self, user_id: str, session_id: str) -> str:
+        """Get existing session by ID or create new one with specific ID"""
+        # Try to get existing session first
+        existing_session = self.session_repo.get_session_by_id(session_id)
+        if existing_session:
+            return str(existing_session.session_id)
+        
+        # Create new session with the specified ID
+        try:
+            session = ChatSession(session_id=session_id, user_id=user_id)
+            created_session = self.session_repo.create_session(session)
+            return str(created_session.session_id)
+        except Exception as e:
+            logger.error(f"Failed to create session {session_id}: {e}")
+            # Fallback to creating a session with auto-generated ID
+            session = ChatSession(user_id=user_id)
+            created_session = self.session_repo.create_session(session)
+            return str(created_session.session_id)
+
     def get_user_sessions(self, user_id: str) -> List[Dict]:
         """Get user sessions (backward compatible)"""
         sessions = self.session_repo.get_user_sessions(user_id)
-        return [session.to_dict() for session in sessions]
+        enriched_sessions = []
+        
+        for session in sessions:
+            session_dict = session.to_dict()
+            
+            # Get message count for this session
+            session_messages = self.message_repo.get_session_messages(str(session.session_id))
+            session_dict['message_count'] = len(session_messages)
+            session_dict['messageCount'] = len(session_messages)  # Alternative field name
+            
+            # Add session ID in multiple formats for compatibility
+            session_dict['sessionId'] = str(session.session_id)
+            session_dict['session_id'] = str(session.session_id)
+            
+            # Add startedAt field for compatibility
+            session_dict['startedAt'] = session.created_at
+            
+            # Generate a preview from the first message
+            if session_messages:
+                first_message = session_messages[0]
+                preview_text = first_message.message[:50] + "..." if len(first_message.message) > 50 else first_message.message
+                session_dict['preview'] = preview_text
+            else:
+                session_dict['preview'] = "Boş sohbet"
+            
+            # Add messages for compatibility
+            session_dict['messages'] = [msg.to_dict() for msg in session_messages]
+            
+            enriched_sessions.append(session_dict)
+        
+        # Sort by creation date, newest first
+        enriched_sessions.sort(key=lambda x: x.get('created_at', datetime.min), reverse=True)
+        
+        return enriched_sessions
 
     def get_session_messages(self, session_id: str) -> List[Dict]:
         """Get session messages (backward compatible)"""
@@ -183,6 +237,9 @@ class DatabaseManager:
                    bot_response: str, source: str = "unknown") -> bool:
         """Add a chat message (backward compatible)"""
         try:
+            # First ensure the session exists
+            self.get_or_create_session_by_id(user_id, session_id)
+            
             message = ChatMessage(
                 session_id=session_id,
                 user_id=user_id,
@@ -263,6 +320,47 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to clear chat history: {e}")
             return False
+
+    def delete_old_sessions(self, user_id: str, keep_count: int = 15) -> int:
+        """Delete old sessions keeping only specified count"""
+        try:
+            with self.connection_service.get_cursor() as cursor:
+                # Get sessions to delete (keep most recent ones)
+                cursor.execute(
+                    """SELECT session_id FROM chat_sessions 
+                       WHERE user_id = %s 
+                       ORDER BY created_at DESC OFFSET %s""",
+                    (user_id, keep_count)
+                )
+                old_sessions = cursor.fetchall()
+                
+                if not old_sessions:
+                    logger.info(f"No old sessions to delete for user {user_id}")
+                    return 0
+                
+                # Delete old sessions and their messages
+                old_session_ids = [str(session['session_id']) for session in old_sessions]
+                
+                # Delete messages first
+                cursor.execute(
+                    "DELETE FROM chat_messages WHERE session_id = ANY(%s)",
+                    (old_session_ids,)
+                )
+                messages_deleted = cursor.rowcount
+                
+                # Delete sessions
+                cursor.execute(
+                    "DELETE FROM chat_sessions WHERE session_id = ANY(%s)",
+                    (old_session_ids,)
+                )
+                sessions_deleted = cursor.rowcount
+                
+                logger.info(f"🧹 Deleted {sessions_deleted} old sessions and {messages_deleted} messages for user {user_id}")
+                return sessions_deleted
+                
+        except Exception as e:
+            logger.error(f"Failed to delete old sessions for user {user_id}: {e}")
+            return 0
 
 
 # Create singleton instance
