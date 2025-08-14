@@ -1,5 +1,6 @@
 """
 Enhanced Thread-safe Model Manager for MEFAPEX AI Assistant
+Optimized for Turkish Language Support
 Fixed memory leak issues and improved resource management
 """
 import threading
@@ -13,13 +14,50 @@ import os
 from functools import lru_cache
 import atexit
 from core.configuration import get_config
+import re
 
 logger = logging.getLogger(__name__)
 
+class TurkishLanguageDetector:
+    """Simple Turkish language detection utility"""
+    
+    TURKISH_CHARS = set('çğıöşüÇĞIİÖŞÜ')
+    TURKISH_WORDS = {
+        've', 'ile', 'bir', 'bu', 'şu', 'ne', 'nasıl', 'nedir', 'niye', 'niçin',
+        'için', 'den', 'dan', 'dır', 'dir', 'dur', 'dür', 'mı', 'mi', 'mu', 'mü',
+        'da', 'de', 'ta', 'te', 'la', 'le', 'ya', 'ye', 'sa', 'se', 'ka', 'ke',
+        'ben', 'sen', 'o', 'biz', 'siz', 'onlar', 'benim', 'senin', 'bizim',
+        'sizin', 'onların', 'var', 'yok', 'varsa', 'yoksa', 'gibi', 'kadar',
+        'çok', 'az', 'büyük', 'küçük', 'iyi', 'kötü', 'güzel', 'çirkin'
+    }
+    
+    @classmethod
+    def is_turkish(cls, text: str) -> bool:
+        """Detect if text is primarily Turkish"""
+        if not text:
+            return False
+            
+        text_lower = text.lower().strip()
+        words = re.findall(r'\b\w+\b', text_lower)
+        
+        if not words:
+            return False
+        
+        # Check for Turkish-specific characters
+        turkish_char_score = sum(1 for char in text if char in cls.TURKISH_CHARS) / len(text)
+        
+        # Check for Turkish words
+        turkish_word_score = sum(1 for word in words if word in cls.TURKISH_WORDS) / len(words)
+        
+        # Combined score with character patterns having higher weight
+        combined_score = (turkish_char_score * 0.7) + (turkish_word_score * 0.3)
+        
+        return combined_score > 0.1  # Threshold for Turkish detection
+
 class ModelManager:
     """
-    Thread-safe singleton model manager with proper memory management
-    and cleanup to prevent memory leaks.
+    Thread-safe singleton model manager with proper memory management,
+    cleanup to prevent memory leaks, and Turkish language support.
     """
     
     _instance = None
@@ -38,16 +76,19 @@ class ModelManager:
             with self._lock:
                 if not self._initialized:
                     self._sentence_model = None
+                    self._turkish_sentence_model = None
                     self._text_generator = None
                     self._device = None
                     self._model_config = {}
                     self._model_locks = {
                         'sentence': threading.Lock(),
+                        'turkish_sentence': threading.Lock(),
                         'text_generator': threading.Lock()
                     }
                     self._memory_monitor = True
                     self._max_cache_size = 100  # Reduced cache size from 500 to 100
                     self._initialized = True
+                    self._language_detector = TurkishLanguageDetector()
                     
                     # Model cache directory for persistence
                     self._cache_dir = os.path.join(os.getcwd(), "models_cache")
@@ -56,7 +97,7 @@ class ModelManager:
                     # Register cleanup on exit
                     atexit.register(self.cleanup_resources)
                     
-                    logger.info("🤖 Enhanced ModelManager initialized with memory management")
+                    logger.info("🤖 Enhanced ModelManager initialized with Turkish language support")
     
     @property
     def device(self) -> str:
@@ -75,13 +116,76 @@ class ModelManager:
     def sentence_model(self) -> SentenceTransformer:
         """
         Get sentence transformer model with thread-safe lazy loading
+        Automatically chooses Turkish or multilingual model based on configuration
+        """
+        config = get_config().ai
+        
+        # Determine which model to use
+        if config.prefer_turkish_models:
+            return self.turkish_sentence_model
+        else:
+            return self.english_sentence_model
+    
+    @property
+    def turkish_sentence_model(self) -> SentenceTransformer:
+        """
+        Get Turkish-optimized sentence transformer model with thread-safe lazy loading
+        """
+        if self._turkish_sentence_model is None:
+            with self._model_locks['turkish_sentence']:
+                if self._turkish_sentence_model is None:
+                    try:
+                        logger.info("📚 Loading Turkish sentence transformer model...")
+                        config = get_config().ai
+                        model_name = config.turkish_sentence_model
+                        
+                        # Force garbage collection before loading
+                        self._force_gc()
+                        
+                        # Load Turkish-optimized model with reduced memory footprint
+                        self._turkish_sentence_model = SentenceTransformer(
+                            model_name,
+                            device=self.device if self.device != "mps" else "cpu"  # MPS fix
+                        )
+                        
+                        # Optimize model for inference
+                        self._turkish_sentence_model.eval()  # Set to evaluation mode
+                        
+                        self._model_config['turkish_sentence_model'] = model_name
+                        logger.info(f"✅ Turkish sentence transformer loaded: {model_name}")
+                        
+                        # Force garbage collection after model loading
+                        self._force_gc()
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Failed to load Turkish sentence transformer: {e}")
+                        logger.warning("🔄 Falling back to multilingual model...")
+                        # Fallback to multilingual model
+                        try:
+                            self._turkish_sentence_model = SentenceTransformer(
+                                "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                                device=self.device if self.device != "mps" else "cpu"
+                            )
+                            self._turkish_sentence_model.eval()
+                            logger.info("✅ Multilingual fallback model loaded")
+                        except Exception as fallback_e:
+                            logger.error(f"❌ Fallback model also failed: {fallback_e}")
+                            raise RuntimeError(f"Could not load any sentence model: {e}")
+        
+        return self._turkish_sentence_model
+    
+    @property
+    def english_sentence_model(self) -> SentenceTransformer:
+        """
+        Get English sentence transformer model (fallback) with thread-safe lazy loading
         """
         if self._sentence_model is None:
             with self._model_locks['sentence']:
                 if self._sentence_model is None:
                     try:
-                        logger.info("📚 Loading sentence transformer model...")
-                        model_name = get_config().ai.sentence_model
+                        logger.info("📚 Loading English sentence transformer model...")
+                        config = get_config().ai
+                        model_name = config.english_fallback_model
                         
                         # Force garbage collection before loading
                         self._force_gc()
@@ -96,13 +200,13 @@ class ModelManager:
                         self._sentence_model.eval()  # Set to evaluation mode
                         
                         self._model_config['sentence_model'] = model_name
-                        logger.info(f"✅ Sentence transformer loaded: {model_name}")
+                        logger.info(f"✅ English sentence transformer loaded: {model_name}")
                         
                         # Force garbage collection after model loading
                         self._force_gc()
                         
                     except Exception as e:
-                        logger.error(f"❌ Failed to load sentence transformer: {e}")
+                        logger.error(f"❌ Failed to load English sentence transformer: {e}")
                         raise RuntimeError(f"Could not load sentence model: {e}")
         
         return self._sentence_model
@@ -163,16 +267,33 @@ class ModelManager:
         return self._text_generator
     
     @lru_cache(maxsize=100)  # Further reduced cache size for memory efficiency
-    def generate_embedding(self, text: str) -> list:
+    def generate_embedding(self, text: str, force_turkish: bool = None) -> list:
         """
-        Generate embedding with reduced caching for memory efficiency
+        Generate embedding with Turkish language support and reduced caching for memory efficiency
         """
         try:
             # Limit text length to prevent memory issues
             normalized_text = text.strip().lower()[:500]  # Max 500 chars
             
+            # Detect language or use forced setting
+            config = get_config().ai
+            use_turkish_model = force_turkish
+            
+            if use_turkish_model is None and config.language_detection:
+                use_turkish_model = self._language_detector.is_turkish(normalized_text)
+            elif use_turkish_model is None:
+                use_turkish_model = config.prefer_turkish_models
+            
+            # Choose appropriate model
+            if use_turkish_model:
+                logger.debug(f"🇹🇷 Using Turkish model for: {normalized_text[:30]}...")
+                model = self.turkish_sentence_model
+            else:
+                logger.debug(f"🇺🇸 Using English model for: {normalized_text[:30]}...")
+                model = self.english_sentence_model
+            
             with torch.no_grad():  # Prevent gradient accumulation
-                embedding = self.sentence_model.encode(
+                embedding = model.encode(
                     [normalized_text], 
                     convert_to_tensor=False,  # Return numpy array
                     show_progress_bar=False
@@ -191,15 +312,19 @@ class ModelManager:
             
         except Exception as e:
             logger.error(f"Embedding generation failed for text: {text[:50]}... Error: {e}")
+            # Fallback to English model if Turkish model fails
+            if use_turkish_model:
+                logger.warning("🔄 Falling back to English model...")
+                return self.generate_embedding(text, force_turkish=False)
             raise
         finally:
             # Periodic garbage collection
             if self.generate_embedding.cache_info().currsize % 50 == 0:
                 self._force_gc()
     
-    def generate_text_response(self, prompt: str, max_length: int = 80) -> str:
+    def generate_text_response(self, prompt: str, max_length: int = 80, turkish_context: bool = True) -> str:
         """
-        Generate text response with memory-efficient settings
+        Generate text response with memory-efficient settings and Turkish support
         """
         try:
             if self.text_generator is None:
@@ -207,6 +332,11 @@ class ModelManager:
             
             # Limit prompt length
             prompt = prompt[:200]  # Max 200 chars
+            
+            # Add Turkish context if needed
+            if turkish_context and self._language_detector.is_turkish(prompt):
+                # Add subtle Turkish context without being too explicit
+                prompt = f"Türkçe: {prompt}"
             
             with torch.no_grad():  # Prevent gradient accumulation
                 outputs = self.text_generator(
@@ -225,6 +355,10 @@ class ModelManager:
                 )
             
             generated_text = outputs[0]['generated_text'].strip()
+            
+            # Clean up Turkish context prefix if it was added
+            if turkish_context and generated_text.startswith("Türkçe: "):
+                generated_text = generated_text[8:].strip()
             
             # Force cleanup after text generation
             self._force_gc()
@@ -264,10 +398,13 @@ class ModelManager:
         
         return {
             "sentence_model_loaded": self._sentence_model is not None,
+            "turkish_sentence_model_loaded": self._turkish_sentence_model is not None,
             "text_generator_loaded": self._text_generator is not None,
             "device": self.device,
             "model_config": self._model_config,
             "memory_info": memory_info,
+            "language_detection_enabled": get_config().ai.language_detection,
+            "prefer_turkish_models": get_config().ai.prefer_turkish_models,
             "cache_info": {
                 "embedding_cache_size": cache_info.currsize,
                 "embedding_cache_hits": cache_info.hits,
@@ -302,6 +439,10 @@ class ModelManager:
                 del self._sentence_model
                 self._sentence_model = None
                 
+            if self._turkish_sentence_model is not None:
+                del self._turkish_sentence_model
+                self._turkish_sentence_model = None
+                
             if self._text_generator is not None:
                 del self._text_generator
                 self._text_generator = None
@@ -321,19 +462,45 @@ class ModelManager:
         try:
             logger.info("🔥 Warming up models...")
             
-            # Warm up sentence model with minimal text
-            sample_text = "Hello test"
-            _ = self.generate_embedding(sample_text)
+            # Warm up Turkish sentence model with Turkish text
+            turkish_sample = "Merhaba test"
+            _ = self.generate_embedding(turkish_sample, force_turkish=True)
             
-            # Warm up text generator with minimal prompt
+            # Warm up English sentence model with English text
+            english_sample = "Hello test"
+            _ = self.generate_embedding(english_sample, force_turkish=False)
+            
+            # Warm up text generator with Turkish prompt
             if self.text_generator is not None:
-                sample_prompt = "Hello"
-                _ = self.generate_text_response(sample_prompt, max_length=20)
+                turkish_prompt = "Merhaba"
+                _ = self.generate_text_response(turkish_prompt, max_length=20, turkish_context=True)
             
             logger.info("✅ Model warmup completed")
             
         except Exception as e:
             logger.warning(f"⚠️ Model warmup failed: {e}")
+    
+    def detect_language(self, text: str) -> str:
+        """
+        Detect language of given text
+        Returns: 'turkish' or 'other'
+        """
+        if self._language_detector.is_turkish(text):
+            return 'turkish'
+        return 'other'
+    
+    def get_embedding_model_for_text(self, text: str) -> SentenceTransformer:
+        """
+        Get the most appropriate embedding model for the given text
+        """
+        config = get_config().ai
+        
+        if config.language_detection and self._language_detector.is_turkish(text):
+            return self.turkish_sentence_model
+        elif config.prefer_turkish_models:
+            return self.turkish_sentence_model
+        else:
+            return self.english_sentence_model
 
 # Global instance
 model_manager = ModelManager()

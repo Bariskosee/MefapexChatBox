@@ -73,10 +73,14 @@ class AIConfig:
     use_openai: bool = False
     use_huggingface: bool = True
     openai_api_key: Optional[str] = None
-    sentence_model: str = "all-MiniLM-L6-v2"
-    huggingface_model: str = "microsoft/DialoGPT-small"
+    sentence_model: str = "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr"
+    huggingface_model: str = "ytu-ce-cosmos/turkish-gpt2-large"
+    turkish_sentence_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    english_fallback_model: str = "all-MiniLM-L6-v2"
     max_tokens: int = 150
     temperature: float = 0.7
+    language_detection: bool = True
+    prefer_turkish_models: bool = True
 
 @dataclass
 class QdrantConfig:
@@ -220,10 +224,14 @@ class UnifiedConfig:
             use_openai=os.getenv("USE_OPENAI", "false").lower() == "true",
             use_huggingface=os.getenv("USE_HUGGINGFACE", "true").lower() == "true",
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            sentence_model=os.getenv("SENTENCE_MODEL", "all-MiniLM-L6-v2"),
-            huggingface_model=os.getenv("HUGGINGFACE_MODEL", "microsoft/DialoGPT-small"),
+            sentence_model=os.getenv("SENTENCE_MODEL", "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr"),
+            huggingface_model=os.getenv("HUGGINGFACE_MODEL", "ytu-ce-cosmos/turkish-gpt2-large"),
+            turkish_sentence_model=os.getenv("TURKISH_SENTENCE_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
+            english_fallback_model=os.getenv("ENGLISH_FALLBACK_MODEL", "all-MiniLM-L6-v2"),
             max_tokens=int(os.getenv("AI_MAX_TOKENS", "150")),
-            temperature=float(os.getenv("AI_TEMPERATURE", "0.7"))
+            temperature=float(os.getenv("AI_TEMPERATURE", "0.7")),
+            language_detection=os.getenv("AI_LANGUAGE_DETECTION", "true").lower() == "true",
+            prefer_turkish_models=os.getenv("AI_PREFER_TURKISH_MODELS", "true").lower() == "true"
         )
     
     def _init_qdrant_config(self) -> QdrantConfig:

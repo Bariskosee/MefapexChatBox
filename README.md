@@ -1,6 +1,19 @@
 # 🏭 MEFAPEX Turkish AI Chatbot
 
-> Fabrika çalışanları için Türkçe AI destekli soru-cevap sistemi - Modern Modüler Mimari & Docker Ready
+> Fabrika çalışanları için Türkçe AI destekli soru-cevap sistemi - Modern Modü### 🤖 **Chatbot Özellikleri**  
+- **🌙 Modern Dark Theme**: Göz dostu koyu tema tasarımı
+- **🇹🇷 Gelişmiş Türkçe Dil Desteği**: 
+  - Türkçe optimize edilmiş AI modelleri
+  - Otomatik dil algılama sistemi
+  - `emrecan/bert-base-turkish-cased-mean-nli-stsb-tr` modeli
+  - `ytu-ce-cosmos/turkish-gpt2-large` metin üretimi
+  - Çok dilli fallback desteği
+- **🔍 Vector Search**: Qdrant ile benzerlik tabanlı arama
+- **🤖 Hybrid AI**: OpenAI + Hugging Face ile çoklu AI desteği
+- **👤 JWT Authentication**: Güvenli kullanıcı yönetimi
+- **📱 Responsive Design**: Mobil uyumlu modern web arayüzü
+- **🔄 WebSocket**: Gerçek zamanlı mesajlaşma
+- **🧠 Advanced Caching**: Multi-level caching systemi & Docker Ready
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116+-green.svg)](https://fastapi.tiangolo.com)
@@ -38,6 +51,9 @@ cd MefapexChatBox
 
 # Otomatik kurulum scriptini çalıştırın
 python setup.py
+
+# 🇹🇷 Türkçe AI modelleri için optimize kurulum
+python setup_turkish_models.py
 
 # Uygulamayı başlatın
 python main.py

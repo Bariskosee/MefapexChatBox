@@ -19,8 +19,23 @@ qdrant_client = QdrantClient(
     port=int(get_config().qdrant.port)
 )
 
-# Initialize FREE sentence transformer model
-model = SentenceTransformer('all-MiniLM-L6-v2')  # Free, no API key needed!
+# Initialize Turkish-optimized sentence transformer model
+config = get_config().ai
+if config.prefer_turkish_models:
+    model_name = config.turkish_sentence_model
+    logger.info(f"🇹🇷 Loading Turkish-optimized model: {model_name}")
+else:
+    model_name = config.english_fallback_model
+    logger.info(f"🇺🇸 Loading English fallback model: {model_name}")
+
+try:
+    model = SentenceTransformer(model_name)
+    logger.info(f"✅ Model loaded successfully: {model_name}")
+except Exception as e:
+    logger.warning(f"⚠️ Failed to load preferred model: {e}")
+    logger.info("🔄 Falling back to multilingual model...")
+    model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+    logger.info("✅ Multilingual fallback model loaded")
 
 # Enhanced Turkish FAQ data for MEFAPEX factory with question variations
 turkish_faq_data = [
