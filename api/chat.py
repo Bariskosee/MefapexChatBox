@@ -126,19 +126,18 @@ async def chat_message(
         session_id = db_manager.get_or_create_session(user_id)
         
         # Try to get cached response
-        cache_key = f"chat_{hash(sanitized_message)}"
-        cached_response = response_cache.get(cache_key)
+        cached = response_cache.get(sanitized_message)
         
-        if cached_response:
-            logger.info("Returning cached response")
-            response_source = "cache"
-            ai_response = cached_response
+        if cached:
+            ai_response, response_source = cached
+            logger.info(f"Returning cached response from {response_source}")
+            response_source = f"cache_{response_source}"
         else:
             # Generate AI response
             ai_response, response_source = await generate_ai_response(sanitized_message)
             
             # Cache the response
-            response_cache.set(cache_key, ai_response, ttl=3600)  # 1 hour
+            response_cache.set(sanitized_message, ai_response, source=response_source)
         
         # Calculate response time
         response_time_ms = int((time.time() - start_time) * 1000)
