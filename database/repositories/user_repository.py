@@ -35,7 +35,7 @@ class UserRepository:
             Created user with database ID
         """
         query = """
-            INSERT INTO users (user_id, username, email, password_hash, is_active)
+            INSERT INTO users (user_id, username, email, hashed_password, is_active)
             VALUES (%s, %s, %s, %s, %s)
             RETURNING user_id, created_at
         """
@@ -71,7 +71,7 @@ class UserRepository:
             User object or None if not found
         """
         query = """
-            SELECT user_id, username, email, password_hash, 
+            SELECT user_id, username, email, hashed_password, 
                    created_at, last_login, is_active, preferences
             FROM users 
             WHERE username = %s
@@ -101,7 +101,7 @@ class UserRepository:
             User object or None if not found
         """
         query = """
-            SELECT user_id, username, email, password_hash,
+            SELECT user_id, username, email, hashed_password,
                    created_at, last_login, is_active, preferences
             FROM users 
             WHERE user_id = %s
@@ -132,7 +132,7 @@ class UserRepository:
         """
         query = """
             UPDATE users 
-            SET username = %s, email = %s, password_hash = %s,
+            SET username = %s, email = %s, hashed_password = %s,
                 updated_at = CURRENT_TIMESTAMP, last_login = %s, is_active = %s,
                 preferences = %s
             WHERE user_id = %s
@@ -227,7 +227,7 @@ class UserRepository:
             List of User objects
         """
         query = """
-            SELECT user_id, username, email, password_hash,
+            SELECT user_id, username, email, hashed_password,
                    created_at, last_login, is_active, preferences
             FROM users
         """

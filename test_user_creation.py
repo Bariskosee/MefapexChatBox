@@ -9,7 +9,7 @@ import sys
 import asyncio
 import bcrypt
 import uuid
-from postgresql_manager import get_postgresql_manager
+from database.manager import db_manager
 from auth_service import init_auth_service
 
 async def test_create_user():
@@ -20,10 +20,9 @@ async def test_create_user():
     
     try:
         # Initialize database manager
-        print("📊 Initializing PostgreSQL manager...")
-        db_manager = get_postgresql_manager()
-        await db_manager.initialize()
-        print("✅ Database initialized successfully")
+        print("📊 Database manager is ready...")
+        # db_manager is already available from import
+        print("✅ Database manager ready")
         
         # Initialize auth service
         print("🔐 Initializing authentication service...")

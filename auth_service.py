@@ -209,7 +209,7 @@ class AuthenticationService:
         """Authenticate user credentials"""
         try:
             # Database user authentication (including demo user)
-            from database_manager import db_manager
+            from database.manager import db_manager
             user_data = db_manager.authenticate_user(username)
             
             if user_data and self.verify_password(password, user_data.get("password_hash") or user_data.get("hashed_password", "")):

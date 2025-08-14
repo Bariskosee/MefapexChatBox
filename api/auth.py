@@ -9,7 +9,7 @@ from typing import Optional
 import logging
 
 from auth_service import get_auth_service, verify_token
-from database_manager import db_manager
+from database.manager import db_manager
 from security_config import input_validator
 from core.configuration import get_config
 

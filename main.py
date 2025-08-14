@@ -27,8 +27,8 @@ from api.auth import router as auth_router, set_rate_limiter as set_auth_rate_li
 from api.chat import router as chat_router, set_rate_limiter as set_chat_rate_limiter
 from api.health import router as health_router
 
-# Import database manager (PostgreSQL as default)
-from postgresql_manager import get_postgresql_manager
+# Import unified database manager
+from database.manager import db_manager
 
 # Import other services
 from model_manager import model_manager
@@ -52,8 +52,8 @@ except ImportError:
     content_manager = None
     logger.warning("⚠️ Content manager not available")
 
-# Global database manager
-db_manager = None
+# Global database manager already imported above
+# db_manager is available globally from the import
 
 # Initialize services
 @asynccontextmanager
@@ -65,11 +65,12 @@ async def lifespan(app: FastAPI):
     global db_manager
     
     try:
-        # Initialize PostgreSQL database
-        logger.info("🔥 Initializing PostgreSQL database...")
-        db_manager = get_postgresql_manager()
-        await db_manager.initialize()
-        logger.info("✅ PostgreSQL database initialized")
+        # Database manager is already initialized in database/manager.py
+        logger.info("✅ Database manager ready")
+        
+        # Test database connection
+        health = db_manager.health_check()
+        logger.info(f"✅ Database health: {health.get('status', 'unknown')}")
         
         # Initialize authentication service
         logger.info("🔐 Initializing authentication...")
@@ -100,9 +101,8 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🔄 Shutting down MEFAPEX AI Chatbot")
-    if db_manager:
-        await db_manager.close()
-        logger.info("✅ Database connection closed")
+    # Database manager cleanup is handled automatically
+    logger.info("✅ Application shutdown completed")
 
 # Create FastAPI application
 app = FastAPI(

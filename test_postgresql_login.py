@@ -7,7 +7,7 @@ Simple test script to verify login functionality with PostgreSQL
 import os
 import sys
 import asyncio
-from postgresql_manager import get_postgresql_manager
+from database.manager import db_manager
 from auth_service import init_auth_service
 
 async def test_login():
@@ -19,7 +19,7 @@ async def test_login():
     try:
         # Initialize database manager
         print("📊 Initializing PostgreSQL manager...")
-        db_manager = get_postgresql_manager()
+        # db_manager is already available from import
         await db_manager.initialize()
         print("✅ Database initialized successfully")
         

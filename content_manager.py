@@ -102,9 +102,9 @@ class ContentManager:
         """Get dynamic response from PostgreSQL database"""
         try:
             import json
-            from postgresql_manager import get_postgresql_manager
+            from database.manager import db_manager
             
-            db = get_postgresql_manager()
+            db = db_manager
             
             # Check if sync connection is available and working
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:
@@ -157,9 +157,9 @@ class ContentManager:
     def _ensure_dynamic_table_exists(self):
         """Ensure dynamic_responses table exists in PostgreSQL"""
         try:
-            from postgresql_manager import get_postgresql_manager
+            from database.manager import db_manager
             
-            db = get_postgresql_manager()
+            db = db_manager
             
             # Ensure sync connection exists
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:
@@ -281,9 +281,9 @@ class ContentManager:
         """Add a dynamic response to PostgreSQL database"""
         try:
             import json
-            from postgresql_manager import get_postgresql_manager
+            from database.manager import db_manager
             
-            db = get_postgresql_manager()
+            db = db_manager
             
             # Check if sync connection is available and working
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:
@@ -319,9 +319,9 @@ class ContentManager:
     def update_response_usage(self, response_text: str):
         """Update usage statistics for dynamic responses"""
         try:
-            from postgresql_manager import get_postgresql_manager
+            from database.manager import db_manager
             
-            db = get_postgresql_manager()
+            db = db_manager
             
             # Check if sync connection is available and working
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:
@@ -353,9 +353,9 @@ class ContentManager:
     def get_stats(self) -> Dict:
         """Get content manager statistics"""
         try:
-            from postgresql_manager import get_postgresql_manager
+            from database.manager import db_manager
             
-            db = get_postgresql_manager()
+            db = db_manager
             
             # Check if sync connection is available and working
             if not hasattr(db, 'sync_connection') or db.sync_connection is None:

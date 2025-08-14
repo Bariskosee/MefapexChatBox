@@ -26,7 +26,7 @@ from api.chat import router as chat_router, set_rate_limiter as set_chat_rate_li
 from api.health import router as health_router
 
 # Import database manager (PostgreSQL as default)
-from postgresql_manager import get_postgresql_manager
+from database.manager import db_manager
 
 # Import other services
 from model_manager import model_manager
@@ -62,11 +62,12 @@ async def lifespan(app: FastAPI):
     global db_manager
     
     try:
-        # Initialize PostgreSQL database
-        logger.info("🔥 Initializing PostgreSQL database...")
-        db_manager = get_postgresql_manager()
-        await db_manager.initialize()
-        logger.info("✅ PostgreSQL database initialized")
+        # Database manager is already initialized
+        logger.info("✅ Database manager ready")
+        
+        # Test database connection
+        health = db_manager.health_check()
+        logger.info(f"✅ Database health: {health.get('status', 'unknown')}")
         
         # Initialize authentication service
         logger.info("🔐 Initializing authentication...")

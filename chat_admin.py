@@ -95,7 +95,7 @@ def list_responses():
     """Mevcut response'ları listele"""
     
     try:
-        from database_manager import db_manager
+        from database.manager import db_manager
         
         print("📋 Mevcut Response'lar")
         print("=" * 30)

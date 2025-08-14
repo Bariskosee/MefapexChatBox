@@ -122,8 +122,8 @@ class DatabaseFactory:
             DatabaseInterface: Appropriate manager instance
         """
         if db_type.lower() == 'postgresql':
-            from postgresql_manager import PostgreSQLManager
-            return PostgreSQLManager(config)
+            from database.manager import DatabaseManager
+            return DatabaseManager(config)
         elif db_type.lower() == 'sqlite':
             from database.manager import DatabaseManager
             return DatabaseManager(config)

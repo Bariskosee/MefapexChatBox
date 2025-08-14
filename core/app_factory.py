@@ -22,7 +22,7 @@ from api.chat import router as chat_router, set_rate_limiter as set_chat_rate_li
 from api.health import router as health_router
 
 # Import core services
-from database_manager import db_manager
+from database.manager import db_manager
 from model_manager import model_manager
 from websocket_manager import websocket_manager
 from auth_service import init_auth_service

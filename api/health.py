@@ -10,7 +10,7 @@ import time
 import psutil
 from datetime import datetime
 
-from database_manager import db_manager
+from database.manager import db_manager
 from model_manager import model_manager
 from core.configuration import get_config
 

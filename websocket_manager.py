@@ -287,7 +287,7 @@ class WebSocketMessageHandler:
         Handle request for chat history
         """
         try:
-            from database_manager import db_manager
+            from database.manager import db_manager
             
             # Get user info from websocket connection
             user_info = getattr(websocket, 'user_info', None)
@@ -327,7 +327,7 @@ class WebSocketMessageHandler:
         Handle request to clear chat history
         """
         try:
-            from database_manager import db_manager
+            from database.manager import db_manager
             
             # Get user info from websocket connection
             user_info = getattr(websocket, 'user_info', None)

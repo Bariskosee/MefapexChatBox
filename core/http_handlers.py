@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from database.utils import get_database_helper
 
 from auth_service import get_auth_service, verify_token
-from database_manager import db_manager
+from database.manager import db_manager
 from model_manager import model_manager
 from content_manager import ContentManager
 from core.configuration import get_config

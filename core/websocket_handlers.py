@@ -14,7 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.websockets import WebSocketState
 
 from auth_service import get_auth_service
-from database_manager import db_manager
+from database.manager import db_manager
 from model_manager import model_manager
 from content_manager import ContentManager
 from memory_monitor import MemoryMonitor
