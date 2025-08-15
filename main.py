@@ -661,6 +661,6 @@ if __name__ == "__main__":
         "main:app",
         host=config.server.host,
         port=config.server.port,
-        reload=config.server.debug,
+        reload=False,  # Disable reload to fix connection issues
         log_level="info" if config.server.debug else "warning"
     )

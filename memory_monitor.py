@@ -409,12 +409,16 @@ def track_memory(operation_name: str = None):
 # Example usage functions
 def setup_memory_monitoring():
     """Setup memory monitoring for production with AI model optimizations"""
+    import os
     global memory_monitor
+    
+    # Get memory threshold from environment or use default
+    memory_threshold = float(os.getenv("MEMORY_THRESHOLD_MB", "1536.0"))
     
     # Reinitialize with correct settings
     memory_monitor = MemoryMonitor(
         check_interval=60,  # Check every 60 seconds
-        memory_threshold_mb=1536.0,  # 1.5GB threshold for AI models
+        memory_threshold_mb=memory_threshold,  # Use environment variable
         leak_detection_window=10
     )
     
