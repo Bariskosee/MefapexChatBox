@@ -324,41 +324,51 @@ class ModelManager:
     
     def generate_text_response(self, prompt: str, max_length: int = 80, turkish_context: bool = True) -> str:
         """
-        Generate text response with memory-efficient settings and Turkish support
+        Generate text response with improved quality settings and Turkish support
         """
         try:
             if self.text_generator is None:
                 raise RuntimeError("Text generator not available")
             
-            # Limit prompt length
-            prompt = prompt[:200]  # Max 200 chars
+            # Limit prompt length and clean it
+            prompt = prompt[:150]  # Reduced prompt length
             
-            # Add Turkish context if needed
+            # Enhanced Turkish context for better responses
             if turkish_context and self._language_detector.is_turkish(prompt):
-                # Add subtle Turkish context without being too explicit
-                prompt = f"Türkçe: {prompt}"
+                # Create a more structured prompt for better quality
+                enhanced_prompt = f"Soru: {prompt}\nYanıt:"
+            else:
+                enhanced_prompt = prompt
             
             with torch.no_grad():  # Prevent gradient accumulation
                 outputs = self.text_generator(
-                    prompt,
-                    max_length=min(max_length, 80),  # Reduced max length
+                    enhanced_prompt,
+                    max_length=min(max_length, 80),  # Reduced max length for focus
                     num_return_sequences=1,
-                    temperature=0.8,
+                    temperature=0.6,  # Reduced for more coherent responses
                     do_sample=True,
-                    top_p=0.9,
-                    top_k=50,
+                    top_p=0.85,  # Reduced for better quality
+                    top_k=40,  # Reduced for more focused responses
                     pad_token_id=self.text_generator.tokenizer.eos_token_id,
                     eos_token_id=self.text_generator.tokenizer.eos_token_id,
-                    no_repeat_ngram_size=2,
-                    repetition_penalty=1.2,
+                    no_repeat_ngram_size=3,  # Increased to prevent repetition
+                    repetition_penalty=1.3,  # Increased to discourage repetition
+                    length_penalty=0.8,  # Encourage shorter, more focused responses
+                    early_stopping=True,  # Stop when EOS token is reached
                     clean_up_tokenization_spaces=True
                 )
             
             generated_text = outputs[0]['generated_text'].strip()
             
-            # Clean up Turkish context prefix if it was added
-            if turkish_context and generated_text.startswith("Türkçe: "):
-                generated_text = generated_text[8:].strip()
+            # Clean up the enhanced prompt prefix if it was added
+            if turkish_context and generated_text.startswith("Soru:"):
+                # Remove the "Soru: ... Yanıt:" part
+                yanit_index = generated_text.find("Yanıt:")
+                if yanit_index != -1:
+                    generated_text = generated_text[yanit_index + 6:].strip()
+            
+            # Additional cleaning for better quality
+            generated_text = self._post_process_generated_text(generated_text, prompt)
             
             # Force cleanup after text generation
             self._force_gc()
@@ -368,6 +378,93 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Text generation failed: {e}")
             raise
+    
+    def _post_process_generated_text(self, text: str, original_prompt: str) -> str:
+        """
+        Post-process generated text for better quality
+        """
+        try:
+            # Remove original prompt if it appears at the beginning
+            if original_prompt and original_prompt.lower() in text.lower()[:100]:
+                idx = text.lower().find(original_prompt.lower())
+                if idx == 0:  # Only if it's at the very beginning
+                    text = text[len(original_prompt):].strip()
+            
+            # Remove common artifacts
+            text = text.replace("</s>", "").replace("<s>", "").strip()
+            
+            # Remove excessive whitespace
+            import re
+            text = re.sub(r'\s+', ' ', text).strip()
+            
+            # If text is too short or seems incomplete, return empty
+            if len(text) < 8:
+                return ""
+            
+            # Remove incomplete sentences at the end
+            sentences = text.split('.')
+            if len(sentences) > 1 and len(sentences[-1].strip()) < 5:
+                # Last sentence seems incomplete, remove it
+                text = '.'.join(sentences[:-1]) + '.'
+            
+            return text.strip()
+            
+        except Exception as e:
+            logger.warning(f"Post-processing failed: {e}")
+            return text
+    
+    async def generate_huggingface_response(self, message: str, user_id: str = None) -> str:
+        """
+        Generate improved Hugging Face response with quality control
+        """
+        try:
+            # Use the improved text generation method
+            response = self.generate_text_response(
+                prompt=message,
+                max_length=100,
+                turkish_context=True
+            )
+            
+            # Quality check and enhancement
+            if response and len(response.strip()) > 8:
+                cleaned_response = response.strip()
+                
+                # Advanced cleaning: remove user message repetition
+                if message.lower() in cleaned_response.lower():
+                    # Find and remove the original message
+                    idx = cleaned_response.lower().find(message.lower())
+                    if idx >= 0:
+                        before = cleaned_response[:idx].strip()
+                        after = cleaned_response[idx + len(message):].strip()
+                        # Keep the part that seems like a response
+                        if len(after) > len(before) and len(after) > 10:
+                            cleaned_response = after
+                        elif len(before) > 10:
+                            cleaned_response = before
+                
+                # Check for minimum quality standards
+                if len(cleaned_response.split()) < 3:
+                    return "Üzgünüm, şu anda bu konuda size net bir yanıt veremiyorum. Lütfen sorunuzu daha detaylandırabilir misiniz?"
+                
+                # Check for repetitive or nonsensical content
+                words = cleaned_response.split()
+                if len(set(words)) < len(words) * 0.7:  # Too many repeated words
+                    return "Bu konu hakkında size daha iyi yardımcı olabilmem için sorunuzu biraz daha açabilir misiniz?"
+                
+                # Add appropriate MEFAPEX context for good responses
+                if len(cleaned_response) > 15 and not any(word in cleaned_response.lower() for word in ['mefapex', 'destek', 'yardım', 'asistan']):
+                    formatted_response = f"🤖 **MEFAPEX AI Asistanı:**\n\n{cleaned_response}\n\n💡 Daha detaylı bilgi için destek ekibimizle iletişime geçebilirsiniz."
+                    return formatted_response
+                
+                return cleaned_response
+            
+            # Fallback for poor quality responses
+            return "Üzgünüm, şu anda bu konuda size yardımcı olamıyorum. Farklı bir soru sormayı deneyebilir veya destek ekibimizle iletişime geçebilirsiniz."
+            
+        except Exception as e:
+            logger.error(f"Hugging Face response generation failed: {e}")
+            # Return a helpful fallback instead of raising
+            return "Teknik bir sorun yaşıyorum. Lütfen sorunuzu tekrar sormayı deneyin veya destek ekibimizle iletişime geçin."
     
     def _force_gc(self):
         """Force garbage collection and CUDA cache cleanup"""
