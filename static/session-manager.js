@@ -27,6 +27,11 @@ class SessionManager {
         this.MAX_HISTORY_SESSIONS = 15;
         this.CACHE_DURATION_MS = 30000; // 30 seconds
         
+        // Save debounce mechanism
+        this.saveTimeout = null;
+        this.isSaving = false;
+        this.pendingSaveRequest = false;
+        
         console.log('🚀 SessionManager initialized');
     }
 
@@ -162,7 +167,7 @@ class SessionManager {
      */
 
     /**
-     * Add message to current session and save to database
+     * Add message to current session and save to database with debounce
      */
     async addMessage(userMessage, botResponse) {
         if (!this.currentSession) {
@@ -170,44 +175,114 @@ class SessionManager {
             return;
         }
 
+        // Create message hash for duplicate prevention
+        const messageHash = this.createMessageHash(userMessage, botResponse);
+        
+        // Check if this exact message already exists in the session
+        const messageExists = this.messages.some(msg => {
+            const existingHash = this.createMessageHash(
+                msg.user_message || '',
+                msg.bot_response || ''
+            );
+            return existingHash === messageHash;
+        });
+
+        if (messageExists) {
+            console.warn('⚠️ Duplicate message detected, skipping save:', {userMessage, botResponse});
+            return;
+        }
+
         const message = {
             id: Date.now(),
             user_message: userMessage,
             bot_response: botResponse,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            hash: messageHash
         };
 
         this.messages.push(message);
         console.log(`📝 Message added to session ${this.currentSession} (total: ${this.messages.length})`);
         
-        // Auto-save to database immediately
+        // Schedule debounced save
+        this.scheduleDebouncedSave();
+    }
+
+    /**
+     * Create a hash for message duplicate detection
+     */
+    createMessageHash(userMessage, botResponse) {
+        const content = `${userMessage || ''}:${botResponse || ''}`;
+        // Simple hash function
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return hash.toString(36);
+    }
+
+    /**
+     * Schedule a debounced save to prevent multiple save requests
+     */
+    scheduleDebouncedSave() {
+        // Clear existing timeout
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+        }
+
+        // If already saving, mark that we need another save after completion
+        if (this.isSaving) {
+            this.pendingSaveRequest = true;
+            return;
+        }
+
+        // Schedule save with debounce
+        this.saveTimeout = setTimeout(async () => {
+            await this.performDebouncedSave();
+        }, 500); // 500ms debounce
+    }
+
+    /**
+     * Perform the actual save with protection against duplicate requests
+     */
+    async performDebouncedSave() {
+        if (this.isSaving) {
+            this.pendingSaveRequest = true;
+            return;
+        }
+
+        this.isSaving = true;
+        this.pendingSaveRequest = false;
+
         try {
-            await this.saveMessageToDatabase(message);
-            console.log('✅ Message auto-saved to database');
+            await this.saveCurrentSessionToDatabase();
+            console.log('✅ Session saved via debounced save');
         } catch (error) {
-            console.error('❌ Failed to auto-save message:', error);
-            // Continue anyway - message is still in memory for manual save
+            console.error('❌ Failed to save session via debounced save:', error);
+        } finally {
+            this.isSaving = false;
+            
+            // If there's a pending request, schedule another save
+            if (this.pendingSaveRequest) {
+                setTimeout(() => this.scheduleDebouncedSave(), 100);
+            }
         }
     }
 
     /**
-     * Save individual message to database
+     * Save current session to database
      */
-    async saveMessageToDatabase(message) {
-        if (!this.authToken || !this.currentSession) {
-            throw new Error('No authentication token or session');
+    async saveCurrentSessionToDatabase() {
+        if (!this.authToken || !this.currentSession || this.messages.length === 0) {
+            console.log('⚠️ Cannot save: missing auth token, session, or no messages');
+            return;
         }
 
-        // FIXED: Use the message object directly for immediate saving
-        const messageData = {
-            sessionId: this.currentSession,
-            user_message: message.user_message,
-            bot_response: message.bot_response,
-            source: message.source || 'auto_save',
-            timestamp: message.timestamp
-        };
-
-        console.log('💾 Saving individual message:', messageData);
+        const sessionData = this.buildSessionData();
+        
+        console.log('💾 Saving current session to database:', sessionData.sessionId);
+        console.log('💾 Message count:', sessionData.messageCount);
 
         const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, {
             method: 'POST',
@@ -215,13 +290,7 @@ class SessionManager {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.authToken}`
             },
-            body: JSON.stringify({
-                sessionId: this.currentSession,
-                messages: [messageData],
-                messageCount: 1,
-                userId: this.userId,
-                startedAt: this.sessionStartedAt
-            })
+            body: JSON.stringify(sessionData)
         });
 
         if (!response.ok) {
@@ -244,16 +313,9 @@ class SessionManager {
         }
 
         try {
-            const sessionData = this.buildSessionData();
-            const result = await this.saveToBackendWithRetry(sessionData);
-            
-            if (result.success) {
-                showToast('Oturum başarıyla kaydedildi', 'success');
-                this.invalidateHistoryCache();
-            } else {
-                throw new Error(result.error);
-            }
-            
+            await this.saveCurrentSessionToDatabase();
+            showToast('Oturum başarıyla kaydedildi', 'success');
+            this.invalidateHistoryCache();
         } catch (error) {
             console.error('❌ Manual save failed:', error);
             showToast('Kaydetme başarısız: ' + error.message, 'error');
@@ -446,7 +508,7 @@ class SessionManager {
         const historyList = document.getElementById('chatHistoryList');
         if (historyList) {
             historyList.innerHTML = `
-                <li style="padding: 40px; text-align: center; color: #ffd700;">
+                <li style="padding: 40px; text-align: center; color: #5dade2;">
                     🔒 Geçmiş sohbetleri görüntülemek için<br>
                     giriş yapmanız gerekiyor<br><br>
                     <button onclick="closeChatHistorySidebar()" 
@@ -462,11 +524,7 @@ class SessionManager {
         const historyList = document.getElementById('chatHistoryList');
         if (!historyList) return;
 
-        let html = `
-            <li style="padding: 12px 20px; background: rgba(102,126,234,0.15); border-bottom: 2px solid #667eea; color: #667eea; font-weight: 600; text-align: center;">
-                📚 Geçmiş Sohbetler (${sessions.length}/${this.MAX_HISTORY_SESSIONS})
-            </li>
-        `;
+        let html = ``;
 
         // Show current session if it has messages
         if (this.currentSession && this.messages.length > 0) {
@@ -494,7 +552,7 @@ class SessionManager {
                     onmouseout="this.style.background='transparent'"
                     onclick="sessionManager.loadHistorySession('${session.sessionId || session.session_id}')">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="color: #ffd700; font-weight: 500;">💬 Sohbet #${sessions.length - index}</span>
+                        <span style="color: #5dade2; font-weight: 500;">💬 Sohbet #${sessions.length - index}</span>
                         <span style="color: #999; font-size: 12px;">${session.messageCount || session.message_count || 0} mesaj</span>
                     </div>
                     <div style="color: #ccc; font-size: 13px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" 
@@ -549,13 +607,16 @@ class SessionManager {
                 // Load messages
                 messages.forEach(msg => {
                     console.log('📖 Loading history message:', msg);
-                    
-                    // Safety checks for message content
-                    const userMsg = msg.user_message || msg.message || 'Boş mesaj';
-                    const botMsg = msg.bot_response || msg.response || 'Boş yanıt';
-                    
-                    addMessageToUI(userMsg, 'user');
-                    addMessageToUI(botMsg, 'bot');
+
+                    // Determine role and safely extract content
+                    const content = msg.content || msg.user_message || msg.message ||
+                                   msg.bot_response || msg.response || '';
+
+                    if (msg.type === 'user' || msg.role === 'user') {
+                        addMessageToUI(content || 'Boş mesaj', 'user');
+                    } else {
+                        addMessageToUI(content || 'Boş yanıt', 'bot');
+                    }
                 });
 
                 // Back button
@@ -650,11 +711,19 @@ class SessionManager {
         console.log('🧹 Cleaning up SessionManager...');
         console.log('🧹 Before cleanup - authToken:', !!this.authToken, 'userId:', this.userId);
         
+        // Clear any pending save timeout
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+            this.saveTimeout = null;
+        }
+        
         this.currentSession = null;
         this.authToken = null;
         this.userId = null;
         this.sessionStartedAt = null;
         this.messages = [];
+        this.isSaving = false;
+        this.pendingSaveRequest = false;
         this.invalidateHistoryCache();
         
         console.log('🧹 After cleanup - authToken:', !!this.authToken, 'userId:', this.userId);

@@ -386,10 +386,9 @@ async def chat_authenticated(chat_msg: ChatMessage, request: Request, current_us
         logger.error(f"Authenticated chat error: {e}")
         raise HTTPException(status_code=500, detail="Chat error")
 
-# Session management endpoints
 @app.post("/chat/sessions/save")
 async def save_session(request: Request, current_user: dict = Depends(verify_token)):
-    """Save current chat session"""
+    """Save current chat session with duplicate prevention"""
     try:
         data = await request.json()
         session_id = data.get("sessionId")
@@ -405,18 +404,49 @@ async def save_session(request: Request, current_user: dict = Depends(verify_tok
             logger.info("No messages to save")
             return {"success": True, "message": "No messages to save"}
         
-        # Save messages to database
+        # Check if this is a batch save or single message save
+        is_batch_save = len(messages) > 1
+        
+        # Save messages to database with duplicate prevention
         saved_count = 0
         for message in messages:
             try:
-                db_manager.add_message(
-                    session_id=session_id,
-                    user_id=user_id,
-                    user_message=message.get("user_message", ""),
-                    bot_response=message.get("bot_response", ""),
-                    source=message.get("source", "session_save")
-                )
-                saved_count += 1
+                user_msg = message.get("user_message", "")
+                bot_resp = message.get("bot_response", "")
+                
+                # Skip empty messages
+                if not user_msg and not bot_resp:
+                    continue
+                
+                # Create a simple hash to detect duplicates
+                import hashlib
+                message_hash = hashlib.md5(f"{session_id}:{user_msg}:{bot_resp}".encode()).hexdigest()
+                
+                # Check if this exact message already exists in this session
+                existing_messages = db_manager.get_session_messages(session_id)
+                message_exists = False
+                
+                for existing in existing_messages:
+                    existing_hash = hashlib.md5(
+                        f"{session_id}:{existing.get('message', '')}:{existing.get('response', '')}"
+                        .encode()
+                    ).hexdigest()
+                    if existing_hash == message_hash:
+                        message_exists = True
+                        logger.info(f"⚠️ Duplicate message detected, skipping: {message_hash[:8]}")
+                        break
+                
+                if not message_exists:
+                    db_manager.add_message(
+                        session_id=session_id,
+                        user_id=user_id,
+                        user_message=user_msg,
+                        bot_response=bot_resp,
+                        source=message.get("source", "session_save")
+                    )
+                    saved_count += 1
+                    logger.info(f"✅ Saved new message: {message_hash[:8]}")
+                
             except Exception as msg_error:
                 logger.warning(f"Failed to save individual message: {msg_error}")
                 # Continue with other messages
