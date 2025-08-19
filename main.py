@@ -134,8 +134,9 @@ app = FastAPI(
     title="MEFAPEX AI Chatbot",
     description="Advanced AI-powered chatbot with PostgreSQL support",
     version="2.2.0",
-    docs_url="/docs" if config.server.debug else None,
-    redoc_url="/redoc" if config.server.debug else None,
+    docs_url="/docs",  # Always enable docs
+    redoc_url="/redoc",  # Always enable redoc
+    openapi_url="/openapi.json",  # Ensure OpenAPI URL is set
     lifespan=lifespan
 )
 
@@ -183,6 +184,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def read_root():
     """Serve the main chat interface"""
     return FileResponse("static/index.html", media_type="text/html; charset=utf-8")
+
+# Alternative docs endpoint
+@app.get("/docs-alt")
+async def docs_alternative():
+    """Alternative documentation page"""
+    return FileResponse("static/docs.html", media_type="text/html; charset=utf-8")
 
 # Legacy login endpoint (for backward compatibility)
 class LoginRequest(BaseModel):
