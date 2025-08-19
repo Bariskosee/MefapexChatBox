@@ -1,6 +1,6 @@
 """
 Enhanced Content Manager for MEFAPEX Chatbot
-Handles static responses from JSON files + Hugging Face AI integration
+Handles static responses from JSON files + Hugging Face AI integration + Hybrid Relevance Detection
 """
 
 import json
@@ -9,6 +9,15 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Tuple
 
+# Import hybrid relevance detector
+try:
+    from hybrid_relevance_detector import HybridRelevanceDetector, RelevanceLevel
+    RELEVANCE_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    RELEVANCE_DETECTOR_AVAILABLE = False
+    HybridRelevanceDetector = None
+    RelevanceLevel = None
+
 logger = logging.getLogger(__name__)
 
 class ContentManager:
@@ -16,6 +25,7 @@ class ContentManager:
     Enhanced content management system:
     - Static responses from JSON files (primary)
     - Hugging Face AI integration (secondary)
+    - Hybrid relevance detection for off-topic questions
     - Intelligent keyword matching
     - Response caching for performance
     """
@@ -28,6 +38,21 @@ class ContentManager:
         self._cache = {}
         self._cache_enabled = True
         self._ai_enabled = True
+        self._relevance_detection_enabled = True
+        
+        # Initialize hybrid relevance detector
+        if RELEVANCE_DETECTOR_AVAILABLE:
+            try:
+                self.relevance_detector = HybridRelevanceDetector("MEFAPEX Bilişim Teknolojileri")
+                logger.info("✅ Hybrid relevance detection enabled")
+            except Exception as e:
+                self.relevance_detector = None
+                self._relevance_detection_enabled = False
+                logger.warning(f"⚠️ Relevance detector initialization failed: {e}")
+        else:
+            self.relevance_detector = None
+            self._relevance_detection_enabled = False
+            logger.warning("⚠️ Hybrid relevance detector not available")
         
         # Import model manager for AI responses
         try:
@@ -67,21 +92,59 @@ class ContentManager:
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
-        Find appropriate response for user message
-        Flow: Static -> Hugging Face AI -> Default
+        Find appropriate response for user message with relevance detection
+        Flow: Relevance Check -> Static -> Hugging Face AI -> Default
         Returns: (response_text, source)
-        Source can be: static, cache_static, huggingface, cache_huggingface, default
+        Source can be: irrelevant, static, cache_static, huggingface, cache_huggingface, default
         """
         if not user_message or not user_message.strip():
             return self._get_default_response(user_message), "default"
         
         user_message_lower = user_message.lower().strip()
         
-        # Check cache first
+        # Check cache first (for performance)
         if self._cache_enabled and user_message_lower in self._cache:
             cached_response, source = self._cache[user_message_lower]
             logger.debug(f"🎯 Cache hit for: {user_message[:30]}...")
             return cached_response, f"cache_{source}"
+        
+        # Check relevance using hybrid detector (if enabled)
+        if self._relevance_detection_enabled and self.relevance_detector:
+            try:
+                # Check if we're already in an event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # We're in an event loop, create a task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(self._run_relevance_check, user_message)
+                        relevance_result = future.result(timeout=2.0)  # 2 second timeout
+                except RuntimeError:
+                    # No event loop running, we can use asyncio.run
+                    relevance_result = asyncio.run(self._check_relevance_async(user_message))
+                
+                # If question is clearly irrelevant, return smart response immediately
+                if (relevance_result and not relevance_result.is_relevant and 
+                    relevance_result.confidence > 0.7 and
+                    relevance_result.response_suggestion):
+                    
+                    logger.info(f"🚫 Irrelevant question detected ({relevance_result.confidence:.3f}): {user_message[:50]}...")
+                    logger.info(f"📊 Method: {relevance_result.method.value}, Level: {relevance_result.relevance_level.value}")
+                    
+                    # Cache the irrelevant response
+                    if self._cache_enabled:
+                        self._cache[user_message_lower] = (relevance_result.response_suggestion, "irrelevant")
+                    
+                    return relevance_result.response_suggestion, "irrelevant"
+                
+                # Log relevance analysis for debugging
+                if relevance_result:
+                    logger.debug(f"🎯 Relevance: {relevance_result.is_relevant} "
+                               f"({relevance_result.confidence:.3f}) - {relevance_result.method.value}")
+                
+            except Exception as e:
+                logger.error(f"❌ Relevance detection failed: {e}")
+                # Continue with normal processing
         
         # Try static responses first (highest priority)
         response, source = self._find_static_response(user_message_lower)
@@ -116,6 +179,20 @@ class ContentManager:
             self._cache[user_message_lower] = (intelligent_response, "intelligent_default")
         
         return intelligent_response, "intelligent_default"
+    
+    async def _check_relevance_async(self, user_message: str):
+        """
+        Async wrapper for relevance detection
+        """
+        if self.relevance_detector:
+            return await self.relevance_detector.classify(user_message)
+        return None
+    
+    def _run_relevance_check(self, user_message: str):
+        """
+        Synchronous wrapper to run relevance check in thread
+        """
+        return asyncio.run(self._check_relevance_async(user_message))
 
     def _find_static_response(self, user_message_lower: str) -> Tuple[Optional[str], str]:
         """Find matching static response"""
@@ -495,8 +572,24 @@ class ContentManager:
             "cache_entries": len(self._cache),
             "cache_enabled": self._cache_enabled,
             "ai_enabled": self._ai_enabled,
-            "huggingface_available": self.model_manager is not None
+            "huggingface_available": self.model_manager is not None,
+            "relevance_detection_enabled": self._relevance_detection_enabled,
+            "relevance_detector_available": RELEVANCE_DETECTOR_AVAILABLE
         }
+        
+        # Add relevance detection stats
+        if self._relevance_detection_enabled and self.relevance_detector:
+            stats["relevance_detection"] = {
+                "enabled": True,
+                "company_name": self.relevance_detector.company_name,
+                "domain_categories": len(self.relevance_detector.domain_categories),
+                "quick_filter_keywords": {
+                    "relevant": len(self.relevance_detector.quick_filters["definitely_relevant"]),
+                    "irrelevant": len(self.relevance_detector.quick_filters["definitely_irrelevant"])
+                }
+            }
+        else:
+            stats["relevance_detection"] = {"enabled": False}
         
         # Add AI model stats if available
         if self.model_manager:
@@ -558,6 +651,88 @@ class ContentManager:
         status = "enabled" if enabled else "disabled"
         logger.info(f"🤖 AI responses {status}")
         return True
+    
+    def enable_relevance_detection(self, enabled: bool = True):
+        """
+        Enable or disable relevance detection
+        """
+        if enabled and not self.relevance_detector:
+            logger.warning("⚠️ Cannot enable relevance detection: detector not available")
+            return False
+        
+        self._relevance_detection_enabled = enabled
+        status = "enabled" if enabled else "disabled"
+        logger.info(f"🎯 Relevance detection {status}")
+        return True
+    
+    async def test_relevance_detection(self, test_messages: List[str] = None):
+        """
+        Test relevance detection with sample messages
+        """
+        if not self._relevance_detection_enabled or not self.relevance_detector:
+            logger.warning("⚠️ Relevance detection not available for testing")
+            return {}
+        
+        if test_messages is None:
+            test_messages = [
+                "MEFAPEX fabrikasında çalışma saatleri nedir?",  # Relevant
+                "En iyi pizza tarifi nedir?",                    # Irrelevant
+                "Yazılım geliştirme hizmetleri",                 # Relevant
+                "Hangi film izlemeliyim?",                       # Irrelevant
+                "Teknik destek nasıl alabilirim?",               # Relevant
+                "Bugün hava nasıl?",                             # Irrelevant
+            ]
+        
+        results = {}
+        total_time = 0
+        
+        logger.info("🧪 Testing relevance detection...")
+        
+        for message in test_messages:
+            try:
+                result = await self.relevance_detector.classify(message)
+                
+                results[message] = {
+                    "is_relevant": result.is_relevant,
+                    "confidence": result.confidence,
+                    "level": result.relevance_level.value,
+                    "method": result.method.value,
+                    "processing_time_ms": result.processing_time_ms,
+                    "reasoning": result.reasoning,
+                    "has_suggestion": result.response_suggestion is not None
+                }
+                
+                total_time += result.processing_time_ms
+                
+                # Log result
+                relevance_emoji = "✅" if result.is_relevant else "❌"
+                logger.info(f"{relevance_emoji} {message[:40]}... -> "
+                          f"{result.confidence:.3f} ({result.processing_time_ms:.1f}ms)")
+                
+            except Exception as e:
+                logger.error(f"❌ Test failed for '{message}': {e}")
+                results[message] = {"error": str(e)}
+        
+        # Summary
+        avg_time = total_time / len(test_messages) if test_messages else 0
+        relevant_count = sum(1 for r in results.values() 
+                           if isinstance(r, dict) and r.get("is_relevant", False))
+        
+        summary = {
+            "total_tests": len(test_messages),
+            "relevant_detected": relevant_count,
+            "irrelevant_detected": len(test_messages) - relevant_count,
+            "average_processing_time_ms": avg_time,
+            "total_processing_time_ms": total_time
+        }
+        
+        logger.info(f"📊 Test Summary: {relevant_count}/{len(test_messages)} relevant, "
+                   f"avg time: {avg_time:.1f}ms")
+        
+        return {
+            "results": results,
+            "summary": summary
+        }
 
 # Global instance
 content_manager = ContentManager()

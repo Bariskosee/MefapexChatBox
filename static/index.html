@@ -369,6 +369,8 @@
             border-top: 2px solid #4a5a6b;
             align-items: center;
             gap: 15px;
+            position: relative;
+            z-index: 200;
         }
 
         .chat-input {
@@ -429,6 +431,13 @@
             color: #7f8c8d;
             background: rgba(52, 152, 219, 0.05);
             border-top: 1px solid rgba(52, 152, 219, 0.1);
+            position: absolute;
+            bottom: 80px;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            margin: 0;
+            border-radius: 0;
         }
 
         .error-message {
@@ -534,6 +543,12 @@
                 font-size: 16px;
             }
 
+            .typing-indicator {
+                bottom: 70px;
+                padding: 12px 15px;
+                font-size: 14px;
+            }
+
             .history-button-topLeft {
                 top: 15px;
                 left: 15px;
@@ -604,6 +619,12 @@
             .chat-input-container {
                 padding: 15px;
                 gap: 10px;
+            }
+
+            .typing-indicator {
+                bottom: 60px;
+                padding: 10px 15px;
+                font-size: 13px;
             }
 
             .header-controls {
