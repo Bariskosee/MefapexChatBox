@@ -1,6 +1,7 @@
 """
-Enhanced Content Manager for MEFAPEX Chatbot
-Handles static responses from JSON files + Hugging Face AI integration + Hybrid Relevance Detection
+Static-Only Content Manager for MEFAPEX Chatbot
+Handles ONLY static responses from JSON files + AI-assisted understanding
+AI is used ONLY to better understand user intent and match with static responses
 """
 
 import json
@@ -9,24 +10,15 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Tuple
 
-# Import hybrid relevance detector
-try:
-    from hybrid_relevance_detector import HybridRelevanceDetector, RelevanceLevel
-    RELEVANCE_DETECTOR_AVAILABLE = True
-except ImportError as e:
-    RELEVANCE_DETECTOR_AVAILABLE = False
-    HybridRelevanceDetector = None
-    RelevanceLevel = None
-
 logger = logging.getLogger(__name__)
 
 class ContentManager:
     """
-    Enhanced content management system:
-    - Static responses from JSON files (primary)
-    - Hugging Face AI integration (secondary)
-    - Hybrid relevance detection for off-topic questions
-    - Intelligent keyword matching
+    Static-Only Content Management System:
+    - Primary: Static responses from JSON files
+    - AI Usage: ONLY for better understanding user intent to match static responses
+    - No AI-generated responses - sistem tamamen static temelli
+    - Default response when no static match found
     - Response caching for performance
     """
     
@@ -37,35 +29,23 @@ class ContentManager:
         self.settings = {}
         self._cache = {}
         self._cache_enabled = True
-        self._ai_enabled = True
-        self._relevance_detection_enabled = True
+        self._ai_enabled = True  # AI sadece anlama için kullanılır
         
-        # Initialize hybrid relevance detector
-        if RELEVANCE_DETECTOR_AVAILABLE:
-            try:
-                self.relevance_detector = HybridRelevanceDetector("MEFAPEX Bilişim Teknolojileri")
-                logger.info("✅ Hybrid relevance detection enabled")
-            except Exception as e:
-                self.relevance_detector = None
-                self._relevance_detection_enabled = False
-                logger.warning(f"⚠️ Relevance detector initialization failed: {e}")
-        else:
-            self.relevance_detector = None
-            self._relevance_detection_enabled = False
-            logger.warning("⚠️ Hybrid relevance detector not available")
-        
-        # Import model manager for AI responses
+        # Import model manager for AI-assisted understanding (not generation)
         try:
             from model_manager import model_manager
             self.model_manager = model_manager
-            logger.info("✅ Hugging Face AI integration enabled")
+            logger.info("✅ AI understanding assistance enabled (for static response matching)")
         except ImportError as e:
             self.model_manager = None
             self._ai_enabled = False
-            logger.warning(f"⚠️ Hugging Face AI not available: {e}")
+            logger.warning(f"⚠️ AI understanding assistance not available: {e}")
         
         # Load static content on initialization
         self.load_static_content()
+        
+        logger.info("🎯 ContentManager initialized in STATIC-ONLY mode")
+        logger.info("📝 AI usage: Understanding assistance only, no response generation")
         
     def load_static_content(self) -> bool:
         """Load static responses from JSON file"""
@@ -92,13 +72,18 @@ class ContentManager:
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
-        Find appropriate response for user message with relevance detection
-        Flow: Relevance Check -> Static -> Hugging Face AI -> Default
+        Find appropriate response for user message - STATIC ONLY SYSTEM
+        Flow: Static Response -> AI Enhanced Understanding -> Default Response
         Returns: (response_text, source)
-        Source can be: irrelevant, static, cache_static, huggingface, cache_huggingface, default
+        Source can be: static, cache_static, default
+        
+        Sistem tamamen static cevap temelli çalışır:
+        - Static sorular arasında cevap varsa o döner
+        - Static sorular arasında cevap yoksa varsayılan mesaj döner
+        - Hugging Face sadece static soruları daha iyi anlamak ve yanıtlamak için kullanılır
         """
         if not user_message or not user_message.strip():
-            return self._get_default_response(user_message), "default"
+            return self._get_static_default_response(user_message), "default"
         
         user_message_lower = user_message.lower().strip()
         
@@ -108,46 +93,8 @@ class ContentManager:
             logger.debug(f"🎯 Cache hit for: {user_message[:30]}...")
             return cached_response, f"cache_{source}"
         
-        # Check relevance using hybrid detector (if enabled)
-        if self._relevance_detection_enabled and self.relevance_detector:
-            try:
-                # Check if we're already in an event loop
-                try:
-                    loop = asyncio.get_running_loop()
-                    # We're in an event loop, create a task
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(self._run_relevance_check, user_message)
-                        relevance_result = future.result(timeout=2.0)  # 2 second timeout
-                except RuntimeError:
-                    # No event loop running, we can use asyncio.run
-                    relevance_result = asyncio.run(self._check_relevance_async(user_message))
-                
-                # If question is clearly irrelevant, return smart response immediately
-                if (relevance_result and not relevance_result.is_relevant and 
-                    relevance_result.confidence > 0.7 and
-                    relevance_result.response_suggestion):
-                    
-                    logger.info(f"🚫 Irrelevant question detected ({relevance_result.confidence:.3f}): {user_message[:50]}...")
-                    logger.info(f"📊 Method: {relevance_result.method.value}, Level: {relevance_result.relevance_level.value}")
-                    
-                    # Cache the irrelevant response
-                    if self._cache_enabled:
-                        self._cache[user_message_lower] = (relevance_result.response_suggestion, "irrelevant")
-                    
-                    return relevance_result.response_suggestion, "irrelevant"
-                
-                # Log relevance analysis for debugging
-                if relevance_result:
-                    logger.debug(f"🎯 Relevance: {relevance_result.is_relevant} "
-                               f"({relevance_result.confidence:.3f}) - {relevance_result.method.value}")
-                
-            except Exception as e:
-                logger.error(f"❌ Relevance detection failed: {e}")
-                # Continue with normal processing
-        
-        # Try static responses first (highest priority)
-        response, source = self._find_static_response(user_message_lower)
+        # Try static responses first (primary system)
+        response, source = self._find_static_response_enhanced(user_message_lower, user_message)
         
         if response:
             # Cache the response
@@ -155,30 +102,13 @@ class ContentManager:
                 self._cache[user_message_lower] = (response, source)
             return response, source
         
-        # Try Hugging Face AI if static response not found
-        # AI with strict quality control enabled
-        ai_enabled_for_testing = True  # Set to False to disable AI
-        
-        if self._ai_enabled and self.model_manager and ai_enabled_for_testing:
-            try:
-                ai_response = self._generate_ai_response(user_message)
-                if ai_response and ai_response.strip() and len(ai_response.strip()) > 15:
-                    logger.info(f"🤖 AI response generated for: {user_message[:30]}...")
-                    # Cache the AI response
-                    if self._cache_enabled:
-                        self._cache[user_message_lower] = (ai_response, "huggingface")
-                    return ai_response, "huggingface"
-                else:
-                    logger.debug(f"🤖 AI response quality insufficient, using fallback for: {user_message[:30]}...")
-            except Exception as e:
-                logger.error(f"❌ AI response generation failed: {e}")
-        
-        # Return intelligent default response as fallback
-        intelligent_response = self._get_intelligent_default_response(user_message)
+        # No static response found - return default static message
+        default_response = self._get_static_default_response(user_message)
         if self._cache_enabled:
-            self._cache[user_message_lower] = (intelligent_response, "intelligent_default")
+            self._cache[user_message_lower] = (default_response, "default")
         
-        return intelligent_response, "intelligent_default"
+        logger.info(f"📝 No static response found for: {user_message[:50]}... - returning default")
+        return default_response, "default"
     
     async def _check_relevance_async(self, user_message: str):
         """
@@ -194,8 +124,108 @@ class ContentManager:
         """
         return asyncio.run(self._check_relevance_async(user_message))
 
+    def _find_static_response_enhanced(self, user_message_lower: str, original_message: str) -> Tuple[Optional[str], str]:
+        """
+        Enhanced static response finder with AI-assisted understanding
+        AI is used ONLY to better understand and match static responses
+        """
+        # First try direct keyword matching
+        direct_response, source = self._find_static_response(user_message_lower)
+        if direct_response:
+            logger.info(f"✅ Direct static match found for: {original_message[:30]}...")
+            return direct_response, source
+        
+        # If no direct match, try AI-enhanced understanding (if available)
+        if self._ai_enabled and self.model_manager:
+            try:
+                enhanced_response = self._ai_enhanced_static_matching(original_message, user_message_lower)
+                if enhanced_response:
+                    logger.info(f"🤖✅ AI-enhanced static match found for: {original_message[:30]}...")
+                    return enhanced_response, "static"
+            except Exception as e:
+                logger.debug(f"AI-enhanced matching failed: {e}")
+        
+        return None, ""
+    
+    def _ai_enhanced_static_matching(self, original_message: str, user_message_lower: str) -> Optional[str]:
+        """
+        Use AI to better understand user intent and match with static responses
+        AI DOES NOT generate responses, only helps understand which static response to use
+        """
+        try:
+            # Create embeddings for the user message and all static response keywords
+            if not hasattr(self.model_manager, 'get_sentence_embedding'):
+                return None
+            
+            user_embedding = self.model_manager.get_sentence_embedding(original_message)
+            if user_embedding is None:
+                return None
+            
+            best_match = None
+            best_similarity = 0.0
+            similarity_threshold = 0.6  # Minimum similarity for match
+            
+            # Check similarity with each static response's keywords and content
+            for category, response_data in self.static_responses.items():
+                if not isinstance(response_data, dict):
+                    continue
+                
+                keywords = response_data.get("keywords", [])
+                message_text = response_data.get("message", "")
+                
+                # Create combined text for better matching
+                combined_text = " ".join(keywords) + " " + message_text[:200]
+                
+                try:
+                    static_embedding = self.model_manager.get_sentence_embedding(combined_text)
+                    if static_embedding is None:
+                        continue
+                    
+                    # Calculate cosine similarity
+                    similarity = self._calculate_cosine_similarity(user_embedding, static_embedding)
+                    
+                    if similarity > best_similarity and similarity >= similarity_threshold:
+                        best_similarity = similarity
+                        best_match = message_text
+                        
+                        logger.debug(f"🎯 AI similarity match: {category} ({similarity:.3f})")
+                
+                except Exception as e:
+                    logger.debug(f"Embedding comparison failed for {category}: {e}")
+                    continue
+            
+            if best_match and best_similarity >= similarity_threshold:
+                logger.info(f"🤖 AI-enhanced match found with similarity: {best_similarity:.3f}")
+                return best_match
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"AI-enhanced static matching error: {e}")
+            return None
+    
+    def _calculate_cosine_similarity(self, embedding1, embedding2):
+        """Calculate cosine similarity between two embeddings"""
+        try:
+            import numpy as np
+            
+            # Normalize embeddings
+            norm1 = np.linalg.norm(embedding1)
+            norm2 = np.linalg.norm(embedding2)
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            # Calculate cosine similarity
+            similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
+            return float(similarity)
+            
+        except Exception as e:
+            logger.debug(f"Cosine similarity calculation error: {e}")
+            return 0.0
+
     def _find_static_response(self, user_message_lower: str) -> Tuple[Optional[str], str]:
-        """Find matching static response"""
+        """Find matching static response with keyword matching"""
         best_match = None
         best_score = 0
         
@@ -223,273 +253,40 @@ class ContentManager:
             return best_match, "static"
         
         return None, ""
-
-    def _generate_ai_response(self, user_message: str) -> Optional[str]:
-        """
-        Generate AI response using Hugging Face models with improved quality control
-        """
-        try:
-            if not self.model_manager:
-                return None
-            
-            # Limit message length for processing
-            message = user_message.strip()[:200]
-            
-            # Create a better prompt for Turkish context
-            enhanced_prompt = self._create_enhanced_prompt(message)
-            
-            # Generate response using Turkish-optimized models
-            ai_response = self.model_manager.generate_text_response(
-                prompt=enhanced_prompt,
-                max_length=120,  # Slightly longer for better context
-                turkish_context=True
-            )
-            
-            if ai_response and len(ai_response.strip()) > 10:
-                # Clean and validate the response
-                cleaned_response = self._clean_and_validate_ai_response(ai_response, user_message)
-                if cleaned_response:
-                    return cleaned_response
-            
-            # If AI response is poor quality, return None to trigger fallback
-            return None
-            
-        except Exception as e:
-            logger.error(f"AI response generation error: {e}")
-            return None
     
-    def _create_enhanced_prompt(self, user_message: str) -> str:
+    def _get_static_default_response(self, user_message: str = "") -> str:
         """
-        Create an enhanced prompt for better AI responses
+        Get static default response - sistem tamamen static temelli
+        Static sorularda cevap yoksa bu mesaj döner
         """
-        # Detect question type and create appropriate context
-        if any(word in user_message.lower() for word in ['hava', 'weather', 'meteoroloji']):
-            return f"MEFAPEX müşteri destek asistanı olarak hava durumu sorusuna kısa ve profesyonel yanıt ver: {user_message}"
+        # Static responses'dan default_response'u kullan
+        if "default_response" in self.static_responses:
+            default_data = self.static_responses["default_response"]
+            if isinstance(default_data, dict):
+                default_message = default_data.get("message", "")
+                if default_message and "{user_input}" in default_message:
+                    # User input'u güvenli şekilde ekle
+                    safe_input = user_message[:50] if user_message else "bilinmeyen soru"
+                    return default_message.replace("{user_input}", safe_input)
+                elif default_message:
+                    return default_message
         
-        elif any(word in user_message.lower() for word in ['nasıl', 'nedir', 'ne', 'kim', 'nerede', 'ne zaman']):
-            return f"MEFAPEX teknoloji firması destek uzmanı olarak bu soruya yardımcı ve bilgilendirici yanıt ver: {user_message}"
-        
-        elif any(word in user_message.lower() for word in ['öğren', 'program', 'kod', 'yazılım', 'teknoloji']):
-            return f"MEFAPEX teknoloji uzmanı olarak yazılım/teknoloji konusundaki bu soruya rehberlik et: {user_message}"
-        
-        else:
-            return f"MEFAPEX müşteri hizmetleri asistanı olarak bu konuda yardımcı ol: {user_message}"
-    
-    def _clean_and_validate_ai_response(self, ai_response: str, original_message: str) -> Optional[str]:
-        """
-        Clean, validate and improve AI response quality
-        """
-        try:
-            # Remove the original prompt if it appears in response
-            response = ai_response.strip()
-            
-            # Remove common prompt artifacts
-            prompt_artifacts = [
-                "MEFAPEX müşteri destek asistanı olarak",
-                "MEFAPEX teknoloji firması destek uzmanı olarak", 
-                "MEFAPEX teknoloji uzmanı olarak",
-                "MEFAPEX müşteri hizmetleri asistanı olarak",
-                "olarak bu soruya", "olarak hava durumu", "olarak yazılım",
-                "yanıt ver:", "yardımcı ol:", "rehberlik et:"
-            ]
-            
-            for artifact in prompt_artifacts:
-                if artifact in response:
-                    response = response.replace(artifact, "").strip()
-            
-            # Remove the original message if it appears at the start
-            if original_message.lower() in response.lower()[:50]:
-                idx = response.lower().find(original_message.lower())
-                if idx >= 0:
-                    response = response[idx + len(original_message):].strip()
-            
-            # Clean up common prefixes
-            prefixes_to_remove = [
-                "türkçe:", "turkish:", "cevap:", "response:", "yanıt:", "answer:",
-                "soru:", "question:", "merhaba", "selam", ":"
-            ]
-            
-            for prefix in prefixes_to_remove:
-                if response.lower().startswith(prefix):
-                    response = response[len(prefix):].strip()
-            
-            # Quality checks
-            if len(response) < 15:
-                logger.debug("AI response too short, rejecting")
-                return None
-            
-            # Check for repetitive patterns (sign of poor generation)
-            words = response.split()
-            if len(words) > 3:
-                if len(set(words[:5])) <= 2:  # Too repetitive
-                    logger.debug("AI response too repetitive, rejecting")
-                    return None
-            
-            # Check for training data artifacts more strictly
-            if any(artifact in response.lower() for artifact in [
-                'fiyat', 'güncellendi', 'web site', 'aracılığıyla', 'sunulmaktadır',
-                'cumhuriyet gazetesi', 'yazarı', 'köşe yazısı', 'hutbe',
-                'domuz eti', 'imam', 'vaaz', 'cuma namazı', 'anasayfa',
-                'müşteri temsilcisi', '0850', 'numaralı', 'şikayetiniz',
-                'en çok sorulan', 'sıcaklığı kaç', 'derece', 'telefon',
-                'ulaşabilirsiniz', 'aklınıza takılan'
-            ]):
-                logger.debug("AI response contains training artifacts, rejecting")
-                return None
-            
-            # Check for nonsensical patterns
-            nonsense_patterns = [
-                "###", "***", "===", "---", "///",
-                "çok çok çok", "ve ve ve", "bir bir bir",
-                "gibi gibi", "için için", "ile ile ile"
-            ]
-            
-            if any(pattern in response.lower() for pattern in nonsense_patterns):
-                logger.debug("AI response contains nonsense patterns, rejecting")
-                return None
-            
-            # Check if response seems relevant to the question
-            if not self._is_response_relevant(original_message, response):
-                logger.debug("AI response not relevant to question, rejecting")
-                return None
-            
-            # Additional quality checks for Turkish responses
-            if not self._passes_quality_checks(response):
-                logger.debug("AI response failed quality checks, rejecting")
-                return None
-            
-            # Format the response with MEFAPEX branding if appropriate
-            if len(response) > 20 and not any(brand in response.lower() for brand in ['mefapex', 'destek', 'yardım']):
-                formatted_response = f"🤖 **MEFAPEX AI Asistanı:**\n\n{response}\n\n💡 Daha detaylı bilgi için destek ekibimizle iletişime geçebilirsiniz."
-                return formatted_response
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Response cleaning error: {e}")
-            return None
-    
-    def _passes_quality_checks(self, response: str) -> bool:
-        """
-        Additional quality checks for AI responses
-        """
-        try:
-            # Check for common signs of poor quality
-            lower_response = response.lower()
-            
-            # Check for incomplete sentences (no proper ending)
-            if not response.strip().endswith(('.', '!', '?', ':', '🚀', '💡', '🌟', '✨')):
-                return False
-            
-            # Check for training artifacts more thoroughly
-            training_artifacts = [
-                'mefapex müşteri destek asistanı',
-                'mefapex müşteri hizmet',
-                'fiyatlar güncellendi',
-                'müşteri hizmetlerine bağlan',
-                'mefepro',
-                'sana yardım etmek için',
-                'bir sonraki',
-                'şimdi bu',
-                'diyebilirsin',
-                'gerekli malzeme',
-                'tamam, şimdi',
-                'hazır olduğunu bilmen',
-                'yemek tarifi ver',
-                'bahsettiklerinde',
-                'aradığında',
-                'pişirmek için',
-                'alacağım'
-            ]
-            
-            for artifact in training_artifacts:
-                if artifact in lower_response:
-                    return False
-            
-            # Check for broken sentences that start oddly
-            bad_starts = [
-                'yemek tarifi ver',
-                'müşteri hizmet',
-                'fiyatlar güncellendi',
-                'tamam, şimdi',
-                'sana yardım',
-                'bir sonraki',
-                'gerekli malzeme',
-                'pişirmek için'
-            ]
-            
-            for bad_start in bad_starts:
-                if lower_response.strip().startswith(bad_start):
-                    return False
-            
-            # Check for repetitive company name mentions (sign of confusion)
-            mefapex_count = lower_response.count('mefapex') + lower_response.count('mefopex') + lower_response.count('mefpex')
-            if mefapex_count > 2:
-                return False
-            
-            # Check for incomplete or fragmented sentences
-            if response.count('...') > 2:
-                return False
-            
-            # Check for HTML/URL fragments (sign of training data leakage)
-            if any(fragment in lower_response for fragment in ['http', 'www', 'href', 'html', '.com']):
-                return False
-            
-            # Check for excessive punctuation (sign of poor generation)
-            punctuation_ratio = sum(1 for c in response if c in '.,!?;:') / max(len(response), 1)
-            if punctuation_ratio > 0.15:
-                return False
-            
-            # Check for date/time stamps (sign of training data)
-            if any(fragment in response for fragment in ['2021', '2022', '2023', '2024', '2020', '2019']):
-                return False
-            
-            # Check for meta-language about AI/chatbots
-            if any(word in lower_response for word in ['ai', 'bot', 'asistan olarak', 'model olarak']):
-                return False
-            
-            # Check for repeated words in sequence
-            words = response.split()
-            if len(words) >= 3:
-                for i in range(len(words) - 2):
-                    if words[i] == words[i+1] == words[i+2]:  # 3 consecutive identical words
-                        return False
-                        
-            return True
-            
-        except Exception:
-            return False
-    
-    def _is_response_relevant(self, question: str, response: str) -> bool:
-        """
-        Check if AI response is relevant to the original question
-        """
-        try:
-            question_words = set(question.lower().split())
-            response_words = set(response.lower().split())
-            
-            # Remove common stop words
-            stop_words = {
-                'bir', 'bu', 'şu', 've', 'ile', 'için', 'den', 'dan', 'dır', 'dir',
-                'mı', 'mi', 'mu', 'mü', 'da', 'de', 'ta', 'te', 'ya', 'ye',
-                'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'
-            }
-            
-            question_words -= stop_words
-            response_words -= stop_words
-            
-            if not question_words:
-                return True  # Can't determine, allow it
-            
-            # Check for word overlap
-            overlap = len(question_words.intersection(response_words))
-            overlap_ratio = overlap / len(question_words)
-            
-            # Require at least 10% word overlap for relevance
-            return overlap_ratio >= 0.1
-            
-        except Exception:
-            return True  # If can't determine, allow it
+        # Fallback default response
+        return ("🤔 **Üzgünüm, bu konuda hazır bir cevabım yok.**\n\n"
+               "**Size yardımcı olabilmem için:**\n"
+               "• Daha spesifik bir soru sorabilirsiniz\n"
+               "• Aşağıdaki konulardan birini seçebilirsiniz:\n\n"
+               "**Mevcut konularım:**\n"
+               "• 👋 Selamlama ve karşılama\n"
+               "• 🏭 MEFAPEX şirket bilgileri\n"
+               "• ⏰ Çalışma saatleri\n"
+               "• 🛠️ Teknik destek türleri\n"
+               "• 💻 Teknoloji ve yazılım\n"
+               "• 🙏 Teşekkür ve veda\n\n"
+               "**Direkt iletişim:**\n"
+               "• 📞 Telefon desteği\n"
+               "• 📧 destek@mefapex.com\n\n"
+               "Hangi konuda yardım almak istiyorsunuz? 💬")
 
     def _calculate_match_score(self, user_message: str, keywords: List[str]) -> float:
         """Calculate keyword match score"""
@@ -516,50 +313,6 @@ class ContentManager:
         
         return min(score, 1.0)
 
-    def _get_intelligent_default_response(self, user_message: str = "") -> str:
-        """
-        Get contextual default response based on message content
-        """
-        if not user_message:
-            return "Merhaba! Size nasıl yardımcı olabilirim?"
-        
-        message_lower = user_message.lower()
-        
-        # Context-aware responses based on message content
-        if any(word in message_lower for word in ['hava', 'weather', 'sıcaklık', 'yağmur', 'kar', 'güneş']):
-            return "🌤️ **Hava Durumu Sorgusu**\n\nÜzgünüm, gerçek zamanlı hava durumu bilgisine erişimim yok. En güncel hava durumu için:\n\n• Meteoroloji Genel Müdürlüğü (mgm.gov.tr)\n• Hava durumu uygulamaları\n• Yerel haber kanalları\n\nkaynaklarını kullanabilirsiniz."
-        
-        elif any(word in message_lower for word in ['nasıl', 'öğren', 'öğret', 'anlat', 'bilgi', 'nedir']):
-            return "🤔 **Bilgi Talebi**\n\nSorduğunuz konu hakkında detaylı bilgi verebilmem için sorunuzu biraz daha spesifik hale getirebilir misiniz?\n\n**Yardımcı olabileceğim konular:**\n• MEFAPEX hizmetleri\n• Teknik destek\n• Yazılım geliştirme\n• Sistem entegrasyonu\n\n💬 Hangi konuda yardıma ihtiyacınız var?"
-        
-        elif any(word in message_lower for word in ['program', 'kod', 'yazılım', 'teknoloji', 'development']):
-            return "💻 **Yazılım & Teknoloji**\n\nMEFAPEX olarak yazılım geliştirme ve teknoloji konularında size yardımcı olabilirim.\n\n**Hizmetlerimiz:**\n• Özel yazılım geliştirme\n• Web uygulamaları\n• Mobil uygulamalar\n• Sistem entegrasyonu\n• Teknoloji danışmanlığı\n\n🔧 Hangi teknoloji konusunda destek almak istiyorsunuz?"
-        
-        elif any(word in message_lower for word in ['problem', 'sorun', 'hata', 'çalışmıyor', 'bozuk']):
-            return "🛠️ **Teknik Destek**\n\nTeknik bir sorunla karşılaştığınızı anlıyorum. Size en iyi şekilde yardımcı olabilmem için:\n\n**Lütfen belirtin:**\n• Hangi sistem/uygulama ile ilgili\n• Sorunun detayları\n• Ne zaman başladı\n• Hata mesajları (varsa)\n\n📞 Acil durumlar için: **destek@mefapex.com**"
-        
-        elif any(word in message_lower for word in ['teşekkür', 'sağol', 'thanks']):
-            return "😊 **Rica Ederim!**\n\nSize yardımcı olabildiysem çok mutluyum. Başka sorularınız olduğunda her zaman buradayım.\n\n🌟 İyi çalışmalar dilerim!"
-        
-        else:
-            # Generic but helpful response
-            responses = [
-                "🤝 **MEFAPEX Destek**\n\nSorduğunuz konu hakkında size daha iyi yardımcı olabilmem için biraz daha detay verebilir misiniz?\n\n**Popüler konular:**\n• Teknik destek\n• Yazılım geliştirme\n• Sistem entegrasyonu\n• Proje danışmanlığı",
-                
-                "💬 **Size Nasıl Yardımcı Olabilirim?**\n\nMEFAPEX ekibi olarak size destek olmaktan mutluluk duyarız.\n\n**Hizmet alanlarımız:**\n• Bilişim teknolojileri\n• Yazılım çözümleri\n• Teknik danışmanlık\n\n📝 Sorunuzu daha spesifik olarak sorabilir misiniz?",
-                
-                "🔍 **Daha Fazla Bilgi**\n\nBu konuda size yardımcı olmak istiyorum ancak sorunuzu tam olarak anlayamadım.\n\n**Deneyebilirsiniz:**\n• Sorunuzu farklı kelimelerle ifade edin\n• Daha spesifik bilgi verin\n• Hangi alanda yardım istediğinizi belirtin\n\n💡 Ben buradayım!"
-            ]
-            
-            # Select response based on message hash for consistency
-            import hashlib
-            hash_value = int(hashlib.md5(user_message.encode()).hexdigest()[:8], 16)
-            return responses[hash_value % len(responses)]
-
-    def _get_default_response(self, user_message: str = "") -> str:
-        """Get simple default response (legacy method)"""
-        return self._get_intelligent_default_response(user_message)
-
     def get_categories(self) -> Dict:
         """Get all response categories"""
         return self.categories
@@ -573,31 +326,17 @@ class ContentManager:
             "cache_enabled": self._cache_enabled,
             "ai_enabled": self._ai_enabled,
             "huggingface_available": self.model_manager is not None,
-            "relevance_detection_enabled": self._relevance_detection_enabled,
-            "relevance_detector_available": RELEVANCE_DETECTOR_AVAILABLE
+            "system_mode": "static_only",
+            "ai_usage": "understanding_only"
         }
         
-        # Add relevance detection stats
-        if self._relevance_detection_enabled and self.relevance_detector:
-            stats["relevance_detection"] = {
-                "enabled": True,
-                "company_name": self.relevance_detector.company_name,
-                "domain_categories": len(self.relevance_detector.domain_categories),
-                "quick_filter_keywords": {
-                    "relevant": len(self.relevance_detector.quick_filters["definitely_relevant"]),
-                    "irrelevant": len(self.relevance_detector.quick_filters["definitely_irrelevant"])
-                }
-            }
-        else:
-            stats["relevance_detection"] = {"enabled": False}
-        
-        # Add AI model stats if available
+        # Add AI model stats if available (for understanding only)
         if self.model_manager:
             try:
                 model_info = self.model_manager.get_model_info()
                 stats["ai_model_info"] = {
+                    "purpose": "static_response_understanding_only",
                     "turkish_model_loaded": model_info.get("turkish_sentence_model_loaded", False),
-                    "text_generator_loaded": model_info.get("text_generator_loaded", False),
                     "device": model_info.get("device", "unknown"),
                     "cache_hits": model_info.get("cache_info", {}).get("embedding_cache_hits", 0),
                     "cache_size": model_info.get("cache_info", {}).get("embedding_cache_size", 0)
@@ -621,118 +360,36 @@ class ContentManager:
     
     async def find_response_async(self, user_message: str) -> Tuple[str, str]:
         """
-        Async version of find_response for better performance with AI models
+        Async version of find_response
         """
         return self.find_response(user_message)
     
     def warmup_ai_models(self):
         """
-        Warm up AI models for better response times
+        Warm up AI models for better understanding performance
         """
         if self._ai_enabled and self.model_manager:
             try:
-                logger.info("🔥 Warming up AI models...")
+                logger.info("🔥 Warming up AI models for understanding assistance...")
                 self.model_manager.warmup_models()
-                logger.info("✅ AI models warmed up successfully")
+                logger.info("✅ AI understanding models warmed up successfully")
             except Exception as e:
                 logger.error(f"❌ AI warmup failed: {e}")
         else:
-            logger.info("ℹ️ AI models not available for warmup")
+            logger.info("ℹ️ AI understanding models not available for warmup")
     
-    def enable_ai(self, enabled: bool = True):
+    def enable_ai_understanding(self, enabled: bool = True):
         """
-        Enable or disable AI responses
+        Enable or disable AI understanding assistance (for static response matching)
         """
         if enabled and not self.model_manager:
-            logger.warning("⚠️ Cannot enable AI: model_manager not available")
+            logger.warning("⚠️ Cannot enable AI understanding: model_manager not available")
             return False
         
         self._ai_enabled = enabled
         status = "enabled" if enabled else "disabled"
-        logger.info(f"🤖 AI responses {status}")
+        logger.info(f"🤖 AI understanding assistance {status}")
         return True
-    
-    def enable_relevance_detection(self, enabled: bool = True):
-        """
-        Enable or disable relevance detection
-        """
-        if enabled and not self.relevance_detector:
-            logger.warning("⚠️ Cannot enable relevance detection: detector not available")
-            return False
-        
-        self._relevance_detection_enabled = enabled
-        status = "enabled" if enabled else "disabled"
-        logger.info(f"🎯 Relevance detection {status}")
-        return True
-    
-    async def test_relevance_detection(self, test_messages: List[str] = None):
-        """
-        Test relevance detection with sample messages
-        """
-        if not self._relevance_detection_enabled or not self.relevance_detector:
-            logger.warning("⚠️ Relevance detection not available for testing")
-            return {}
-        
-        if test_messages is None:
-            test_messages = [
-                "MEFAPEX fabrikasında çalışma saatleri nedir?",  # Relevant
-                "En iyi pizza tarifi nedir?",                    # Irrelevant
-                "Yazılım geliştirme hizmetleri",                 # Relevant
-                "Hangi film izlemeliyim?",                       # Irrelevant
-                "Teknik destek nasıl alabilirim?",               # Relevant
-                "Bugün hava nasıl?",                             # Irrelevant
-            ]
-        
-        results = {}
-        total_time = 0
-        
-        logger.info("🧪 Testing relevance detection...")
-        
-        for message in test_messages:
-            try:
-                result = await self.relevance_detector.classify(message)
-                
-                results[message] = {
-                    "is_relevant": result.is_relevant,
-                    "confidence": result.confidence,
-                    "level": result.relevance_level.value,
-                    "method": result.method.value,
-                    "processing_time_ms": result.processing_time_ms,
-                    "reasoning": result.reasoning,
-                    "has_suggestion": result.response_suggestion is not None
-                }
-                
-                total_time += result.processing_time_ms
-                
-                # Log result
-                relevance_emoji = "✅" if result.is_relevant else "❌"
-                logger.info(f"{relevance_emoji} {message[:40]}... -> "
-                          f"{result.confidence:.3f} ({result.processing_time_ms:.1f}ms)")
-                
-            except Exception as e:
-                logger.error(f"❌ Test failed for '{message}': {e}")
-                results[message] = {"error": str(e)}
-        
-        # Summary
-        avg_time = total_time / len(test_messages) if test_messages else 0
-        relevant_count = sum(1 for r in results.values() 
-                           if isinstance(r, dict) and r.get("is_relevant", False))
-        
-        summary = {
-            "total_tests": len(test_messages),
-            "relevant_detected": relevant_count,
-            "irrelevant_detected": len(test_messages) - relevant_count,
-            "average_processing_time_ms": avg_time,
-            "total_processing_time_ms": total_time
-        }
-        
-        logger.info(f"📊 Test Summary: {relevant_count}/{len(test_messages)} relevant, "
-                   f"avg time: {avg_time:.1f}ms")
-        
-        return {
-            "results": results,
-            "summary": summary
-        }
 
 # Global instance
 content_manager = ContentManager()
