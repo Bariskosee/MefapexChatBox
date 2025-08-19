@@ -14,12 +14,18 @@ logger = logging.getLogger(__name__)
 
 class ContentManager:
     """
-    Static-Only Content Management System:
+    Enhanced Static-Only Content Management System:
     - Primary: Static responses from JSON files
-    - AI Usage: ONLY for better understanding user intent to match static responses
-    - No AI-generated responses - sistem tamamen static temelli
-    - Default response when no static match found
-    - Response caching for performance
+    - AI Usage: Multi-level understanding and matching assistance
+    - NO AI-generated responses - sistem tamamen static temelli
+    - Enhanced default responses with context awareness
+    - Advanced caching and performance optimization
+    
+    Matching Levels:
+    1. Direct keyword matching (fast, exact)
+    2. AI semantic similarity (intelligent, context-aware) 
+    3. Intent-based matching (pattern recognition)
+    4. Enhanced default response (contextual fallback)
     """
     
     def __init__(self, content_dir: str = "content"):
@@ -44,8 +50,8 @@ class ContentManager:
         # Load static content on initialization
         self.load_static_content()
         
-        logger.info("🎯 ContentManager initialized in STATIC-ONLY mode")
-        logger.info("📝 AI usage: Understanding assistance only, no response generation")
+        logger.info("🎯 ContentManager initialized in ENHANCED STATIC-ONLY mode")
+        logger.info("📝 AI usage: Multi-level understanding assistance (semantic + intent)")
         
     def load_static_content(self) -> bool:
         """Load static responses from JSON file"""
@@ -72,15 +78,16 @@ class ContentManager:
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
-        Find appropriate response for user message - STATIC ONLY SYSTEM
-        Flow: Static Response -> AI Enhanced Understanding -> Default Response
+        Find appropriate response for user message - ENHANCED STATIC SYSTEM
+        Flow: Cache -> Direct Match -> AI Semantic Match -> Intent Detection -> Default
         Returns: (response_text, source)
-        Source can be: static, cache_static, default
+        Source can be: static, ai_enhanced_static, semantic_match, cache_static, default
         
-        Sistem tamamen static cevap temelli çalışır:
-        - Static sorular arasında cevap varsa o döner
-        - Static sorular arasında cevap yoksa varsayılan mesaj döner
-        - Hugging Face sadece static soruları daha iyi anlamak ve yanıtlamak için kullanılır
+        AI sistem static cevapları daha iyi eşleştirmek için kullanılır:
+        - Önce direkt anahtar kelime eşleştirme
+        - Sonra AI semantic benzerlik analizi  
+        - Intent detection ile kullanıcının ne istediğini anlama
+        - En uygun static cevabı bulma ve döndürme
         """
         if not user_message or not user_message.strip():
             return self._get_static_default_response(user_message), "default"
@@ -93,79 +100,97 @@ class ContentManager:
             logger.debug(f"🎯 Cache hit for: {user_message[:30]}...")
             return cached_response, f"cache_{source}"
         
-        # Try static responses first (primary system)
-        response, source = self._find_static_response_enhanced(user_message_lower, user_message)
-        
+        # Level 1: Direct keyword matching
+        response, source = self._find_static_response_direct(user_message_lower)
         if response:
-            # Cache the response
+            logger.info(f"✅ Direct keyword match found for: {user_message[:30]}...")
             if self._cache_enabled:
                 self._cache[user_message_lower] = (response, source)
             return response, source
         
-        # No static response found - return default static message
-        default_response = self._get_static_default_response(user_message)
+        # Level 2: AI semantic similarity matching
+        if self._ai_enabled and self.model_manager:
+            response, source = self._find_static_response_semantic(user_message, user_message_lower)
+            if response:
+                logger.info(f"🤖✅ AI semantic match found for: {user_message[:30]}...")
+                if self._cache_enabled:
+                    self._cache[user_message_lower] = (response, source)
+                return response, source
+        
+        # Level 3: Intent-based matching
+        response, source = self._find_static_response_intent(user_message, user_message_lower)
+        if response:
+            logger.info(f"🎯 Intent-based match found for: {user_message[:30]}...")
+            if self._cache_enabled:
+                self._cache[user_message_lower] = (response, source)
+            return response, source
+        
+        # No static response found - return enhanced default
+        default_response = self._get_enhanced_default_response(user_message)
         if self._cache_enabled:
             self._cache[user_message_lower] = (default_response, "default")
         
-        logger.info(f"📝 No static response found for: {user_message[:50]}... - returning default")
+        logger.info(f"📝 No static match found for: {user_message[:50]}... - returning enhanced default")
         return default_response, "default"
     
-    async def _check_relevance_async(self, user_message: str):
+    def _find_static_response_direct(self, user_message_lower: str) -> Tuple[Optional[str], str]:
         """
-        Async wrapper for relevance detection
+        Level 1: Direct keyword and phrase matching
+        Fast, exact matching for common queries
         """
-        if self.relevance_detector:
-            return await self.relevance_detector.classify(user_message)
-        return None
-    
-    def _run_relevance_check(self, user_message: str):
-        """
-        Synchronous wrapper to run relevance check in thread
-        """
-        return asyncio.run(self._check_relevance_async(user_message))
-
-    def _find_static_response_enhanced(self, user_message_lower: str, original_message: str) -> Tuple[Optional[str], str]:
-        """
-        Enhanced static response finder with AI-assisted understanding
-        AI is used ONLY to better understand and match static responses
-        """
-        # First try direct keyword matching
-        direct_response, source = self._find_static_response(user_message_lower)
-        if direct_response:
-            logger.info(f"✅ Direct static match found for: {original_message[:30]}...")
-            return direct_response, source
+        best_match = None
+        best_score = 0
+        best_category = ""
         
-        # If no direct match, try AI-enhanced understanding (if available)
-        if self._ai_enabled and self.model_manager:
-            try:
-                enhanced_response = self._ai_enhanced_static_matching(original_message, user_message_lower)
-                if enhanced_response:
-                    logger.info(f"🤖✅ AI-enhanced static match found for: {original_message[:30]}...")
-                    return enhanced_response, "static"
-            except Exception as e:
-                logger.debug(f"AI-enhanced matching failed: {e}")
+        for category, response_data in self.static_responses.items():
+            if isinstance(response_data, dict):
+                keywords = response_data.get("keywords", [])
+                response_text = response_data.get("message", "")
+                
+                # Calculate match score
+                score = self._calculate_match_score(user_message_lower, keywords)
+                
+                if score > best_score:
+                    best_match = response_text
+                    best_score = score
+                    best_category = category
+                    
+                # Also check for category name match
+                if category.lower() in user_message_lower:
+                    logger.debug(f"🎯 Direct category match: {category}")
+                    return response_text, "static"
+            elif isinstance(response_data, str):
+                # Simple string response
+                if category.lower() in user_message_lower:
+                    logger.debug(f"🎯 Direct simple match: {category}")
+                    return response_data, "static"
+        
+        # Require minimum confidence for direct matches
+        if best_match and best_score > 0.3:  # Increased threshold for better accuracy
+            logger.debug(f"🎯 Direct keyword match: {best_category} (score: {best_score:.3f})")
+            return best_match, "static"
         
         return None, ""
     
-    def _ai_enhanced_static_matching(self, original_message: str, user_message_lower: str) -> Optional[str]:
+    def _find_static_response_semantic(self, original_message: str, user_message_lower: str) -> Tuple[Optional[str], str]:
         """
-        Use AI to better understand user intent and match with static responses
-        AI DOES NOT generate responses, only helps understand which static response to use
+        Level 2: AI-powered semantic similarity matching
+        Uses embeddings to find semantically similar static responses
         """
         try:
-            # Create embeddings for the user message and all static response keywords
             if not hasattr(self.model_manager, 'get_sentence_embedding'):
-                return None
+                return None, ""
             
             user_embedding = self.model_manager.get_sentence_embedding(original_message)
             if user_embedding is None:
-                return None
+                return None, ""
             
             best_match = None
             best_similarity = 0.0
-            similarity_threshold = 0.6  # Minimum similarity for match
+            best_category = ""
+            similarity_threshold = 0.55  # Lowered for better coverage
             
-            # Check similarity with each static response's keywords and content
+            # Check similarity with each static response
             for category, response_data in self.static_responses.items():
                 if not isinstance(response_data, dict):
                     continue
@@ -173,36 +198,168 @@ class ContentManager:
                 keywords = response_data.get("keywords", [])
                 message_text = response_data.get("message", "")
                 
-                # Create combined text for better matching
-                combined_text = " ".join(keywords) + " " + message_text[:200]
+                # Create enhanced text for semantic matching
+                # Include keywords, category name, and sample content
+                enhanced_text = f"{category} {' '.join(keywords)} {message_text[:150]}"
                 
                 try:
-                    static_embedding = self.model_manager.get_sentence_embedding(combined_text)
+                    static_embedding = self.model_manager.get_sentence_embedding(enhanced_text)
                     if static_embedding is None:
                         continue
                     
                     # Calculate cosine similarity
                     similarity = self._calculate_cosine_similarity(user_embedding, static_embedding)
                     
-                    if similarity > best_similarity and similarity >= similarity_threshold:
+                    if similarity > best_similarity:
                         best_similarity = similarity
                         best_match = message_text
+                        best_category = category
                         
-                        logger.debug(f"🎯 AI similarity match: {category} ({similarity:.3f})")
+                        logger.debug(f"🤖 Semantic similarity: {category} ({similarity:.3f})")
                 
                 except Exception as e:
                     logger.debug(f"Embedding comparison failed for {category}: {e}")
                     continue
             
+            # Return match if above threshold
             if best_match and best_similarity >= similarity_threshold:
-                logger.info(f"🤖 AI-enhanced match found with similarity: {best_similarity:.3f}")
-                return best_match
+                logger.info(f"🤖 Semantic match: {best_category} (similarity: {best_similarity:.3f})")
+                return best_match, "ai_enhanced_static"
             
-            return None
+            return None, ""
             
         except Exception as e:
-            logger.debug(f"AI-enhanced static matching error: {e}")
-            return None
+            logger.debug(f"Semantic matching error: {e}")
+            return None, ""
+    
+    def _find_static_response_intent(self, original_message: str, user_message_lower: str) -> Tuple[Optional[str], str]:
+        """
+        Level 3: Intent-based matching
+        Analyzes user intent and maps to appropriate static responses
+        """
+        # Define intent patterns
+        intent_patterns = {
+            "greeting": {
+                "patterns": ["merhaba", "selam", "iyi", "günaydın", "akşam", "nasıl", "hello", "hi"],
+                "category": "greetings"
+            },
+            "company_info": {
+                "patterns": ["mefapex", "şirket", "firma", "hakkında", "kimsiniz", "nedir", "company"],
+                "category": "company_info"
+            },
+            "working_hours": {
+                "patterns": ["saat", "zaman", "çalışma", "mesai", "açık", "kapalı", "hours"],
+                "category": "working_hours"
+            },
+            "support": {
+                "patterns": ["destek", "yardım", "problem", "sorun", "hata", "support", "help"],
+                "category": "support_types"
+            },
+            "technology": {
+                "patterns": ["teknoloji", "yazılım", "program", "kod", "development", "tech"],
+                "category": "technology_info"
+            },
+            "thanks": {
+                "patterns": ["teşekkür", "sağol", "thanks", "thank you", "bye", "görüşürüz"],
+                "category": "thanks_goodbye"
+            }
+        }
+        
+        # Calculate intent scores
+        best_intent = None
+        best_score = 0
+        
+        for intent_name, intent_data in intent_patterns.items():
+            patterns = intent_data["patterns"]
+            score = 0
+            
+            # Count pattern matches
+            for pattern in patterns:
+                if pattern in user_message_lower:
+                    score += 1
+            
+            # Calculate relative score
+            if patterns:
+                relative_score = score / len(patterns)
+                if relative_score > best_score:
+                    best_score = relative_score
+                    best_intent = intent_data["category"]
+        
+        # Return matched static response if intent is confident enough
+        if best_intent and best_score > 0.15:  # Minimum intent confidence
+            if best_intent in self.static_responses:
+                response_data = self.static_responses[best_intent]
+                if isinstance(response_data, dict):
+                    message = response_data.get("message", "")
+                    if message:
+                        logger.debug(f"🎯 Intent match: {best_intent} (score: {best_score:.3f})")
+                        return message, "intent_based_static"
+                elif isinstance(response_data, str):
+                    logger.debug(f"🎯 Intent match: {best_intent} (score: {best_score:.3f})")
+                    return response_data, "intent_based_static"
+        
+        return None, ""
+    
+    def _get_enhanced_default_response(self, user_message: str = "") -> str:
+        """
+        Enhanced default response with AI-assisted context analysis
+        """
+        # Use existing static default if available
+        if "default_response" in self.static_responses:
+            default_data = self.static_responses["default_response"]
+            if isinstance(default_data, dict):
+                default_message = default_data.get("message", "")
+                if default_message and "{user_input}" in default_message:
+                    safe_input = user_message[:50] if user_message else "bilinmeyen soru"
+                    return default_message.replace("{user_input}", safe_input)
+                elif default_message:
+                    return default_message
+        
+        # AI-enhanced contextual default responses
+        if user_message:
+            message_lower = user_message.lower()
+            
+            # Context-aware defaults based on question type
+            if any(word in message_lower for word in ['ne', 'nedir', 'nasıl', 'kim', 'nerede', 'neden']):
+                return ("🤔 **Sorduğunuz konu hakkında hazır bir cevabım yok.**\n\n"
+                       "**MEFAPEX olarak size yardımcı olabileceğim konular:**\n"
+                       "• 🏭 Şirket bilgileri ve hizmetlerimiz\n"
+                       "• ⏰ Çalışma saatleri ve iletişim\n"
+                       "• 🛠️ Teknik destek türleri\n"
+                       "• 💻 Teknoloji ve yazılım hizmetleri\n\n"
+                       "**Daha spesifik sorularınız için:**\n"
+                       "• 📞 Direkt destek hattımız\n"
+                       "• 📧 destek@mefapex.com\n\n"
+                       "Hangi konuda bilgi almak istiyorsunuz? 💬")
+            
+            elif any(word in message_lower for word in ['help', 'yardım', 'destek']):
+                return ("🛠️ **Yardım ve Destek**\n\n"
+                       "Size yardımcı olmak için buradayım! \n\n"
+                       "**Hızlı erişim için şunları sorabilirsiniz:**\n"
+                       "• \"MEFAPEX hakkında bilgi\"\n"
+                       "• \"Çalışma saatleriniz nedir?\"\n"
+                       "• \"Teknik destek nasıl alabilirim?\"\n"
+                       "• \"Hangi teknolojileri kullanıyorsunuz?\"\n\n"
+                       "**Acil durumlar için:**\n"
+                       "• 📞 Telefon desteği\n"
+                       "• 📧 destek@mefapex.com\n\n"
+                       "Nasıl yardımcı olabilirim? 🤝")
+            
+            else:
+                return ("💬 **MEFAPEX Chatbot**\n\n"
+                       "Sorduğunuz konuda spesifik bir cevabım bulunmuyor. \n\n"
+                       "**Size yardımcı olabileceğim ana konular:**\n"
+                       "• 👋 Genel karşılama ve bilgilendirme\n"
+                       "• 🏭 MEFAPEX şirket bilgileri\n"
+                       "• ⏰ Çalışma saatleri ve iletişim\n"
+                       "• 🛠️ Teknik destek seçenekleri\n"
+                       "• 💻 Teknoloji ve yazılım hizmetleri\n"
+                       "• 🙏 Genel yardım ve yönlendirme\n\n"
+                       "**Bu konulardan biri ile ilgili soru sormayı deneyin!**\n\n"
+                       "🔗 **Direkt iletişim:** destek@mefapex.com")
+        
+        # Fallback
+        return self._get_static_default_response(user_message)
     
     def _calculate_cosine_similarity(self, embedding1, embedding2):
         """Calculate cosine similarity between two embeddings"""
@@ -318,7 +475,7 @@ class ContentManager:
         return self.categories
 
     def get_stats(self) -> Dict:
-        """Get content manager statistics"""
+        """Get enhanced content manager statistics"""
         stats = {
             "static_responses": len(self.static_responses),
             "categories": len(self.categories),
@@ -326,8 +483,13 @@ class ContentManager:
             "cache_enabled": self._cache_enabled,
             "ai_enabled": self._ai_enabled,
             "huggingface_available": self.model_manager is not None,
-            "system_mode": "static_only",
-            "ai_usage": "understanding_only"
+            "system_mode": "enhanced_static_only",
+            "ai_usage": "multi_level_understanding",
+            "matching_levels": {
+                "level_1": "direct_keyword_matching",
+                "level_2": "ai_semantic_similarity", 
+                "level_3": "intent_based_matching"
+            }
         }
         
         # Add AI model stats if available (for understanding only)
@@ -335,7 +497,8 @@ class ContentManager:
             try:
                 model_info = self.model_manager.get_model_info()
                 stats["ai_model_info"] = {
-                    "purpose": "static_response_understanding_only",
+                    "purpose": "enhanced_static_response_understanding",
+                    "capabilities": ["semantic_similarity", "intent_detection", "context_analysis"],
                     "turkish_model_loaded": model_info.get("turkish_sentence_model_loaded", False),
                     "device": model_info.get("device", "unknown"),
                     "cache_hits": model_info.get("cache_info", {}).get("embedding_cache_hits", 0),
@@ -358,21 +521,15 @@ class ContentManager:
         self.load_static_content()
         logger.info("🔄 Content reloaded")
     
-    async def find_response_async(self, user_message: str) -> Tuple[str, str]:
-        """
-        Async version of find_response
-        """
-        return self.find_response(user_message)
-    
     def warmup_ai_models(self):
         """
-        Warm up AI models for better understanding performance
+        Warm up AI models for enhanced understanding performance
         """
         if self._ai_enabled and self.model_manager:
             try:
-                logger.info("🔥 Warming up AI models for understanding assistance...")
+                logger.info("🔥 Warming up AI models for enhanced static response matching...")
                 self.model_manager.warmup_models()
-                logger.info("✅ AI understanding models warmed up successfully")
+                logger.info("✅ Enhanced AI understanding models warmed up successfully")
             except Exception as e:
                 logger.error(f"❌ AI warmup failed: {e}")
         else:
@@ -380,7 +537,7 @@ class ContentManager:
     
     def enable_ai_understanding(self, enabled: bool = True):
         """
-        Enable or disable AI understanding assistance (for static response matching)
+        Enable or disable enhanced AI understanding assistance
         """
         if enabled and not self.model_manager:
             logger.warning("⚠️ Cannot enable AI understanding: model_manager not available")
@@ -388,8 +545,58 @@ class ContentManager:
         
         self._ai_enabled = enabled
         status = "enabled" if enabled else "disabled"
-        logger.info(f"🤖 AI understanding assistance {status}")
+        logger.info(f"🤖 Enhanced AI understanding assistance {status}")
         return True
+    
+    def test_enhanced_matching(self, test_queries: List[str] = None) -> Dict:
+        """
+        Test the enhanced multi-level matching system
+        """
+        if test_queries is None:
+            test_queries = [
+                "merhaba nasılsın",           # Should match greetings
+                "MEFAPEX ne yapıyor",         # Should match company_info  
+                "saat kaçta açıksınız",       # Should match working_hours
+                "yardıma ihtiyacım var",      # Should match support_types
+                "hangi programlama dilleri", # Should match technology_info
+                "teşekkürler görüşürüz",     # Should match thanks_goodbye
+                "bugün hava nasıl"           # Should match default
+            ]
+        
+        results = {}
+        logger.info("🧪 Testing enhanced matching system...")
+        
+        for query in test_queries:
+            try:
+                response, source = self.find_response(query)
+                results[query] = {
+                    "source": source,
+                    "response_length": len(response),
+                    "found_static": source != "default"
+                }
+                logger.info(f"{'✅' if source != 'default' else '❌'} \"{query}\" -> {source}")
+            except Exception as e:
+                results[query] = {"error": str(e)}
+                logger.error(f"❌ Test failed for '{query}': {e}")
+        
+        # Summary
+        successful_matches = sum(1 for r in results.values() 
+                               if isinstance(r, dict) and r.get("found_static", False))
+        
+        summary = {
+            "total_tests": len(test_queries),
+            "successful_static_matches": successful_matches,
+            "default_responses": len(test_queries) - successful_matches,
+            "success_rate": f"{(successful_matches/len(test_queries)*100):.1f}%"
+        }
+        
+        logger.info(f"📊 Test Summary: {successful_matches}/{len(test_queries)} static matches "
+                   f"({summary['success_rate']} success rate)")
+        
+        return {
+            "results": results,
+            "summary": summary
+        }
 
 # Global instance
 content_manager = ContentManager()
