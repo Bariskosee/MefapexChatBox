@@ -176,10 +176,11 @@ def create_collection():
         except:
             pass
         
-        # Create new collection (384 dimensions for all-MiniLM-L6-v2)
+        # Create new collection with dynamic vector size from config
+        vector_size = get_config().qdrant.vector_size
         qdrant_client.create_collection(
             collection_name="mefapex_faq",
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
         )
         logger.info("Collection 'mefapex_faq' created successfully")
         
