@@ -250,14 +250,19 @@ class EnhancedQuestionMatcher:
                 "keywords": [
                     "mefapex", "şirket", "firma", "company", "hakkında", "about",
                     "nedir", "bilgi", "information", "kim", "ne yapıyor", "what",
-                    "hizmetler", "services", "teknoloji", "bilişim", "kimsiniz"
+                    "hizmetler", "services", "teknoloji", "bilişim", "kimsiniz",
+                    # Fuzzy variations
+                    "ne yapiyor", "ne is yapiyorsunuz", "ne işi", "sirket",
+                    "hakkinda", "kimdir", "hangi", "business", "iş", "yapar"
                 ],
                 "patterns": [
                     r"mefapex.*nedir",
                     r"mefapex.*hakkında",
                     r"şirket.*bilgi",
                     r"firma.*nedir",
-                    r"company.*info"
+                    r"company.*info",
+                    r"ne.*yapıyor", r"ne.*yapiyor", r"sirket.*hakkinda",
+                    r"ne.*is.*yap", r"hangi.*iş"
                 ],
                 "title": "MEFAPEX Bilişim Teknolojileri Hakkında",
                 "category": "company_info"
@@ -267,14 +272,20 @@ class EnhancedQuestionMatcher:
                     "teknik destek", "technical support", "destek", "support", "yardım", "help",
                     "problem", "sorun", "hata", "error", "arıza", "bug",
                     "nasıl alabilirim", "nasıl ulaşırım", "kim ile konuşurum",
-                    "yardıma ihtiyacım var", "destek lazım"
+                    "yardıma ihtiyacım var", "destek lazım",
+                    # Fuzzy variations
+                    "yardima ihtiyacim var", "destek alamm", "problem var",
+                    "hata aldim", "sorun var", "calismiyor", "yardim",
+                    "destege ihtiyacim var", "ariza var", "bozuk"
                 ],
                 "patterns": [
                     r"teknik.*destek",
                     r"destek.*nasıl",
                     r"yardım.*alabilirim",
                     r"problem.*çözüm",
-                    r"technical.*support"
+                    r"technical.*support",
+                    r"yardima.*ihtiyac", r"destek.*lazim", r"problem.*var",
+                    r"hata.*aldim", r"sorun.*var", r"calismiyor"
                 ],
                 "title": "Teknik Destek",
                 "category": "support_types"
@@ -304,16 +315,36 @@ class EnhancedQuestionMatcher:
             "thanks_goodbye": {
                 "keywords": [
                     "teşekkür", "thanks", "sağol", "görüşürüz", "bye", "hoşça kal",
-                    "teşekkürler", "thank you", "sağolun"
+                    "teşekkürler", "thank you", "sağolun",
+                    # Fuzzy variations
+                    "tesekkurler", "sagol", "gorusuruz", "bye bye", "goodbye",
+                    "see you", "merci", "eyvallah", "saol", "tşk", "thx"
                 ],
                 "patterns": [
-                    r"teşekkür",
-                    r"thanks",
-                    r"sağol",
-                    r"bye"
+                    r"teşekkür", r"tesekkur", r"thanks", r"thank",
+                    r"sağol", r"sagol", r"saol", r"bye",
+                    r"görüşürüz", r"gorusuruz", r"see.*you"
                 ],
                 "title": "Teşekkür ve Veda",
                 "category": "thanks_goodbye"
+            },
+            "technology_info": {
+                "keywords": [
+                    "teknoloji", "yazılım", "programming", "kod", "development", "ai", "yapay zeka",
+                    "technology", "software", "hangi teknolojiler", "yazilim gelistirme",
+                    "programlama", "coding", "artificial intelligence", "machine learning",
+                    "web development", "mobile", "app", "uygulama", "sistem", "platform",
+                    "ai yapiyormusunuz", "yapay zeka var mi", "python", "javascript",
+                    "database", "cloud", "devops", "framework"
+                ],
+                "patterns": [
+                    r"hangi.*teknoloji", r"yazılım.*geliştirme", r"ai.*yapıyor",
+                    r"yapay.*zeka", r"teknoloji.*neler", r"programlama.*dil",
+                    r"yazilim.*gelistirme", r"technology.*use", r"hangi.*dil",
+                    r"database.*kullan", r"cloud.*hizmet"
+                ],
+                "title": "Teknoloji ve Yazılım Geliştirme",
+                "category": "technology_info"
             }
         }
         
@@ -634,6 +665,149 @@ class EnhancedQuestionMatcher:
         
         return None
     
+    def _detect_intelligent_categories(self, question: str) -> Optional[QuestionMatch]:
+        """Diğer kategoriler için akıllı tespit"""
+        
+        normalized_text = self.normalizer.normalize_text(question.lower().strip())
+        
+        # Kategori-spesifik detection'lar
+        category_detections = [
+            self._detect_company_info(normalized_text, question),
+            self._detect_technical_support(normalized_text, question),
+            self._detect_technology_info(normalized_text, question),
+            self._detect_thanks_goodbye(normalized_text, question),
+            self._detect_working_hours(normalized_text, question)
+        ]
+        
+        # En yüksek confidence'lı detection'ı döndür
+        valid_detections = [d for d in category_detections if d is not None]
+        if valid_detections:
+            best_detection = max(valid_detections, key=lambda x: x.confidence)
+            return best_detection
+            
+        return None
+    
+    def _detect_company_info(self, normalized_text: str, question: str) -> Optional[QuestionMatch]:
+        """Şirket bilgileri tespiti"""
+        patterns = [
+            r"(mefapex|sirket|firma).*nedir",
+            r"(ne|hangi).*is.*yap",
+            r"(ne|neler).*yapiyorsunuz",
+            r"sirket.*hakkinda",
+            r"firma.*ne.*yapiyor",
+            r"company.*info"
+        ]
+        
+        keywords = ["mefapex", "sirket", "firma", "hakkinda", "nedir", "ne yapıyor", "ne yapiyor"]
+        
+        return self._pattern_keyword_match(patterns, keywords, normalized_text, question, 
+                                          "company_info", "Şirket Bilgileri")
+    
+    def _detect_technical_support(self, normalized_text: str, question: str) -> Optional[QuestionMatch]:
+        """Teknik destek tespiti"""
+        patterns = [
+            r"yardima.*ihtiyac",
+            r"destek.*lazim",
+            r"problem.*var",
+            r"hata.*aldim",
+            r"sorun.*var",
+            r"calismiyor",
+            r"destek.*alam",
+            r"help.*need"
+        ]
+        
+        keywords = ["yardima", "destek", "problem", "hata", "sorun", "calismiyor", "help"]
+        
+        return self._pattern_keyword_match(patterns, keywords, normalized_text, question,
+                                          "support_types", "Teknik Destek")
+    
+    def _detect_technology_info(self, normalized_text: str, question: str) -> Optional[QuestionMatch]:
+        """Teknoloji bilgileri tespiti"""
+        patterns = [
+            r"hangi.*teknoloji",
+            r"yazilim.*gelistirme",
+            r"ai.*yapiyormusunuz",
+            r"yapay.*zeka",
+            r"teknoloji.*neler",
+            r"hangi.*dil"
+        ]
+        
+        keywords = ["teknoloji", "yazilim", "gelistirme", "ai", "yapay", "zeka", "programming"]
+        
+        return self._pattern_keyword_match(patterns, keywords, normalized_text, question,
+                                          "technology_info", "Teknoloji Bilgileri")
+    
+    def _detect_thanks_goodbye(self, normalized_text: str, question: str) -> Optional[QuestionMatch]:
+        """Teşekkür/veda tespiti"""
+        patterns = [
+            r"tesekkur",
+            r"sagol",
+            r"gorusuruz",
+            r"bye",
+            r"thanks",
+            r"thank.*you"
+        ]
+        
+        keywords = ["tesekkur", "sagol", "gorusuruz", "bye", "thanks", "merci"]
+        
+        return self._pattern_keyword_match(patterns, keywords, normalized_text, question,
+                                          "thanks_goodbye", "Teşekkür")
+    
+    def _detect_working_hours(self, normalized_text: str, question: str) -> Optional[QuestionMatch]:
+        """Çalışma saatleri tespiti"""
+        patterns = [
+            r"ne.*zaman.*acik",
+            r"kacta.*kapaniyor",
+            r"ofis.*saatleri",
+            r"mesai.*saat",
+            r"ne.*zaman.*kapali"
+        ]
+        
+        keywords = ["zaman", "acik", "kapaniyor", "ofis", "saatleri", "mesai"]
+        
+        return self._pattern_keyword_match(patterns, keywords, normalized_text, question,
+                                          "working_hours", "Çalışma Saatleri")
+    
+    def _pattern_keyword_match(self, patterns: list, keywords: list, normalized_text: str, 
+                              question: str, category: str, title: str) -> Optional[QuestionMatch]:
+        """Pattern ve keyword eşleştirme yardımcı metodu"""
+        
+        # Pattern check
+        for pattern in patterns:
+            if re.search(pattern, normalized_text, re.IGNORECASE):
+                logger.info(f"🎯 Intelligent {category} detected: '{question}' matched pattern: {pattern}")
+                
+                return QuestionMatch(
+                    original_question=question,
+                    category=category,
+                    matched_content=title,
+                    similarity_score=0.90,
+                    matching_keywords=[pattern],
+                    match_type=f"intelligent_{category}_pattern",
+                    confidence=0.90,
+                    response=f"{title} detected via pattern matching"
+                )
+        
+        # Keyword check
+        keyword_count = sum(1 for keyword in keywords if keyword in normalized_text)
+        if keyword_count >= 1:  # En az 1 keyword match
+            confidence = 0.80 + (keyword_count * 0.05)  # Keyword sayısına göre confidence
+            
+            logger.info(f"🎯 Intelligent {category} detected: '{question}' contains {keyword_count} keywords")
+            
+            return QuestionMatch(
+                original_question=question,
+                category=category,
+                matched_content=title,
+                similarity_score=confidence,
+                matching_keywords=[kw for kw in keywords if kw in normalized_text],
+                match_type=f"intelligent_{category}_keyword",
+                confidence=confidence,
+                response=f"{title} detected via keyword matching"
+            )
+        
+        return None
+    
     def find_best_match(self, question: str, threshold: float = 0.35) -> Optional[QuestionMatch]:
         """En iyi eşleşmeyi bul"""
         
@@ -645,6 +819,11 @@ class EnhancedQuestionMatcher:
         greeting_match = self._detect_intelligent_greeting(question)
         if greeting_match:
             return greeting_match
+            
+        # Diğer kategoriler için intelligent detection
+        other_match = self._detect_intelligent_categories(question)
+        if other_match:
+            return other_match
         
         # Semantic search
         matches = self.semantic_similarity_search(question)
