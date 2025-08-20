@@ -47,11 +47,32 @@ class ContentManager:
             self._ai_enabled = False
             logger.warning(f"⚠️ AI understanding assistance not available: {e}")
         
+        # Enhanced Question Matcher'ı initialize et
+        try:
+            from enhanced_question_matcher import EnhancedQuestionMatcher
+            self.enhanced_matcher = EnhancedQuestionMatcher(self.model_manager)
+            logger.info("🧠 Enhanced Question Matcher initialized with semantic search")
+        except ImportError as e:
+            self.enhanced_matcher = None
+            logger.warning(f"⚠️ Enhanced Question Matcher not available: {e}")
+        
+        # İstatistikler - enhanced tracking
+        self.stats = {
+            'total_queries': 0,
+            'exact_matches': 0,
+            'fuzzy_matches': 0,
+            'semantic_matches': 0,
+            'enhanced_matches': 0,
+            'no_matches': 0,
+            'cache_hits': 0
+        }
+        
         # Load static content on initialization
         self.load_static_content()
         
         logger.info("🎯 ContentManager initialized in ENHANCED STATIC-ONLY mode")
         logger.info("📝 AI usage: Multi-level understanding assistance (semantic + intent)")
+        logger.info("🧠 Enhanced fuzzy matching and semantic search enabled")
         
     def load_static_content(self) -> bool:
         """Load static responses from JSON file"""
@@ -78,54 +99,79 @@ class ContentManager:
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
-        Find appropriate response for user message - ENHANCED STATIC SYSTEM
-        Flow: Cache -> Direct Match -> AI Semantic Match -> Intent Detection -> Default
+        Find appropriate response for user message - ENHANCED STATIC SYSTEM with Smart Matching
+        Flow: Cache -> Enhanced Matching -> Direct Match -> AI Semantic Match -> Intent Detection -> Default
         Returns: (response_text, source)
-        Source can be: static, ai_enhanced_static, semantic_match, cache_static, default
         
-        AI sistem static cevapları daha iyi eşleştirmek için kullanılır:
-        - Önce direkt anahtar kelime eşleştirme
-        - Sonra AI semantic benzerlik analizi  
-        - Intent detection ile kullanıcının ne istediğini anlama
-        - En uygun static cevabı bulma ve döndürme
+        Enhanced matching kullanarak çok daha akıllı soru eşleştirmesi:
+        - Fuzzy matching: "calisma saatleri" -> "çalışma saatleri"
+        - Semantic search: AI embedding ile anlam bazlı eşleştirme
+        - Synonym expansion: "iş saatleri" -> "çalışma saatleri"
+        - Pattern matching: Regex ile gelişmiş kalıp tanıma
         """
         if not user_message or not user_message.strip():
             return self._get_static_default_response(user_message), "default"
         
+        self.stats['total_queries'] += 1
         user_message_lower = user_message.lower().strip()
         
         # Check cache first (for performance)
         if self._cache_enabled and user_message_lower in self._cache:
             cached_response, source = self._cache[user_message_lower]
+            self.stats['cache_hits'] += 1
             logger.debug(f"🎯 Cache hit for: {user_message[:30]}...")
             return cached_response, f"cache_{source}"
         
-        # Level 1: Direct keyword matching
+        # ======= YENİ: Enhanced Question Matching =======
+        if self.enhanced_matcher:
+            try:
+                enhanced_match = self.enhanced_matcher.find_best_match(user_message)
+                if enhanced_match:
+                    # Enhanced match bulundu - static response'u al
+                    static_response = self._get_response_by_category(enhanced_match.category)
+                    if static_response:
+                        self.stats['enhanced_matches'] += 1
+                        logger.info(f"🧠 Enhanced match: '{user_message[:30]}...' -> {enhanced_match.category} "
+                                   f"(confidence: {enhanced_match.confidence:.3f})")
+                        
+                        # Cache'e kaydet
+                        if self._cache_enabled:
+                            self._cache[user_message_lower] = (static_response, f"enhanced_{enhanced_match.match_type}")
+                        
+                        return static_response, f"enhanced_{enhanced_match.match_type}"
+            except Exception as e:
+                logger.warning(f"Enhanced matching failed: {e}")
+        
+        # Level 1: Direct keyword matching (fallback)
         response, source = self._find_static_response_direct(user_message_lower)
         if response:
+            self.stats['exact_matches'] += 1
             logger.info(f"✅ Direct keyword match found for: {user_message[:30]}...")
             if self._cache_enabled:
                 self._cache[user_message_lower] = (response, source)
             return response, source
         
-        # Level 2: AI semantic similarity matching
+        # Level 2: AI semantic similarity matching (fallback)
         if self._ai_enabled and self.model_manager:
             response, source = self._find_static_response_semantic(user_message, user_message_lower)
             if response:
+                self.stats['semantic_matches'] += 1
                 logger.info(f"🤖✅ AI semantic match found for: {user_message[:30]}...")
                 if self._cache_enabled:
                     self._cache[user_message_lower] = (response, source)
                 return response, source
         
-        # Level 3: Intent-based matching
+        # Level 3: Intent-based matching (fallback)
         response, source = self._find_static_response_intent(user_message, user_message_lower)
         if response:
+            self.stats['fuzzy_matches'] += 1
             logger.info(f"🎯 Intent-based match found for: {user_message[:30]}...")
             if self._cache_enabled:
                 self._cache[user_message_lower] = (response, source)
             return response, source
         
         # No static response found - return enhanced default
+        self.stats['no_matches'] += 1
         default_response = self._get_enhanced_default_response(user_message)
         if self._cache_enabled:
             self._cache[user_message_lower] = (default_response, "default")
@@ -133,6 +179,19 @@ class ContentManager:
         logger.info(f"📝 No static match found for: {user_message[:50]}... - returning enhanced default")
         return default_response, "default"
     
+    def _get_response_by_category(self, category: str) -> Optional[str]:
+        """Kategori adına göre static response'u al"""
+        if category in self.static_responses:
+            response_data = self.static_responses[category]
+            if isinstance(response_data, dict):
+                return response_data.get("message", "")
+            elif isinstance(response_data, str):
+                return response_data
+        
+        # Kategori bulunamadı
+        logger.debug(f"Category not found in static responses: {category}")
+        return None
+
     def _find_static_response_direct(self, user_message_lower: str) -> Tuple[Optional[str], str]:
         """
         Level 1: Direct keyword and phrase matching
@@ -482,23 +541,44 @@ class ContentManager:
             "cache_entries": len(self._cache),
             "cache_enabled": self._cache_enabled,
             "ai_enabled": self._ai_enabled,
+            "enhanced_matcher_enabled": self.enhanced_matcher is not None,
             "huggingface_available": self.model_manager is not None,
-            "system_mode": "enhanced_static_only",
-            "ai_usage": "multi_level_understanding",
+            "system_mode": "enhanced_static_with_smart_matching",
+            "ai_usage": "multi_level_understanding_plus_semantic",
             "matching_levels": {
+                "level_0": "enhanced_question_matching_with_fuzzy_and_semantic",
                 "level_1": "direct_keyword_matching",
                 "level_2": "ai_semantic_similarity", 
                 "level_3": "intent_based_matching"
-            }
+            },
+            "query_stats": self.stats
         }
+        
+        # Success rate hesapla
+        total_queries = self.stats['total_queries']
+        if total_queries > 0:
+            successful_matches = (
+                self.stats['exact_matches'] + 
+                self.stats['fuzzy_matches'] + 
+                self.stats['semantic_matches'] + 
+                self.stats['enhanced_matches']
+            )
+            
+            stats["performance"] = {
+                "total_queries": total_queries,
+                "successful_matches": successful_matches,
+                "success_rate": f"{(successful_matches / total_queries) * 100:.1f}%",
+                "enhanced_match_rate": f"{(self.stats['enhanced_matches'] / total_queries) * 100:.1f}%",
+                "cache_hit_rate": f"{(self.stats['cache_hits'] / total_queries) * 100:.1f}%"
+            }
         
         # Add AI model stats if available (for understanding only)
         if self.model_manager:
             try:
                 model_info = self.model_manager.get_model_info()
                 stats["ai_model_info"] = {
-                    "purpose": "enhanced_static_response_understanding",
-                    "capabilities": ["semantic_similarity", "intent_detection", "context_analysis"],
+                    "purpose": "enhanced_static_response_understanding_and_semantic_search",
+                    "capabilities": ["semantic_similarity", "intent_detection", "context_analysis", "fuzzy_matching", "turkish_support"],
                     "turkish_model_loaded": model_info.get("turkish_sentence_model_loaded", False),
                     "device": model_info.get("device", "unknown"),
                     "cache_hits": model_info.get("cache_info", {}).get("embedding_cache_hits", 0),
@@ -550,21 +630,36 @@ class ContentManager:
     
     def test_enhanced_matching(self, test_queries: List[str] = None) -> Dict:
         """
-        Test the enhanced multi-level matching system
+        Test the enhanced multi-level matching system with fuzzy and semantic search
         """
         if test_queries is None:
             test_queries = [
-                "merhaba nasılsın",           # Should match greetings
-                "MEFAPEX ne yapıyor",         # Should match company_info  
-                "saat kaçta açıksınız",       # Should match working_hours
-                "yardıma ihtiyacım var",      # Should match support_types
-                "hangi programlama dilleri", # Should match technology_info
-                "teşekkürler görüşürüz",     # Should match thanks_goodbye
-                "bugün hava nasıl"           # Should match default
+                # Çalışma saatleri testleri (fuzzy matching için)
+                "çalışma saatleri nelerdir",       # Normal
+                "calisma saatleri nedir",          # Türkçe char yok
+                "calışma saatleri",               # Karışık yazım
+                "iş saatleri kaç",                # Eş anlamlı
+                "saat kaçta açıksınız",           # Farklı kalıp
+                "ne zaman açık",                  # Kısa soru
+                "working hours",                  # İngilizce
+                "mesai saatleri",                 # Eş anlamlı
+                "ofis saatleri nedir",            # Workplace synonym
+                
+                # Diğer kategoriler
+                "merhaba nasılsın",               # Should match greetings
+                "MEFAPEX ne yapıyor",             # Should match company_info  
+                "yardıma ihtiyacım var",          # Should match support_types
+                "hangi programlama dilleri",      # Should match technology_info
+                "teşekkürler görüşürüz",          # Should match thanks_goodbye
+                "teknik destek nasıl alabilirim", # Should match support
+                
+                # Edge cases
+                "bugün hava nasıl",               # Should match default
+                "futbol maçı"                     # Should match default
             ]
         
         results = {}
-        logger.info("🧪 Testing enhanced matching system...")
+        logger.info("🧪 Testing enhanced matching system with fuzzy search...")
         
         for query in test_queries:
             try:
@@ -572,30 +667,46 @@ class ContentManager:
                 results[query] = {
                     "source": source,
                     "response_length": len(response),
-                    "found_static": source != "default"
+                    "found_static": source != "default",
+                    "enhanced_match": "enhanced" in source
                 }
-                logger.info(f"{'✅' if source != 'default' else '❌'} \"{query}\" -> {source}")
+                
+                # Log results with enhanced info
+                if "enhanced" in source:
+                    logger.info(f"🧠✅ \"{query}\" -> {source} (Enhanced Match)")
+                elif source != "default":
+                    logger.info(f"✅ \"{query}\" -> {source}")
+                else:
+                    logger.info(f"❌ \"{query}\" -> {source}")
+                    
             except Exception as e:
                 results[query] = {"error": str(e)}
                 logger.error(f"❌ Test failed for '{query}': {e}")
         
-        # Summary
+        # Summary with enhanced stats
         successful_matches = sum(1 for r in results.values() 
                                if isinstance(r, dict) and r.get("found_static", False))
+        enhanced_matches = sum(1 for r in results.values() 
+                             if isinstance(r, dict) and r.get("enhanced_match", False))
         
         summary = {
             "total_tests": len(test_queries),
             "successful_static_matches": successful_matches,
+            "enhanced_matches": enhanced_matches,
             "default_responses": len(test_queries) - successful_matches,
-            "success_rate": f"{(successful_matches/len(test_queries)*100):.1f}%"
+            "success_rate": f"{(successful_matches/len(test_queries)*100):.1f}%",
+            "enhanced_match_rate": f"{(enhanced_matches/len(test_queries)*100):.1f}%"
         }
         
         logger.info(f"📊 Test Summary: {successful_matches}/{len(test_queries)} static matches "
                    f"({summary['success_rate']} success rate)")
+        logger.info(f"🧠 Enhanced matches: {enhanced_matches}/{len(test_queries)} "
+                   f"({summary['enhanced_match_rate']} enhanced rate)")
         
         return {
             "results": results,
-            "summary": summary
+            "summary": summary,
+            "system_stats": self.get_stats()
         }
 
 # Global instance

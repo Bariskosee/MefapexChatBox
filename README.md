@@ -10,6 +10,8 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116+-green.svg)](https://fastapi.tiangolo.com)
 [![Turkish AI](https://img.shields.io/badge/Turkish-AI%20Ready-red.svg)](https://github.com/Bariskosee/MefapexChatBox)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Quick Setup](https://img.shields.io/badge/Setup-30%20seconds-brightgreen.svg)](https://github.com/Bariskosee/MefapexChatBox#-hızlı-başlangıç)
+[![One Command](https://img.shields.io/badge/Install-One%20Command-orange.svg)](https://github.com/Bariskosee/MefapexChatBox#-ultra-hızlı-kurulum-30-saniye)
 
 </div>
 
@@ -35,39 +37,50 @@
 
 ## 🚀 Hızlı Başlangıç
 
-### ⚡ Otomatik Kurulum (Önerilen)
+### ⚡ **Ultra Hızlı Kurulum (30 Saniye!)**
 
+**Tek komut ile kurulum:**
 ```bash
-# 1. Repository'yi klonlayın
+# 1. Repository'yi klonlayın ve ultra hızlı kurulum
 git clone https://github.com/Bariskosee/MefapexChatBox.git
 cd MefapexChatBox
 
-# 2. Virtual environment oluşturun
+# 2. Tek komut kurulum
+./quick-start.sh    # Linux/macOS
+# VEYA
+quick-start.bat     # Windows
+```
+
+**Makefile ile (Önerilen):**
+```bash
+git clone https://github.com/Bariskosee/MefapexChatBox.git
+cd MefapexChatBox
+make quick          # Ultra hızlı kurulum + başlatma
+```
+
+🎉 **30 saniyede hazır!** Sistem `http://localhost:8000` adresinde çalışıyor.
+
+### 🔧 **Alternatif Kurulum Yöntemleri**
+
+**Manuel Kurulum:**
+```bash
+git clone https://github.com/Bariskosee/MefapexChatBox.git
+cd MefapexChatBox
 python -m venv .venv
-
-# 3. Virtual environment'ı aktive edin
-# macOS/Linux:
-source .venv/bin/activate
-# Windows:
-.venv\Scripts\activate
-
-# 4. Dependencies'leri yükleyin
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
-
-# 5. Environment dosyasını oluşturun
 cp .env.example .env
-
-# 6. Uygulamayı başlatın
 python main.py
 ```
 
-🎉 **İşte bu kadar!** Sistem `http://localhost:8000` adresinde hazır.
-
-### 🐳 Docker ile Hızlı Başlatma
+**Docker ile Hızlı Başlatma:**
 ```bash
 git clone https://github.com/Bariskosee/MefapexChatBox.git
 cd MefapexChatBox
 docker-compose up -d
+# VEYA
+make docker
 ```
 
 ## 📋 Sistem Gereksinimleri

@@ -266,6 +266,17 @@ class ModelManager:
         
         return self._text_generator
     
+    def get_sentence_embedding(self, text: str) -> Optional[list]:
+        """
+        Get sentence embedding for the given text (alias for generate_embedding)
+        Returns embedding as list for compatibility with enhanced question matcher
+        """
+        try:
+            return self.generate_embedding(text)
+        except Exception as e:
+            logger.error(f"Failed to get sentence embedding: {e}")
+            return None
+
     @lru_cache(maxsize=100)  # Further reduced cache size for memory efficiency
     def generate_embedding(self, text: str, force_turkish: bool = None) -> list:
         """

@@ -1,0 +1,152 @@
+name: 🚀 MEFAPEX ChatBox CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: 🧪 Test & Validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12, 3.13]
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: 📦 Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: 🔧 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+
+    - name: 🧪 Run tests
+      run: |
+        python -m pytest tests/ -v --cov=. --cov-report=xml
+
+    - name: 🏥 Health check
+      run: |
+        # Test basic imports
+        python -c "
+        import main
+        from model_manager import model_manager
+        from database.manager import db_manager
+        print('✅ Basic imports successful')
+        "
+
+    - name: 📊 Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  docker-test:
+    name: 🐳 Docker Build Test
+    runs-on: ubuntu-latest
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐳 Build Docker image
+      run: |
+        docker build -t mefapex-chatbox:test .
+
+    - name: 🧪 Test Docker container
+      run: |
+        docker run -d --name test-container \
+          -e ENVIRONMENT=test \
+          -e DEBUG=false \
+          -e DATABASE_TYPE=sqlite \
+          -p 8000:8000 \
+          mefapex-chatbox:test
+        
+        # Wait for container to start
+        sleep 30
+        
+        # Test health endpoint
+        curl -f http://localhost:8000/health || exit 1
+        
+        # Cleanup
+        docker stop test-container
+        docker rm test-container
+
+  quick-start-test:
+    name: 🚀 Quick Start Script Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+
+    - name: 🚀 Test quick-start script
+      run: |
+        chmod +x quick-start.sh
+        # Test script without actually starting server
+        sed -i 's/python main.py/echo "Would start server"/g' quick-start.sh
+        echo "n" | ./quick-start.sh
+
+    - name: ✅ Verify installation
+      run: |
+        source .venv/bin/activate
+        python -c "
+        import fastapi
+        import uvicorn
+        import sqlalchemy
+        print('✅ Quick start installation successful')
+        "
+
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+
+    - name: 🔒 Install security tools
+      run: |
+        pip install safety bandit
+
+    - name: 🛡️ Check dependencies for vulnerabilities
+      run: |
+        safety check -r requirements.txt
+
+    - name: 🔍 Run security analysis
+      run: |
+        bandit -r . -x tests/,venv/,.venv/ -f json -o bandit-report.json || true
+
+    - name: 📊 Upload security report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: bandit-report.json

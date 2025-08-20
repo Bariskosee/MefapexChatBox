@@ -2,7 +2,7 @@
   "responses": {
     "greetings": {
       "message": "👋 **Merhaba! Hoş geldiniz.**\n\nBen MEFAPEX Bilişim Teknolojileri'nin asistanıyım. \n\n\n**Size yardımcı olabileceğim konular:**\n• Sistem ve yazılım ile ilgili destek\n• Operasyonel süreçler ve yönlendirme\n• Talep ve arıza bildirimleri\n• Çalışma süreçleri hakkında bilgi\n• İletişim ve yönlendirme\n\nLütfen sorununuzu ya da talebinizi yazın, hemen yardımcı olayım. 😊",
-      "keywords": ["merhaba", "selam", "selamun aleyküm", "selamünaleyküm", "günaydın", "iyi günler", "iyi akşamlar", "iyi geceler", "nasılsın", "nasilsin", "nasıl gidiyor", "naber", "ne haber", "hoş geldin", "hoşgeldin", "hello", "hi", "hey"],
+      "keywords": ["merhaba", "selam", "selamlar", "selamun aleyküm", "selamünaleyküm", "günaydın", "iyi günler", "iyi akşamlar", "iyi geceler", "nasılsın", "nasilsin", "nasıl gidiyor", "naber", "nabersin", "naberin", "ne haber", "hoş geldin", "hoşgeldin", "hello", "hi", "hey", "merhabalar", "good morning", "good afternoon", "good evening", "selammm", "selammmm", "merhabaaaa", "heyyyy", "hiii", "hiiii", "slm", "mrb", "nbr", "nasılsınız", "nasilsiniz", "nasıl gidiyorsun", "nasıl gidiyorsunuz", "ne yapıyorsun", "ne yapıyorsunuz", "ne yapiyorsun", "ne yapiyorsunuz", "işler nasıl", "isler nasil", "keyifler nasıl", "keyifler nasil", "everything ok", "whats up", "what's up", "wassup", "sup"],
       "category": "greeting"
     },
     "thanks_goodbye": {
@@ -17,7 +17,7 @@
     },
     "working_hours": {
       "message": "⏰ **Çalışma Saatleri ve İletişim**\n\n**Ofis Saatleri:**\n• Pazartesi - Cuma: 09:00 - 18:00\n• Öğle molası: 12:00 - 13:00\n• Hafta sonu: Kapalı\n\n**Acil Durumlar:**\n• 7/24 sistem destek hattı\n• Kritik sistem arızaları için anında müdahale\n• Uzaktan destek imkanı\n\n**İletişim Kanalları:**\n• 📞 Ana hat: [Telefon numarası]\n• 📧 Destek: destek@mefapex.com\n• 💬 Canlı destek: Bu platform\n• 🎫 Ticket sistemi: [Portal adresi]\n\n**Yanıt Süreleri:**\n• Acil: 15 dakika içinde\n• Normal: 2 saat içinde\n• Düşük öncelik: 24 saat içinde\n\nHangi konuda destek almak istiyorsunuz? 📞",
-      "keywords": ["saat", "zaman", "çalışma saati", "mesai", "ne zaman", "office hours"],
+      "keywords": ["saat", "zaman", "çalışma saati", "mesai", "ne zaman", "office hours", "çalışma saatleri", "calisma saatleri", "calışma saatleri", "iş saatleri", "mesai saatleri", "working hours", "work hours", "çalışma zamanı", "iş zamanı", "ofis saatleri", "fabrika saatleri", "kaçta açık", "kaçta kapalı", "ne zaman açık", "ne zaman kapalı", "açılış", "kapanış", "opening", "closing", "working", "hours", "time", "mesai saati"],
       "category": "working_hours"
     },
     "support_types": {
