@@ -31,7 +31,8 @@ except ImportError:
     logger.warning("ContentManager not available")
 
 try:
-    memory_monitor = MemoryMonitor()
+    # Use the global memory monitor instance instead of creating a new one
+    from memory_monitor import memory_monitor
 except ImportError:
     memory_monitor = None
     logger.warning("MemoryMonitor not available")
