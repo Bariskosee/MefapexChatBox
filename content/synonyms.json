@@ -1,0 +1,15 @@
+{
+    "çalışma": ["iş", "mesai", "görev"],
+    "saat": ["zaman", "vakit", "time"],
+    "açık": ["open", "başlama"],
+    "kapalı": ["closed", "bitiş"],
+    "nedir": ["ne", "what"],
+    "güvenlik": ["emniyet", "security"],
+    "destek": ["yardım", "help"],
+    "mefapex": ["şirket", "company"],
+    "bilgi": ["information", "detay"],
+    "kaçta": ["ne zaman", "when"],
+    "performans": ["verim", "etkinlik", "performance"],
+    "ödeme": ["maaş", "ücret", "payment"],
+    "tatil": ["izin", "holiday", "leave"]
+}

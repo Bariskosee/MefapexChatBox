@@ -18,6 +18,7 @@ import unicodedata
 import gc
 import weakref
 import time
+import json
 from typing import List, Dict, Tuple, Optional, Set
 from dataclasses import dataclass
 from functools import lru_cache, wraps
@@ -142,26 +143,27 @@ def memory_optimized_cache(maxsize: int = 50):
 
 class TurkishTextNormalizer:
     """Türkçe metin normalizasyonu ve temizleme - Memory Optimized"""
-    
+
     # Türkçe karakter dönüşümleri
     TURKISH_CHAR_MAP = {
         'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u',
         'Ç': 'C', 'Ğ': 'G', 'I': 'I', 'İ': 'I', 'Ö': 'O', 'Ş': 'S', 'Ü': 'U'
     }
-    
-    # Kompakt eş anlamlı kelimeler - Memory optimized
-    SYNONYMS = {
-        'çalışma': ['iş', 'mesai', 'görev'],
-        'saat': ['zaman', 'vakit', 'time'],
-        'açık': ['open', 'başlama'],
-        'kapalı': ['closed', 'bitiş'],
-        'nedir': ['ne', 'what'],
-        'güvenlik': ['emniyet', 'security'],
-        'destek': ['yardım', 'help'],
-        'mefapex': ['şirket', 'company'],
-        'bilgi': ['information', 'detay'],
-        'kaçta': ['ne zaman', 'when']
-    }
+
+    # Eş anlamlı kelimeler JSON'dan yüklenecek
+    _synonyms: Optional[Dict[str, List[str]]] = None
+
+    @classmethod
+    def load_synonyms(cls, filepath: str = 'content/synonyms.json') -> Dict[str, List[str]]:
+        """JSON dosyasından eş anlamlı kelimeleri yükle"""
+        if cls._synonyms is None:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    cls._synonyms = json.load(f)
+            except Exception as e:
+                logger.warning(f"Synonyms could not be loaded: {e}")
+                cls._synonyms = {}
+        return cls._synonyms
     
     @classmethod
     @memory_optimized_cache(maxsize=100)  # Reduced from unlimited
@@ -205,11 +207,13 @@ class TurkishTextNormalizer:
         """Eş anlamlı kelimeleri genişlet - Memory optimized"""
         words = text.split()[:20]  # Limit to 20 words max
         expanded = set(words)
-        
+
+        synonyms = cls.load_synonyms()
+
         for word in words:
-            if word in cls.SYNONYMS:
-                expanded.update(cls.SYNONYMS[word][:3])  # Limit synonyms
-        
+            if word in synonyms:
+                expanded.update(synonyms[word][:3])  # Limit synonyms
+
         return expanded
 
 class FuzzyMatcher:
