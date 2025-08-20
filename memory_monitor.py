@@ -36,9 +36,9 @@ class MemoryMonitor:
     """
     
     def __init__(self, 
-                 check_interval: int = 30,  # CRITICAL FIX: Reduced from 60 to 30 seconds 
-                 memory_threshold_mb: float = 3072.0,  # CRITICAL FIX: Reduced from 4096 to 3GB
-                 leak_detection_window: int = 15):  # CRITICAL FIX: Increased for better detection
+                 check_interval: int = 45,  # AI MODEL FIX: Realistic monitoring interval for AI models
+                 memory_threshold_mb: float = 6144.0,  # AI MODEL FIX: 6GB threshold realistic for AI models
+                 leak_detection_window: int = 20):  # AI MODEL FIX: Longer window for AI model stability
         self.check_interval = check_interval
         self.memory_threshold_mb = memory_threshold_mb
         self.leak_detection_window = leak_detection_window
@@ -171,9 +171,9 @@ class MemoryMonitor:
                 f"(Warning #{self.memory_warnings})"
             )
             
-            # CRITICAL FIX: Progressive response to memory pressure
-            if self.memory_pressure_count >= 3:  # 3 consecutive warnings
-                logger.error("🚨 CRITICAL MEMORY PRESSURE - Initiating emergency cleanup")
+            # AI MODEL FIX: Balanced response to memory pressure for AI models
+            if self.memory_pressure_count >= 5:  # AI MODEL FIX: Allow more pressure before emergency cleanup
+                logger.error("🚨 SUSTAINED MEMORY PRESSURE - Initiating emergency cleanup")
                 self._emergency_memory_cleanup()
                 self.emergency_cleanups += 1
                 self.memory_pressure_count = 0  # Reset counter
@@ -205,8 +205,8 @@ class MemoryMonitor:
         end_memory = sum(memory_values[-3:]) / 3
         growth_rate = (end_memory - start_memory) / (len(memory_values) * self.check_interval / 60)  # MB per minute
         
-        # CRITICAL FIX: More sensitive leak detection thresholds
-        if growth_rate > 3.0:  # CRITICAL FIX: Reduced from 5.0 to 3.0 MB per minute
+        # AI MODEL FIX: Realistic leak detection thresholds for AI models
+        if growth_rate > 8.0:  # AI MODEL FIX: More tolerant threshold - 8MB per minute for AI models
             self.leak_alerts += 1
             logger.error(
                 f"🚨 POTENTIAL MEMORY LEAK DETECTED: "
@@ -368,11 +368,11 @@ class MemoryMonitor:
             obj_type = name or type(obj).__name__
             self.object_counts[obj_type] = max(0, self.object_counts[obj_type] - 1)
 
-# CRITICAL FIX: Global memory monitor instance with optimized settings for AI models
+# AI MODEL FIX: Global memory monitor instance with realistic settings for AI models
 memory_monitor = MemoryMonitor(
-    check_interval=30,  # CRITICAL FIX: More frequent monitoring - every 30 seconds
-    memory_threshold_mb=3072.0,  # CRITICAL FIX: Lower threshold - 3GB instead of 4GB
-    leak_detection_window=15  # CRITICAL FIX: Longer window for better leak detection
+    check_interval=45,  # AI MODEL FIX: Realistic monitoring interval - every 45 seconds
+    memory_threshold_mb=6144.0,  # AI MODEL FIX: 6GB threshold realistic for AI models
+    leak_detection_window=20  # AI MODEL FIX: Longer window for AI model stability
 )
 
 # Memory leak detection utilities
@@ -513,8 +513,8 @@ def setup_memory_monitoring():
     import os
     global memory_monitor
     
-    # Get memory threshold from environment or use 4GB default for AI models
-    memory_threshold = float(os.getenv("MEMORY_THRESHOLD_MB", "4096.0"))
+    # Get memory threshold from environment or use 6GB default for AI models
+    memory_threshold = float(os.getenv("MEMORY_THRESHOLD_MB", "6144.0"))
     
     # Use existing global instance if available, otherwise create new one
     if memory_monitor is None or not memory_monitor.monitoring:

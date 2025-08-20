@@ -108,10 +108,10 @@ def lazy_load_model(model_type: ModelType):
         return wrapper
     return decorator
 
-def memory_efficient_cache(maxsize: int = 20):  # CRITICAL FIX: Reduced default from 50 to 20
+def memory_efficient_cache(maxsize: int = 100):  # AI MODEL FIX: Realistic cache size for AI models
     """
-    CRITICAL MEMORY LEAK FIX: Enhanced memory-efficient LRU cache with aggressive cleanup
-    Much smaller cache size and more frequent cleanup to prevent memory bloat
+    AI MODEL FIX: Balanced memory-efficient LRU cache for AI models
+    Reasonable cache size to balance memory usage and performance
     """
     def decorator(func):
         cached_func = lru_cache(maxsize=maxsize)(func)
@@ -120,12 +120,12 @@ def memory_efficient_cache(maxsize: int = 20):  # CRITICAL FIX: Reduced default 
         def wrapper(*args, **kwargs):
             result = cached_func(*args, **kwargs)
             
-            # CRITICAL FIX: More aggressive cache cleanup
+            # AI MODEL FIX: Reasonable cache cleanup for AI models
             cache_info = cached_func.cache_info()
-            if cache_info.currsize > maxsize * 0.6:  # CRITICAL FIX: Reduced from 80% to 60%
+            if cache_info.currsize > maxsize * 0.85:  # AI MODEL FIX: Clean at 85% for better performance
                 logger.debug(f"Cache {func.__name__} at {cache_info.currsize}/{maxsize}, triggering cleanup")
-                # CRITICAL FIX: Clear cache when it gets moderately full
-                if cache_info.currsize >= maxsize * 0.8:  # 80% full
+                # AI MODEL FIX: Clear cache only when very full
+                if cache_info.currsize >= maxsize * 0.95:  # 95% full
                     cached_func.cache_clear()
                     logger.debug(f"🧹 Cache {func.__name__} cleared due to memory pressure")
                     
@@ -212,18 +212,18 @@ class ModelManager:
                         'text_generator': threading.Lock()
                     }
                     
-                    # CRITICAL FIX: Enhanced lazy loading and performance tracking
+                    # AI MODEL FIX: Balanced lazy loading and performance tracking for AI models
                     self._lazy_tracker = LazyLoadTracker()
                     self._last_cleanup = time.time()
-                    self._cleanup_interval = 150  # CRITICAL FIX: More frequent cleanup
-                    self._max_idle_time = 300  # CRITICAL FIX: Shorter idle time
+                    self._cleanup_interval = 300  # AI MODEL FIX: Balanced cleanup interval - 5 minutes
+                    self._max_idle_time = 900  # AI MODEL FIX: Reasonable idle time - 15 minutes
                     
                     # Memory management
                     self._memory_monitor = True
-                    self._max_cache_size = 20  # CRITICAL FIX: Reduced from 50 to 20
+                    self._max_cache_size = 100  # AI MODEL FIX: Realistic cache size for AI models
                     self._auto_cleanup = True
-                    self._cleanup_interval = 150  # CRITICAL FIX: Reduced from 300 to 150 seconds
-                    self._max_idle_time = 300  # CRITICAL FIX: Reduced from 600 to 300 seconds
+                    self._cleanup_interval = 300  # AI MODEL FIX: Balanced cleanup - every 5 minutes
+                    self._max_idle_time = 900  # AI MODEL FIX: Reasonable idle time - 15 minutes
                     
                     # Language detection
                     self._language_detector = TurkishLanguageDetector()
@@ -486,18 +486,18 @@ class ModelManager:
             logger.error(f"Failed to get sentence embedding: {e}")
             return None
 
-    @memory_efficient_cache(maxsize=20)  # CRITICAL FIX: Reduced from 50 to 20 to prevent memory bloat
+    @memory_efficient_cache(maxsize=100)  # AI MODEL FIX: Realistic cache size for AI models
     def generate_embedding(self, text: str, force_turkish: bool = None) -> list:
         """
-        🧠 Generate embedding with CRITICAL memory leak fixes and optimization
+        🧠 Generate embedding with AI MODEL optimizations for production use
         Uses lazy loading - models only load when first needed
         """
         try:
-            # CRITICAL FIX: More aggressive text length limiting
-            normalized_text = text.strip().lower()[:200]  # Reduced from 500 to 200 chars
+            # AI MODEL FIX: Reasonable text length limiting
+            normalized_text = text.strip().lower()[:800]  # AI MODEL FIX: Increased to 800 chars for better AI performance
             
-            # CRITICAL FIX: Skip empty or very short texts immediately
-            if len(normalized_text.strip()) < 3:
+            # AI MODEL FIX: Skip only very short texts
+            if len(normalized_text.strip()) < 2:
                 return []
             
             # Detect language or use forced setting
@@ -534,14 +534,14 @@ class ModelManager:
                     result = embedding.tolist()
                     del embedding  # Explicit cleanup
                     
-            # CRITICAL FIX: More aggressive periodic memory cleanup
+            # AI MODEL FIX: Balanced periodic memory cleanup for AI models
             if hasattr(self, '_embedding_counter'):
                 self._embedding_counter += 1
             else:
                 self._embedding_counter = 1
                 
-            # CRITICAL FIX: Much more frequent cleanup - every 15 embeddings instead of 25
-            if self._embedding_counter % 15 == 0:
+            # AI MODEL FIX: Balanced cleanup frequency - every 50 embeddings
+            if self._embedding_counter % 50 == 0:
                 self._force_gc()
                 logger.debug(f"🧹 Memory cleanup after {self._embedding_counter} embeddings")
             
@@ -559,27 +559,27 @@ class ModelManager:
                     return []
             return []
         finally:
-            # CRITICAL FIX: Aggressive cache cleanup for memory efficiency
+            # AI MODEL FIX: Balanced cache cleanup for AI model performance
             try:
                 cache_info = self.generate_embedding.cache_info()
-                if cache_info.currsize > 15:  # CRITICAL FIX: Reduced from 40 to 15
-                    if cache_info.currsize >= 18:  # CRITICAL FIX: Clear cache when near full
+                if cache_info.currsize > 80:  # AI MODEL FIX: Reasonable cache cleanup threshold
+                    if cache_info.currsize >= 95:  # AI MODEL FIX: Clear cache when nearly full
                         self.generate_embedding.cache_clear()
                         self._force_gc()
                         logger.debug("🧹 Cache cleared due to memory pressure")
             except Exception as cleanup_e:
                 logger.debug(f"Cache cleanup warning: {cleanup_e}")
     
-    def generate_text_response(self, prompt: str, max_length: int = 60, turkish_context: bool = True) -> str:
+    def generate_text_response(self, prompt: str, max_length: int = 120, turkish_context: bool = True) -> str:
         """
-        CRITICAL FIX: Generate text response with aggressive memory optimization and leak prevention
+        AI MODEL FIX: Generate text response with balanced memory optimization for AI models
         """
         try:
             if self.text_generator is None:
                 raise RuntimeError("Text generator not available")
             
-            # CRITICAL FIX: More aggressive prompt length limiting
-            prompt = prompt[:100]  # Reduced from 150
+            # AI MODEL FIX: Reasonable prompt length limiting for AI models
+            prompt = prompt[:300]  # AI MODEL FIX: Increased to 300 chars for better AI quality
             
             # Enhanced Turkish context for better responses
             if turkish_context and self._language_detector.is_turkish(prompt):
@@ -588,12 +588,12 @@ class ModelManager:
             else:
                 enhanced_prompt = prompt
             
-            # CRITICAL FIX: Enhanced memory management for text generation
+            # AI MODEL FIX: Balanced memory management for text generation
             with torch.no_grad():  # Prevent gradient accumulation
-                with torch.inference_mode():  # CRITICAL FIX: Better memory efficiency
+                with torch.inference_mode():  # AI MODEL FIX: Memory efficiency with reasonable performance
                     outputs = self.text_generator(
                         enhanced_prompt,
-                        max_length=min(max_length, 60),  # CRITICAL FIX: Reduced max length
+                        max_length=min(max_length, 120),  # AI MODEL FIX: Reasonable max length for AI models
                         num_return_sequences=1,
                         temperature=0.6,  # Reduced for more coherent responses
                         do_sample=True,

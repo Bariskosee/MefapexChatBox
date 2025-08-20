@@ -78,10 +78,10 @@ class Config:
     DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "1234")
     
     # Memory Management Settings for AI Models
-    MEMORY_THRESHOLD_MB = int(os.getenv("MEMORY_THRESHOLD_MB", 2048))  # 2GB for AI models (increased)
-    MODEL_CACHE_SIZE = int(os.getenv("MODEL_CACHE_SIZE", 50))  # Dramatically reduced cache size
-    FORCE_GC_INTERVAL = int(os.getenv("FORCE_GC_INTERVAL", 20))  # More frequent GC
-    MEMORY_MONITOR_INTERVAL = int(os.getenv("MEMORY_MONITOR_INTERVAL", 30))  # More frequent monitoring
+    MEMORY_THRESHOLD_MB = int(os.getenv("MEMORY_THRESHOLD_MB", 6144))  # AI MODEL FIX: 6GB realistic for AI models
+    MODEL_CACHE_SIZE = int(os.getenv("MODEL_CACHE_SIZE", 100))  # AI MODEL FIX: Realistic cache size for AI models
+    FORCE_GC_INTERVAL = int(os.getenv("FORCE_GC_INTERVAL", 50))  # AI MODEL FIX: Balanced GC frequency
+    MEMORY_MONITOR_INTERVAL = int(os.getenv("MEMORY_MONITOR_INTERVAL", 45))  # AI MODEL FIX: Balanced monitoring
     
     # Emergency mode settings
     EMERGENCY_MODE = os.getenv("EMERGENCY_MODE", "false").lower() == "true"
@@ -92,68 +92,63 @@ config = Config()
 
 
 
-# 🚨 EMERGENCY MEMORY LEAK FIXES
+# AI MODEL FIX: Realistic memory thresholds for production AI systems
 # ==============================
 
-# Memory thresholds (realistic for AI models)
-MEMORY_THRESHOLD_MB = 2048  # Increased from 1536 (more realistic)
-MODEL_CACHE_SIZE = 25       # Reduced from 100 (50% reduction)
-FORCE_GC_INTERVAL = 15      # Reduced from 50 (more frequent cleanup)
-EMERGENCY_MODE = False      # Enable to disable AI models
-DISABLE_AI_MODELS = False   # Emergency AI model disabling
+# Memory thresholds (realistic for AI models in production)
+MEMORY_THRESHOLD_MB = 6144  # AI MODEL FIX: 6GB realistic for AI models (was 1536/2048)
+MODEL_CACHE_SIZE = 100       # AI MODEL FIX: Realistic cache size (was 25/100)
+FORCE_GC_INTERVAL = 50      # AI MODEL FIX: Balanced cleanup frequency (was 15)
+EMERGENCY_MODE = False      # AI MODEL FIX: Disable for normal operations
+DISABLE_AI_MODELS = False   # AI MODEL FIX: Enable AI models for production
 
-# Cache optimizations  
-LRU_CACHE_SIZE = 50         # Reduced from 1000 (95% reduction)
-SIMILARITY_CACHE_SIZE = 50  # New: limit similarity cache
-TEXT_LENGTH_LIMIT = 500     # New: limit text processing length
+# Cache optimizations balanced for AI performance
+LRU_CACHE_SIZE = 100         # AI MODEL FIX: Realistic cache size (was 50)
+SIMILARITY_CACHE_SIZE = 100  # AI MODEL FIX: Realistic similarity cache (was 50)
+TEXT_LENGTH_LIMIT = 800     # AI MODEL FIX: Reasonable text length (was 500)
 
-# Garbage collection
+# Balanced garbage collection for AI workloads
 AUTO_GC_ENABLED = True      # Enable automatic garbage collection
-GC_THRESHOLD_FACTOR = 0.7   # GC when 70% of threshold reached
-PERIODIC_GC_INTERVAL = 30   # GC every 30 operations
+GC_THRESHOLD_FACTOR = 0.8   # AI MODEL FIX: Less aggressive - GC at 80% (was 70%)
+PERIODIC_GC_INTERVAL = 50   # AI MODEL FIX: GC every 50 operations (was 30)
 
-# Memory monitoring
-MEMORY_MONITOR_INTERVAL = 30    # Monitor every 30 seconds
-MEMORY_ALERT_THRESHOLD = 3072   # Alert at 3GB
-MEMORY_EMERGENCY_THRESHOLD = 3584  # Emergency at 3.5GB
+# Balanced memory monitoring for AI systems
+MEMORY_MONITOR_INTERVAL = 45    # AI MODEL FIX: Monitor every 45 seconds (was 30)
+MEMORY_ALERT_THRESHOLD = 5120   # AI MODEL FIX: Alert at 5GB (was 3GB)
+MEMORY_EMERGENCY_THRESHOLD = 5632  # AI MODEL FIX: Emergency at 5.5GB (was 3.5GB)
 
-# Model optimization
+# AI Model optimization settings
 MODEL_LAZY_LOADING = True       # Enable lazy loading
 MODEL_AUTO_UNLOAD = True        # Auto-unload idle models
-MODEL_IDLE_TIMEOUT = 600        # 10 minutes idle timeout
+MODEL_IDLE_TIMEOUT = 900        # AI MODEL FIX: 15 minutes idle timeout (was 10 minutes)
 
 
-# 🚨 ULTRA MEMORY OPTIMIZATION SETTINGS
+# AI MODEL FIX: Realistic memory optimization settings for production AI models
 # ====================================
-# Added by ultra memory optimization script
 
-# Ultra-aggressive memory limits
-MEMORY_THRESHOLD_MB=1024  # 1GB limit (was 2GB)
-MAX_MODEL_MEMORY_MB=512   # 512MB per model max
-EMERGENCY_MODE=true       # Force emergency mode
+# Realistic memory limits for AI models
+MEMORY_THRESHOLD_MB = 6144  # AI MODEL FIX: 6GB realistic for AI models (was 1GB/2GB)
+MAX_MODEL_MEMORY_MB = 2048   # AI MODEL FIX: 2GB per model reasonable (was 512MB)
+EMERGENCY_MODE = False       # AI MODEL FIX: Disable emergency mode for normal operation
 
-# Ultra-small cache sizes
-MODEL_CACHE_SIZE=5        # Minimal model cache
-LRU_CACHE_SIZE=5          # Minimal LRU cache
-EMBEDDING_CACHE_SIZE=5    # Minimal embedding cache
+# Balanced cache sizes for AI performance
+MODEL_CACHE_SIZE = 100        # AI MODEL FIX: Realistic model cache (was 5)
+LRU_CACHE_SIZE = 100          # AI MODEL FIX: Realistic LRU cache (was 5)
+EMBEDDING_CACHE_SIZE = 100    # AI MODEL FIX: Realistic embedding cache (was 5)
 
-# Aggressive cleanup
-GC_FREQUENCY=5            # Garbage collect every 5 operations
-AUTO_UNLOAD_TIMEOUT=120   # Auto-unload models after 2 minutes
+# Balanced cleanup for AI models
+GC_FREQUENCY = 50            # AI MODEL FIX: Balanced garbage collection (was 5)
+AUTO_UNLOAD_TIMEOUT = 900    # AI MODEL FIX: 15 minutes idle timeout (was 2 minutes)
 
-# Text processing limits
-MAX_TEXT_LENGTH=100       # Limit text to 100 chars
-MAX_BATCH_SIZE=1          # Process one item at a time
+# Reasonable text processing limits
+MAX_TEXT_LENGTH = 800       # AI MODEL FIX: Reasonable text length (was 100 chars)
+MAX_BATCH_SIZE = 4          # AI MODEL FIX: Small but workable batch size (was 1)
 
-# Disable heavy features in ultra mode
-DISABLE_TEXT_GENERATION=true    # Disable text generation
-DISABLE_LARGE_MODELS=true       # Disable large models
-FORCE_CPU_ONLY=true             # Force CPU processing only
+# Enable all AI features for production use
+DISABLE_TEXT_GENERATION = False    # AI MODEL FIX: Enable text generation
+DISABLE_LARGE_MODELS = False       # AI MODEL FIX: Enable large models
+FORCE_CPU_ONLY = False             # AI MODEL FIX: Allow GPU acceleration
 
-# Ultra-aggressive monitoring
-MEMORY_CHECK_INTERVAL=30        # Check memory every 30 seconds
-FORCE_CLEANUP_THRESHOLD=900     # Force cleanup at 900MB
-
-export MEMORY_THRESHOLD_MB MODEL_CACHE_SIZE LRU_CACHE_SIZE EMERGENCY_MODE
-export DISABLE_TEXT_GENERATION DISABLE_LARGE_MODELS FORCE_CPU_ONLY
-export GC_FREQUENCY AUTO_UNLOAD_TIMEOUT MAX_TEXT_LENGTH MAX_BATCH_SIZE
+# Balanced monitoring for AI models
+MEMORY_CHECK_INTERVAL = 45        # AI MODEL FIX: Check memory every 45 seconds (was 30)
+FORCE_CLEANUP_THRESHOLD = 5500     # AI MODEL FIX: Cleanup at 5.5GB (was 900MB)
