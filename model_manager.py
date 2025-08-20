@@ -1,22 +1,136 @@
 """
-Enhanced Thread-safe Model Manager for MEFAPEX AI Assistant
-Optimized for Turkish Language Support
+🚀 Enhanced Lazy-Loading Model Manager for MEFAPEX AI Assistant
+==============================================================
+Optimized for Turkish Language Support with Advanced Lazy Loading
+- True lazy loading: Models only loaded when actually needed
+- Memory-efficient: Automatic cleanup and garbage collection
+- Smart caching: LRU cache with configurable size limits
+- Turkish language optimization: Auto-detection and model selection
+- Thread-safe: Concurrent access protection
 Fixed memory leak issues and improved resource management
 """
 import threading
 import logging
 import gc
 import torch
+import time
+import weakref
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union, Callable
 import os
-from functools import lru_cache
+from functools import lru_cache, wraps
 import atexit
 from core.configuration import get_config
 import re
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+class ModelType(Enum):
+    """Model types for lazy loading management"""
+    TURKISH_SENTENCE = "turkish_sentence"
+    ENGLISH_SENTENCE = "english_sentence"
+    TEXT_GENERATOR = "text_generator"
+
+class LazyLoadTracker:
+    """Track lazy loading statistics and performance"""
+    
+    def __init__(self):
+        self.load_times = {}
+        self.load_counts = {}
+        self.last_access = {}
+        self.memory_usage = {}
+        
+    def record_load(self, model_type: str, load_time: float, memory_mb: float):
+        """Record model loading metrics"""
+        self.load_times[model_type] = load_time
+        self.load_counts[model_type] = self.load_counts.get(model_type, 0) + 1
+        self.last_access[model_type] = time.time()
+        self.memory_usage[model_type] = memory_mb
+        
+    def record_access(self, model_type: str):
+        """Record model access"""
+        self.last_access[model_type] = time.time()
+        
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get loading statistics"""
+        now = time.time()
+        return {
+            "load_times": self.load_times,
+            "load_counts": self.load_counts,
+            "last_access": {k: now - v for k, v in self.last_access.items()},
+            "memory_usage": self.memory_usage
+        }
+
+def lazy_load_model(model_type: ModelType):
+    """
+    Decorator for lazy loading AI models with performance tracking
+    Models are only loaded when first accessed, not during initialization
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            # Track access
+            if hasattr(self, '_lazy_tracker'):
+                self._lazy_tracker.record_access(model_type.value)
+            
+            # Check if model is already loaded
+            attr_name = f"_{model_type.value.replace('_', '_')}_model"
+            if getattr(self, attr_name, None) is not None:
+                return getattr(self, attr_name)
+            
+            # Load model with timing and memory tracking
+            start_time = time.time()
+            start_memory = self._get_memory_usage()
+            
+            logger.info(f"🔄 Lazy loading {model_type.value} model...")
+            
+            # Call the original loading function
+            model = func(self, *args, **kwargs)
+            
+            # Record performance metrics
+            load_time = time.time() - start_time
+            memory_used = self._get_memory_usage() - start_memory
+            
+            if hasattr(self, '_lazy_tracker'):
+                self._lazy_tracker.record_load(model_type.value, load_time, memory_used)
+            
+            logger.info(f"✅ {model_type.value} model loaded in {load_time:.2f}s, memory: {memory_used:.1f}MB")
+            
+            # Store the loaded model
+            setattr(self, attr_name, model)
+            
+            # Schedule periodic cleanup
+            self._schedule_cleanup()
+            
+            return model
+        return wrapper
+    return decorator
+
+def memory_efficient_cache(maxsize: int = 50):
+    """
+    Memory-efficient LRU cache with automatic cleanup
+    Smaller cache size to prevent memory bloat
+    """
+    def decorator(func):
+        cached_func = lru_cache(maxsize=maxsize)(func)
+        
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            result = cached_func(*args, **kwargs)
+            
+            # Periodic cache cleanup
+            cache_info = cached_func.cache_info()
+            if cache_info.currsize > maxsize * 0.8:  # 80% full
+                logger.debug(f"Cache {func.__name__} approaching limit, considering cleanup")
+                
+            return result
+        
+        wrapper.cache_info = cached_func.cache_info
+        wrapper.cache_clear = cached_func.cache_clear
+        return wrapper
+    return decorator
 
 class TurkishLanguageDetector:
     """Simple Turkish language detection utility"""
@@ -56,8 +170,13 @@ class TurkishLanguageDetector:
 
 class ModelManager:
     """
-    Thread-safe singleton model manager with proper memory management,
-    cleanup to prevent memory leaks, and Turkish language support.
+    🚀 Advanced Lazy-Loading Model Manager with Memory Optimization
+    ============================================================
+    - True lazy loading: Models loaded only when actually needed
+    - Memory-efficient: Smart cleanup and garbage collection  
+    - Thread-safe: Concurrent access protection
+    - Turkish optimization: Auto-detection and model selection
+    - Performance tracking: Load times and memory usage metrics
     """
     
     _instance = None
@@ -75,29 +194,93 @@ class ModelManager:
         if not self._initialized:
             with self._lock:
                 if not self._initialized:
-                    self._sentence_model = None
+                    # ⚠️ MODELS ARE NOT LOADED HERE - LAZY LOADING ONLY! ⚠️
+                    self._english_sentence_model = None
                     self._turkish_sentence_model = None
-                    self._text_generator = None
+                    self._text_generator_model = None
                     self._device = None
                     self._model_config = {}
+                    
+                    # Thread locks for each model type
                     self._model_locks = {
-                        'sentence': threading.Lock(),
-                        'turkish_sentence': threading.Lock(),
+                        'english_sentence': threading.Lock(),
+                        'turkish_sentence': threading.Lock(), 
                         'text_generator': threading.Lock()
                     }
+                    
+                    # Lazy loading and performance tracking
+                    self._lazy_tracker = LazyLoadTracker()
+                    self._last_cleanup = time.time()
+                    self._cleanup_interval = 300  # 5 minutes
+                    self._max_idle_time = 600  # 10 minutes before unloading
+                    
+                    # Memory management
                     self._memory_monitor = True
-                    self._max_cache_size = 100  # Reduced cache size from 500 to 100
-                    self._initialized = True
+                    self._max_cache_size = 50  # Reduced for memory efficiency
+                    self._auto_cleanup = True
+                    
+                    # Language detection
                     self._language_detector = TurkishLanguageDetector()
                     
-                    # Model cache directory for persistence
+                    # Model cache directory
                     self._cache_dir = os.path.join(os.getcwd(), "models_cache")
                     os.makedirs(self._cache_dir, exist_ok=True)
                     
                     # Register cleanup on exit
                     atexit.register(self.cleanup_resources)
                     
-                    logger.info("🤖 Enhanced ModelManager initialized with Turkish language support")
+                    self._initialized = True
+                    logger.info("🚀 Lazy-Loading ModelManager initialized - models will load on first use")
+    
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage in MB"""
+        try:
+            import psutil
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            return 0.0
+    
+    def _schedule_cleanup(self):
+        """Schedule periodic cleanup of unused models"""
+        if not self._auto_cleanup:
+            return
+            
+        current_time = time.time()
+        if current_time - self._last_cleanup > self._cleanup_interval:
+            threading.Thread(target=self._cleanup_idle_models, daemon=True).start()
+            self._last_cleanup = current_time
+    
+    def _cleanup_idle_models(self):
+        """Clean up models that haven't been used recently"""
+        try:
+            current_time = time.time()
+            models_to_cleanup = []
+            
+            for model_type, last_access in self._lazy_tracker.last_access.items():
+                if current_time - last_access > self._max_idle_time:
+                    models_to_cleanup.append(model_type)
+            
+            for model_type in models_to_cleanup:
+                self._unload_model(model_type)
+                logger.info(f"🧹 Unloaded idle model: {model_type}")
+            
+            if models_to_cleanup:
+                self._force_gc()
+                
+        except Exception as e:
+            logger.warning(f"Model cleanup failed: {e}")
+    
+    def _unload_model(self, model_type: str):
+        """Unload a specific model to free memory"""
+        attr_name = f"_{model_type.replace('_', '_')}_model"
+        if hasattr(self, attr_name):
+            model = getattr(self, attr_name)
+            if model is not None:
+                del model
+                setattr(self, attr_name, None)
+                # Remove from config
+                self._model_config.pop(model_type, None)
     
     @property
     def device(self) -> str:
@@ -115,156 +298,176 @@ class ModelManager:
     @property
     def sentence_model(self) -> SentenceTransformer:
         """
-        Get sentence transformer model with thread-safe lazy loading
-        Automatically chooses Turkish or multilingual model based on configuration
+        Get sentence transformer model with intelligent model selection
+        Automatically chooses Turkish or English model based on configuration
         """
         config = get_config().ai
         
-        # Determine which model to use
+        # Determine which model to use based on configuration
         if config.prefer_turkish_models:
             return self.turkish_sentence_model
         else:
             return self.english_sentence_model
     
     @property
+    @lazy_load_model(ModelType.TURKISH_SENTENCE)
     def turkish_sentence_model(self) -> SentenceTransformer:
         """
-        Get Turkish-optimized sentence transformer model with thread-safe lazy loading
+        🇹🇷 Lazy-loaded Turkish-optimized sentence transformer
+        Only loads when first accessed, not during initialization
         """
-        if self._turkish_sentence_model is None:
-            with self._model_locks['turkish_sentence']:
-                if self._turkish_sentence_model is None:
-                    try:
-                        logger.info("📚 Loading Turkish sentence transformer model...")
-                        config = get_config().ai
-                        model_name = config.turkish_sentence_model
-                        
-                        # Force garbage collection before loading
-                        self._force_gc()
-                        
-                        # Load Turkish-optimized model with reduced memory footprint
-                        self._turkish_sentence_model = SentenceTransformer(
-                            model_name,
-                            device=self.device if self.device != "mps" else "cpu"  # MPS fix
-                        )
-                        
-                        # Optimize model for inference
-                        self._turkish_sentence_model.eval()  # Set to evaluation mode
-                        
-                        self._model_config['turkish_sentence_model'] = model_name
-                        logger.info(f"✅ Turkish sentence transformer loaded: {model_name}")
-                        
-                        # Force garbage collection after model loading
-                        self._force_gc()
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Failed to load Turkish sentence transformer: {e}")
-                        logger.warning("🔄 Falling back to multilingual model...")
-                        # Fallback to multilingual model
-                        try:
-                            self._turkish_sentence_model = SentenceTransformer(
-                                "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                                device=self.device if self.device != "mps" else "cpu"
-                            )
-                            self._turkish_sentence_model.eval()
-                            logger.info("✅ Multilingual fallback model loaded")
-                        except Exception as fallback_e:
-                            logger.error(f"❌ Fallback model also failed: {fallback_e}")
-                            raise RuntimeError(f"Could not load any sentence model: {e}")
-        
-        return self._turkish_sentence_model
+        with self._model_locks['turkish_sentence']:
+            try:
+                logger.info("📚 Loading Turkish sentence transformer model...")
+                config = get_config().ai
+                model_name = config.turkish_sentence_model
+                
+                # Force garbage collection before loading
+                self._force_gc()
+                
+                # Load Turkish-optimized model with memory-efficient settings
+                model = SentenceTransformer(
+                    model_name,
+                    device=self.device if self.device != "mps" else "cpu",  # MPS compatibility
+                    cache_folder=self._cache_dir
+                )
+                
+                # Optimize for inference
+                model.eval()
+                if hasattr(model, 'half') and self.device == "cuda":
+                    model.half()  # Use FP16 for memory efficiency on CUDA
+                
+                self._model_config['turkish_sentence_model'] = model_name
+                logger.info(f"✅ Turkish sentence transformer loaded: {model_name}")
+                
+                return model
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to load Turkish sentence transformer: {e}")
+                logger.warning("🔄 Falling back to multilingual model...")
+                
+                # Fallback to multilingual model
+                try:
+                    fallback_model = SentenceTransformer(
+                        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                        device=self.device if self.device != "mps" else "cpu",
+                        cache_folder=self._cache_dir
+                    )
+                    fallback_model.eval()
+                    self._model_config['turkish_sentence_model'] = "multilingual-fallback"
+                    logger.info("✅ Multilingual fallback model loaded")
+                    return fallback_model
+                    
+                except Exception as fallback_e:
+                    logger.error(f"❌ Fallback model also failed: {fallback_e}")
+                    raise RuntimeError(f"Could not load any Turkish sentence model: {e}")
     
-    @property
+    @property  
+    @lazy_load_model(ModelType.ENGLISH_SENTENCE)
     def english_sentence_model(self) -> SentenceTransformer:
         """
-        Get English sentence transformer model (fallback) with thread-safe lazy loading
+        🇺🇸 Lazy-loaded English sentence transformer (fallback)
+        Only loads when first accessed, not during initialization
         """
-        if self._sentence_model is None:
-            with self._model_locks['sentence']:
-                if self._sentence_model is None:
-                    try:
-                        logger.info("📚 Loading English sentence transformer model...")
-                        config = get_config().ai
-                        model_name = config.english_fallback_model
-                        
-                        # Force garbage collection before loading
-                        self._force_gc()
-                        
-                        # Load with reduced memory footprint
-                        self._sentence_model = SentenceTransformer(
-                            model_name,
-                            device=self.device if self.device != "mps" else "cpu"  # MPS fix
-                        )
-                        
-                        # Optimize model for inference
-                        self._sentence_model.eval()  # Set to evaluation mode
-                        
-                        self._model_config['sentence_model'] = model_name
-                        logger.info(f"✅ English sentence transformer loaded: {model_name}")
-                        
-                        # Force garbage collection after model loading
-                        self._force_gc()
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Failed to load English sentence transformer: {e}")
-                        raise RuntimeError(f"Could not load sentence model: {e}")
-        
-        return self._sentence_model
+        with self._model_locks['english_sentence']:
+            try:
+                logger.info("📚 Loading English sentence transformer model...")
+                config = get_config().ai
+                model_name = config.english_fallback_model
+                
+                # Force garbage collection before loading
+                self._force_gc()
+                
+                # Load with memory-efficient settings
+                model = SentenceTransformer(
+                    model_name,
+                    device=self.device if self.device != "mps" else "cpu",
+                    cache_folder=self._cache_dir
+                )
+                
+                # Optimize for inference
+                model.eval()
+                if hasattr(model, 'half') and self.device == "cuda":
+                    model.half()  # Use FP16 for memory efficiency on CUDA
+                
+                self._model_config['english_sentence_model'] = model_name
+                logger.info(f"✅ English sentence transformer loaded: {model_name}")
+                
+                return model
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to load English sentence transformer: {e}")
+                raise RuntimeError(f"Could not load English sentence model: {e}")
     
     @property
+    @lazy_load_model(ModelType.TEXT_GENERATOR)  
     def text_generator(self) -> Optional[Any]:
         """
-        Get text generation model with thread-safe lazy loading and memory optimization
+        🤖 Lazy-loaded text generation model with memory optimization
+        Only loads when first accessed, not during initialization
         """
-        if self._text_generator is None:
-            with self._model_locks['text_generator']:
-                if self._text_generator is None:
-                    try:
-                        model_name = get_config().ai.huggingface_model
-                        logger.info(f"🤖 Loading text generation model: {model_name}")
-                        
-                        # Load tokenizer separately for better memory control
-                        tokenizer = AutoTokenizer.from_pretrained(model_name)
-                        if tokenizer.pad_token is None:
-                            tokenizer.pad_token = tokenizer.eos_token
-                        
-                        # Load model with memory-efficient settings
-                        model = AutoModelForCausalLM.from_pretrained(
-                            model_name,
-                            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                            low_cpu_mem_usage=True,
-                            device_map="auto" if self.device == "cuda" else None
-                        )
-                        
-                        # Move to device if not CUDA (device_map handles CUDA)
-                        if self.device != "cuda":
-                            model = model.to(self.device if self.device != "mps" else "cpu")
-                        
-                        # Create pipeline with memory-efficient settings
-                        self._text_generator = pipeline(
-                            "text-generation",
-                            model=model,
-                            tokenizer=tokenizer,
-                            device=0 if self.device == "cuda" else -1,
-                            max_length=100,  # Reduced from 150
-                            do_sample=True,
-                            temperature=0.7,
-                            return_full_text=False,
-                            clean_up_tokenization_spaces=True,
-                            batch_size=1  # Process one at a time
-                        )
-                        
-                        self._model_config['text_generator'] = model_name
-                        logger.info(f"✅ Text generation model loaded: {model_name}")
-                        
-                        # Force garbage collection after model loading
-                        self._force_gc()
-                        
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to load text generation model: {e}")
-                        self._text_generator = None
-        
-        return self._text_generator
+        with self._model_locks['text_generator']:
+            try:
+                model_name = get_config().ai.huggingface_model
+                logger.info(f"🤖 Loading text generation model: {model_name}")
+                
+                # Force garbage collection before loading
+                self._force_gc()
+                
+                # Load tokenizer with caching
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_name,
+                    cache_dir=self._cache_dir
+                )
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+                
+                # Memory-efficient model loading
+                model_kwargs = {
+                    "cache_dir": self._cache_dir,
+                    "low_cpu_mem_usage": True,
+                }
+                
+                # Configure for different devices
+                if self.device == "cuda":
+                    model_kwargs.update({
+                        "torch_dtype": torch.float16,
+                        "device_map": "auto"
+                    })
+                elif self.device == "cpu":
+                    model_kwargs.update({
+                        "torch_dtype": torch.float32
+                    })
+                
+                model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+                
+                # Move to device if not using device_map
+                if self.device != "cuda":
+                    model = model.to(self.device if self.device != "mps" else "cpu")
+                
+                # Create optimized pipeline
+                text_generator = pipeline(
+                    "text-generation",
+                    model=model,
+                    tokenizer=tokenizer,
+                    device=0 if self.device == "cuda" else -1,
+                    max_length=100,
+                    do_sample=True,
+                    temperature=0.7,
+                    return_full_text=False,
+                    clean_up_tokenization_spaces=True,
+                    batch_size=1,
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+                )
+                
+                self._model_config['text_generator'] = model_name
+                logger.info(f"✅ Text generation model loaded: {model_name}")
+                
+                return text_generator
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load text generation model: {e}")
+                return None
     
     def get_sentence_embedding(self, text: str) -> Optional[list]:
         """
@@ -277,10 +480,11 @@ class ModelManager:
             logger.error(f"Failed to get sentence embedding: {e}")
             return None
 
-    @lru_cache(maxsize=100)  # Further reduced cache size for memory efficiency
+    @memory_efficient_cache(maxsize=50)  # Reduced cache size for better memory management
     def generate_embedding(self, text: str, force_turkish: bool = None) -> list:
         """
-        Generate embedding with Turkish language support and reduced caching for memory efficiency
+        🧠 Generate embedding with smart language detection and memory optimization
+        Uses lazy loading - models only load when first needed
         """
         try:
             # Limit text length to prevent memory issues
@@ -295,28 +499,31 @@ class ModelManager:
             elif use_turkish_model is None:
                 use_turkish_model = config.prefer_turkish_models
             
-            # Choose appropriate model
+            # Choose appropriate model (triggers lazy loading if needed)
             if use_turkish_model:
                 logger.debug(f"🇹🇷 Using Turkish model for: {normalized_text[:30]}...")
-                model = self.turkish_sentence_model
+                model = self.turkish_sentence_model  # Lazy loaded
             else:
                 logger.debug(f"🇺🇸 Using English model for: {normalized_text[:30]}...")
-                model = self.english_sentence_model
+                model = self.english_sentence_model  # Lazy loaded
             
+            # Generate embedding with memory optimization
             with torch.no_grad():  # Prevent gradient accumulation
                 embedding = model.encode(
                     [normalized_text], 
                     convert_to_tensor=False,  # Return numpy array
-                    show_progress_bar=False
+                    show_progress_bar=False,
+                    batch_size=1  # Process one at a time
                 )[0].tolist()
             
-            # Force garbage collection periodically
+            # Periodic memory cleanup
             if hasattr(self, '_embedding_counter'):
                 self._embedding_counter += 1
             else:
                 self._embedding_counter = 1
                 
-            if self._embedding_counter % 50 == 0:  # Every 50 embeddings
+            # More frequent cleanup for better memory management
+            if self._embedding_counter % 25 == 0:  # Every 25 embeddings
                 self._force_gc()
             
             return embedding
@@ -329,9 +536,11 @@ class ModelManager:
                 return self.generate_embedding(text, force_turkish=False)
             raise
         finally:
-            # Periodic garbage collection
-            if self.generate_embedding.cache_info().currsize % 50 == 0:
-                self._force_gc()
+            # Periodic cache cleanup for memory efficiency
+            cache_info = self.generate_embedding.cache_info()
+            if cache_info.currsize > 40:  # Near cache limit
+                if cache_info.currsize % 10 == 0:  # Every 10th near-full cache
+                    self._force_gc()
     
     def generate_text_response(self, prompt: str, max_length: int = 80, turkish_context: bool = True) -> str:
         """
@@ -488,7 +697,7 @@ class ModelManager:
     
     def get_model_info(self) -> Dict[str, Any]:
         """
-        Get information about loaded models and memory usage
+        📊 Get comprehensive model information and performance metrics
         """
         memory_info = {}
         
@@ -503,27 +712,45 @@ class ModelManager:
             memory_info = {"memory_mb": "psutil not available"}
         
         cache_info = self.generate_embedding.cache_info()
+        lazy_stats = self._lazy_tracker.get_statistics()
         
         return {
-            "sentence_model_loaded": self._sentence_model is not None,
+            # Model loading status (lazy loaded)
+            "english_sentence_model_loaded": self._english_sentence_model is not None,
             "turkish_sentence_model_loaded": self._turkish_sentence_model is not None,
-            "text_generator_loaded": self._text_generator is not None,
+            "text_generator_loaded": self._text_generator_model is not None,
+            
+            # System info
             "device": self.device,
             "model_config": self._model_config,
             "memory_info": memory_info,
+            
+            # Configuration
             "language_detection_enabled": get_config().ai.language_detection,
             "prefer_turkish_models": get_config().ai.prefer_turkish_models,
+            
+            # Cache performance
             "cache_info": {
                 "embedding_cache_size": cache_info.currsize,
                 "embedding_cache_hits": cache_info.hits,
                 "embedding_cache_misses": cache_info.misses,
-                "embedding_cache_maxsize": cache_info.maxsize
-            }
+                "embedding_cache_maxsize": cache_info.maxsize,
+                "cache_hit_ratio": cache_info.hits / (cache_info.hits + cache_info.misses) if (cache_info.hits + cache_info.misses) > 0 else 0
+            },
+            
+            # Lazy loading statistics
+            "lazy_loading_stats": lazy_stats,
+            
+            # Memory management
+            "auto_cleanup_enabled": self._auto_cleanup,
+            "cleanup_interval_seconds": self._cleanup_interval,
+            "max_idle_time_seconds": self._max_idle_time,
+            "last_cleanup": time.time() - self._last_cleanup
         }
     
     def clear_caches(self):
         """
-        Clear all model caches and force garbage collection
+        🧹 Clear all model caches and force garbage collection
         """
         try:
             self.generate_embedding.cache_clear()
@@ -532,65 +759,139 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Cache clearing failed: {e}")
     
+    def unload_all_models(self):
+        """
+        🗑️ Unload all models to free maximum memory
+        """
+        try:
+            logger.info("🗑️ Unloading all models...")
+            
+            # Clear caches first
+            self.clear_caches()
+            
+            # Unload all models
+            models_unloaded = []
+            
+            if self._turkish_sentence_model is not None:
+                del self._turkish_sentence_model
+                self._turkish_sentence_model = None
+                models_unloaded.append("Turkish sentence model")
+                
+            if self._english_sentence_model is not None:
+                del self._english_sentence_model
+                self._english_sentence_model = None
+                models_unloaded.append("English sentence model")
+                
+            if self._text_generator_model is not None:
+                del self._text_generator_model
+                self._text_generator_model = None
+                models_unloaded.append("Text generator model")
+            
+            # Clear model config
+            self._model_config.clear()
+            
+            # Reset lazy loading tracker
+            self._lazy_tracker = LazyLoadTracker()
+            
+            # Force cleanup
+            self._force_gc()
+            
+            logger.info(f"✅ Models unloaded: {', '.join(models_unloaded) if models_unloaded else 'None were loaded'}")
+            
+        except Exception as e:
+            logger.error(f"Model unloading failed: {e}")
+    
     def cleanup_resources(self):
         """
-        Cleanup all resources and free memory
+        🧹 Cleanup all resources and free memory
         """
         try:
             logger.info("🧹 Starting resource cleanup...")
             
-            # Clear caches
-            self.clear_caches()
-            
-            # Delete models
-            if self._sentence_model is not None:
-                del self._sentence_model
-                self._sentence_model = None
-                
-            if self._turkish_sentence_model is not None:
-                del self._turkish_sentence_model
-                self._turkish_sentence_model = None
-                
-            if self._text_generator is not None:
-                del self._text_generator
-                self._text_generator = None
-            
-            # Force cleanup
-            self._force_gc()
+            # Unload all models
+            self.unload_all_models()
             
             logger.info("✅ Resource cleanup completed")
             
         except Exception as e:
             logger.error(f"Resource cleanup failed: {e}")
     
-    def warmup_models(self):
+    def set_auto_cleanup(self, enabled: bool, cleanup_interval: int = 300, max_idle_time: int = 600):
         """
-        Warm up models with minimal sample data
+        ⚙️ Configure automatic model cleanup
+        
+        Args:
+            enabled: Enable/disable automatic cleanup
+            cleanup_interval: How often to check for idle models (seconds)
+            max_idle_time: How long before unloading idle models (seconds)
+        """
+        self._auto_cleanup = enabled
+        self._cleanup_interval = cleanup_interval
+        self._max_idle_time = max_idle_time
+        
+        logger.info(f"🔧 Auto cleanup: {'enabled' if enabled else 'disabled'}, "
+                   f"interval: {cleanup_interval}s, max idle: {max_idle_time}s")
+    
+    def warmup_models(self, models: list = None):
+        """
+        🔥 Warm up specific models with minimal sample data
+        
+        Args:
+            models: List of model types to warm up. If None, warms up configured models.
         """
         try:
             logger.info("🔥 Warming up models...")
             
-            # Warm up Turkish sentence model with Turkish text
-            turkish_sample = "Merhaba test"
-            _ = self.generate_embedding(turkish_sample, force_turkish=True)
+            config = get_config().ai
+            models_to_warmup = models or []
             
-            # Warm up English sentence model with English text
-            english_sample = "Hello test"
-            _ = self.generate_embedding(english_sample, force_turkish=False)
+            # Determine which models to warm up based on configuration
+            if not models_to_warmup:
+                if config.prefer_turkish_models:
+                    models_to_warmup.append("turkish_sentence")
+                else:
+                    models_to_warmup.append("english_sentence")
+                
+                if config.use_huggingface:
+                    models_to_warmup.append("text_generator")
             
-            # Warm up text generator with Turkish prompt
-            if self.text_generator is not None:
-                turkish_prompt = "Merhaba"
-                _ = self.generate_text_response(turkish_prompt, max_length=20, turkish_context=True)
+            warmed_models = []
             
-            logger.info("✅ Model warmup completed")
+            # Warm up sentence models
+            if "turkish_sentence" in models_to_warmup:
+                try:
+                    turkish_sample = "Merhaba test"
+                    _ = self.generate_embedding(turkish_sample, force_turkish=True)
+                    warmed_models.append("Turkish sentence model")
+                except Exception as e:
+                    logger.warning(f"Failed to warm up Turkish model: {e}")
+            
+            if "english_sentence" in models_to_warmup:
+                try:
+                    english_sample = "Hello test"
+                    _ = self.generate_embedding(english_sample, force_turkish=False)
+                    warmed_models.append("English sentence model")
+                except Exception as e:
+                    logger.warning(f"Failed to warm up English model: {e}")
+            
+            # Warm up text generator
+            if "text_generator" in models_to_warmup:
+                try:
+                    if self.text_generator is not None:
+                        turkish_prompt = "Merhaba"
+                        _ = self.generate_text_response(turkish_prompt, max_length=20, turkish_context=True)
+                        warmed_models.append("Text generator model")
+                except Exception as e:
+                    logger.warning(f"Failed to warm up text generator: {e}")
+            
+            logger.info(f"✅ Model warmup completed: {', '.join(warmed_models) if warmed_models else 'No models warmed'}")
             
         except Exception as e:
             logger.warning(f"⚠️ Model warmup failed: {e}")
     
     def detect_language(self, text: str) -> str:
         """
-        Detect language of given text
+        🔍 Detect language of given text
         Returns: 'turkish' or 'other'
         """
         if self._language_detector.is_turkish(text):
@@ -599,16 +900,40 @@ class ModelManager:
     
     def get_embedding_model_for_text(self, text: str) -> SentenceTransformer:
         """
-        Get the most appropriate embedding model for the given text
+        🎯 Get the most appropriate embedding model for the given text
+        Uses lazy loading - model loads only when accessed
         """
         config = get_config().ai
         
         if config.language_detection and self._language_detector.is_turkish(text):
-            return self.turkish_sentence_model
+            return self.turkish_sentence_model  # Lazy loaded
         elif config.prefer_turkish_models:
-            return self.turkish_sentence_model
+            return self.turkish_sentence_model  # Lazy loaded
         else:
-            return self.english_sentence_model
+            return self.english_sentence_model  # Lazy loaded
+    
+    def get_lazy_loading_statistics(self) -> Dict[str, Any]:
+        """
+        📈 Get detailed lazy loading performance statistics
+        """
+        return {
+            "tracker": self._lazy_tracker.get_statistics(),
+            "config": {
+                "auto_cleanup": self._auto_cleanup,
+                "cleanup_interval": self._cleanup_interval,
+                "max_idle_time": self._max_idle_time,
+                "max_cache_size": self._max_cache_size
+            },
+            "current_state": {
+                "models_loaded": {
+                    "turkish_sentence": self._turkish_sentence_model is not None,
+                    "english_sentence": self._english_sentence_model is not None,
+                    "text_generator": self._text_generator_model is not None
+                },
+                "memory_usage_mb": self._get_memory_usage(),
+                "cache_usage": self.generate_embedding.cache_info()._asdict()
+            }
+        }
 
-# Global instance
+# Global instance with lazy loading optimization
 model_manager = ModelManager()

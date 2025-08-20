@@ -93,11 +93,18 @@ async def lifespan(app: FastAPI):
             cache_health = await distributed_cache.health_check() if hasattr(distributed_cache, 'health_check') else {'status': 'unknown'}
             logger.info(f"✅ Distributed cache ready: {cache_health}")
         
-        # Warm up models
-        logger.info("🧠 Warming up AI models...")
+        # Lazy warm up of AI models (optional - models will load on first use)
+        logger.info("🧠 Setting up lazy loading for AI models...")
         if hasattr(model_manager, 'warmup_models'):
-            model_manager.warmup_models()
-            logger.info("✅ AI models warmed up")
+            # Configure auto-cleanup for memory efficiency
+            model_manager.set_auto_cleanup(
+                enabled=True,
+                cleanup_interval=300,  # 5 minutes
+                max_idle_time=600      # 10 minutes before unloading
+            )
+            logger.info("✅ Lazy loading configured - models will load on first use")
+        else:
+            logger.warning("⚠️ Lazy loading not available, using standard model manager")
         
         # Start memory monitoring if available
         try:

@@ -33,11 +33,25 @@ async def health_check():
         # Database health
         db_health = db_manager.health_check() if hasattr(db_manager, 'health_check') else {"status": "unknown"}
         
-        # Model manager health
+        # Model manager health with lazy loading info
         model_health = {
             "status": "healthy" if model_manager else "unavailable",
             "models_loaded": getattr(model_manager, 'models_loaded', 0)
         }
+        
+        # Add lazy loading stats if available
+        if model_manager and hasattr(model_manager, 'get_lazy_loading_statistics'):
+            try:
+                lazy_stats = model_manager.get_lazy_loading_statistics()
+                model_health["lazy_loading"] = {
+                    "enabled": True,
+                    "models_currently_loaded": sum(lazy_stats["current_state"]["models_loaded"].values()),
+                    "memory_usage_mb": lazy_stats["current_state"]["memory_usage_mb"],
+                    "auto_cleanup": lazy_stats["config"]["auto_cleanup"]
+                }
+            except Exception as e:
+                logger.warning(f"Failed to get lazy loading stats: {e}")
+                model_health["lazy_loading"] = {"enabled": False, "error": str(e)}
         
         # System metrics
         system_metrics = {
@@ -140,3 +154,75 @@ async def get_system_stats():
             status_code=500,
             detail="Failed to retrieve system stats"
         )
+
+@router.get("/ai")
+async def ai_health():
+    """
+    🤖 Get detailed AI model health and lazy loading performance
+    """
+    try:
+        if not model_manager:
+            return {
+                "status": "unavailable",
+                "error": "Model manager not initialized"
+            }
+        
+        # Get comprehensive model information
+        model_info = model_manager.get_model_info()
+        
+        # Get lazy loading statistics if available
+        lazy_stats = None
+        if hasattr(model_manager, 'get_lazy_loading_statistics'):
+            lazy_stats = model_manager.get_lazy_loading_statistics()
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "models": model_info,
+            "lazy_loading": lazy_stats,
+            "optimization": {
+                "lazy_loading_enabled": lazy_stats is not None,
+                "memory_efficient_caching": True,
+                "auto_cleanup": lazy_stats["config"]["auto_cleanup"] if lazy_stats else False,
+                "turkish_language_optimization": model_info.get("prefer_turkish_models", False)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"AI health check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.get("/ai/models")
+async def models_status():
+    """
+    📊 Get current model loading status and performance metrics
+    """
+    try:
+        if not model_manager:
+            return {
+                "status": "unavailable",
+                "error": "Model manager not initialized"
+            }
+        
+        lazy_stats = None
+        if hasattr(model_manager, 'get_lazy_loading_statistics'):
+            lazy_stats = model_manager.get_lazy_loading_statistics()
+        
+        return {
+            "status": "healthy",
+            "lazy_loading_enabled": lazy_stats is not None,
+            "lazy_loading_stats": lazy_stats,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Model status check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }

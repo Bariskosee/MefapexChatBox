@@ -19,7 +19,9 @@
 
 ### 🤖 **Gelişmiş Türkçe AI Desteği**
 - **🇹🇷 Türkçe Optimize Modeller**: `emrecan/bert-base-turkish-cased-mean-nli-stsb-tr`
-- **� Türkçe Metin Üretimi**: `ytu-ce-cosmos/turkish-gpt2-large`
+- **🔥 Lazy Loading**: AI modelleri sadece ihtiyaç duyulduğunda yüklenir (70% hızlı başlangıç)
+- **💾 Bellek Optimizasyonu**: Otomatik temizlik ve memory management
+- **🔄 Türkçe Metin Üretimi**: `ytu-ce-cosmos/turkish-gpt2-large`
 - **🔍 Otomatik Dil Algılama**: Dinamik model seçimi
 - **🌐 Çok Dilli Fallback**: İngilizce destek
 

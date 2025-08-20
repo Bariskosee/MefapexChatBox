@@ -78,10 +78,14 @@ class Config:
     DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "1234")
     
     # Memory Management Settings for AI Models
-    MEMORY_THRESHOLD_MB = int(os.getenv("MEMORY_THRESHOLD_MB", 1536))  # 1.5GB for AI models
-    MODEL_CACHE_SIZE = int(os.getenv("MODEL_CACHE_SIZE", 100))  # Reduced cache size
-    FORCE_GC_INTERVAL = int(os.getenv("FORCE_GC_INTERVAL", 50))  # Every N operations
-    MEMORY_MONITOR_INTERVAL = int(os.getenv("MEMORY_MONITOR_INTERVAL", 60))  # seconds
+    MEMORY_THRESHOLD_MB = int(os.getenv("MEMORY_THRESHOLD_MB", 2048))  # 2GB for AI models (increased)
+    MODEL_CACHE_SIZE = int(os.getenv("MODEL_CACHE_SIZE", 50))  # Dramatically reduced cache size
+    FORCE_GC_INTERVAL = int(os.getenv("FORCE_GC_INTERVAL", 20))  # More frequent GC
+    MEMORY_MONITOR_INTERVAL = int(os.getenv("MEMORY_MONITOR_INTERVAL", 30))  # More frequent monitoring
+    
+    # Emergency mode settings
+    EMERGENCY_MODE = os.getenv("EMERGENCY_MODE", "false").lower() == "true"
+    DISABLE_AI_MODELS = os.getenv("DISABLE_AI_MODELS", "false").lower() == "true"
 
 # Global config instance
 config = Config()
