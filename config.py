@@ -89,3 +89,71 @@ class Config:
 
 # Global config instance
 config = Config()
+
+
+
+# 🚨 EMERGENCY MEMORY LEAK FIXES
+# ==============================
+
+# Memory thresholds (realistic for AI models)
+MEMORY_THRESHOLD_MB = 2048  # Increased from 1536 (more realistic)
+MODEL_CACHE_SIZE = 25       # Reduced from 100 (50% reduction)
+FORCE_GC_INTERVAL = 15      # Reduced from 50 (more frequent cleanup)
+EMERGENCY_MODE = False      # Enable to disable AI models
+DISABLE_AI_MODELS = False   # Emergency AI model disabling
+
+# Cache optimizations  
+LRU_CACHE_SIZE = 50         # Reduced from 1000 (95% reduction)
+SIMILARITY_CACHE_SIZE = 50  # New: limit similarity cache
+TEXT_LENGTH_LIMIT = 500     # New: limit text processing length
+
+# Garbage collection
+AUTO_GC_ENABLED = True      # Enable automatic garbage collection
+GC_THRESHOLD_FACTOR = 0.7   # GC when 70% of threshold reached
+PERIODIC_GC_INTERVAL = 30   # GC every 30 operations
+
+# Memory monitoring
+MEMORY_MONITOR_INTERVAL = 30    # Monitor every 30 seconds
+MEMORY_ALERT_THRESHOLD = 3072   # Alert at 3GB
+MEMORY_EMERGENCY_THRESHOLD = 3584  # Emergency at 3.5GB
+
+# Model optimization
+MODEL_LAZY_LOADING = True       # Enable lazy loading
+MODEL_AUTO_UNLOAD = True        # Auto-unload idle models
+MODEL_IDLE_TIMEOUT = 600        # 10 minutes idle timeout
+
+
+# 🚨 ULTRA MEMORY OPTIMIZATION SETTINGS
+# ====================================
+# Added by ultra memory optimization script
+
+# Ultra-aggressive memory limits
+MEMORY_THRESHOLD_MB=1024  # 1GB limit (was 2GB)
+MAX_MODEL_MEMORY_MB=512   # 512MB per model max
+EMERGENCY_MODE=true       # Force emergency mode
+
+# Ultra-small cache sizes
+MODEL_CACHE_SIZE=5        # Minimal model cache
+LRU_CACHE_SIZE=5          # Minimal LRU cache
+EMBEDDING_CACHE_SIZE=5    # Minimal embedding cache
+
+# Aggressive cleanup
+GC_FREQUENCY=5            # Garbage collect every 5 operations
+AUTO_UNLOAD_TIMEOUT=120   # Auto-unload models after 2 minutes
+
+# Text processing limits
+MAX_TEXT_LENGTH=100       # Limit text to 100 chars
+MAX_BATCH_SIZE=1          # Process one item at a time
+
+# Disable heavy features in ultra mode
+DISABLE_TEXT_GENERATION=true    # Disable text generation
+DISABLE_LARGE_MODELS=true       # Disable large models
+FORCE_CPU_ONLY=true             # Force CPU processing only
+
+# Ultra-aggressive monitoring
+MEMORY_CHECK_INTERVAL=30        # Check memory every 30 seconds
+FORCE_CLEANUP_THRESHOLD=900     # Force cleanup at 900MB
+
+export MEMORY_THRESHOLD_MB MODEL_CACHE_SIZE LRU_CACHE_SIZE EMERGENCY_MODE
+export DISABLE_TEXT_GENERATION DISABLE_LARGE_MODELS FORCE_CPU_ONLY
+export GC_FREQUENCY AUTO_UNLOAD_TIMEOUT MAX_TEXT_LENGTH MAX_BATCH_SIZE

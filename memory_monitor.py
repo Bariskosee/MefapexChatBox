@@ -38,7 +38,7 @@ class MemoryMonitor:
     def __init__(self, 
                  check_interval: int = 60,  # seconds
                  memory_threshold_mb: float = 4096.0,  # MB - Increased for AI models (was 1536.0)
-                 leak_detection_window: int = 10):  # snapshots
+                 leak_detection_window: int = 10):  # snapshotseak_detection_window: int = 10):  # snapshots
         self.check_interval = check_interval
         self.memory_threshold_mb = memory_threshold_mb
         self.leak_detection_window = leak_detection_window

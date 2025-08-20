@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 🚀 Main FastAPI Application
+  # 🚀 Main FastAPI Application (without AI models)
   mefapex-app:
     build:
       context: .
@@ -24,17 +24,21 @@ services:
       - REDIS_PORT=6379
       - USE_OPENAI=${USE_OPENAI:-false}
       - USE_HUGGINGFACE=${USE_HUGGINGFACE:-true}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8000,http://localhost:8001}
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      # 🤖 AI Mikroservis Konfigürasyonu
+      - AI_SERVICE_ENABLED=${AI_SERVICE_ENABLED:-true}
+      - AI_SERVICE_HOST=mefapex-ai
+      - AI_SERVICE_PORT=8001
     volumes:
       - ./data:/app/data
-      - ./models_cache:/app/models_cache
       - ./logs:/app/logs
       - ./content:/app/content
     depends_on:
       - postgres
       - qdrant
       - redis
+      - mefapex-ai
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -45,7 +49,40 @@ services:
     networks:
       - mefapex-network
 
-  # 🗄️ PostgreSQL Database
+  # 🤖 AI Mikroservisi
+  mefapex-ai:
+    build:
+      context: .
+      dockerfile: services/ai_service/Dockerfile
+    container_name: mefapex-ai-service
+    ports:
+      - "${AI_SERVICE_PORT:-8001}:8001"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+      - AI_MODELS_PATH=/app/models_cache
+      - TORCH_HOME=/app/models_cache/torch
+      - HF_HOME=/app/models_cache/huggingface
+    volumes:
+      - ./models_cache:/app/models_cache
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # AI modelleri yüklenmesi zaman alabilir
+    networks:
+      - mefapex-network
+    deploy:
+      resources:
+        limits:
+          memory: 4G  # AI modelleri için hafıza sınırı
+        reservations:
+          memory: 2G
+
+  # 🗄️ PostgreSQL Database with Performance Optimizations
   postgres:
     image: postgres:15-alpine
     container_name: mefapex-postgres
@@ -56,9 +93,41 @@ services:
       - POSTGRES_USER=mefapex
       - POSTGRES_PASSWORD=mefapex
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      # Performance optimizations
+      - POSTGRES_HOST_AUTH_METHOD=md5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./database/optimizations.sql:/docker-entrypoint-initdb.d/02_optimizations.sql:ro
+      - ./database/postgresql_optimized.conf:/etc/postgresql/postgresql.conf:ro
+    command: >
+      postgres 
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c autovacuum_max_workers=3
+      -c autovacuum_naptime=20s
+      -c autovacuum_vacuum_threshold=50
+      -c autovacuum_analyze_threshold=50
+      -c autovacuum_vacuum_scale_factor=0.1
+      -c autovacuum_analyze_scale_factor=0.05
+      -c log_min_duration_statement=1000
+      -c log_checkpoints=on
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_lock_waits=on
+      -c bgwriter_delay=200ms
+      -c bgwriter_lru_maxpages=100
+      -c bgwriter_lru_multiplier=2.0
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mefapex -d mefapex_chatbot"]

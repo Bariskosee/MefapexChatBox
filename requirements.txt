@@ -52,6 +52,7 @@ email-validator>=2.0.0
 # 🌐 HTTP & File Handling
 # ================================
 requests>=2.32.0
+aiohttp>=3.9.0  # AI Mikroservisi için HTTP client
 
 # ================================
 # 💾 Caching & Performance

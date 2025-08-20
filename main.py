@@ -30,8 +30,6 @@ from api.health import router as health_router
 # Import unified database manager
 from database.manager import db_manager
 
-# Import other services
-from model_manager import model_manager
 from websocket_manager import websocket_manager, message_handler
 from auth_service import init_auth_service, get_auth_service, verify_token
 
@@ -42,6 +40,35 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Import AI Service Integration
+try:
+    # AI Mikroservis entegrasyonu
+    from services.ai_service.integration import setup_ai_service_integration, get_model_manager, cleanup_ai_service
+    logger.info("🤖 AI Mikroservis entegrasyonu mevcut")
+    
+    # Model manager'ı al (AI servis veya fallback)
+    model_manager = get_model_manager()
+    
+    # Entegrasyon durumunu kontrol et
+    import os
+    if os.getenv("AI_SERVICE_ENABLED", "true").lower() == "true":
+        logger.info("✅ AI Mikroservis aktif")
+    else:
+        logger.info("ℹ️ AI Mikroservis devre dışı, yerel model manager kullanılıyor")
+        
+except ImportError as e:
+    logger.warning(f"⚠️ AI Mikroservis entegrasyonu başarısız: {e}")
+    
+    # Fallback: Orijinal model manager
+    try:
+        # Try emergency model manager first
+        from model_manager_emergency import model_manager
+        logger.warning("🚨 Using Emergency Model Manager for memory leak fixes")
+    except ImportError:
+        # Fallback to original
+        from model_manager import model_manager
+        logger.info("Using original model manager")
 
 # Content Manager import
 try:
@@ -124,6 +151,12 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🔄 Shutting down MEFAPEX AI Chatbot")
+    
+    # AI servis kaynaklarını temizle
+    try:
+        await cleanup_ai_service()
+    except Exception as e:
+        logger.error(f"❌ AI servis temizlik hatası: {e}")
     
     # Cleanup distributed cache
     if distributed_cache and hasattr(distributed_cache, 'shutdown'):
