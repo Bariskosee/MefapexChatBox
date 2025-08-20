@@ -108,10 +108,10 @@ def lazy_load_model(model_type: ModelType):
         return wrapper
     return decorator
 
-def memory_efficient_cache(maxsize: int = 50):
+def memory_efficient_cache(maxsize: int = 20):  # CRITICAL FIX: Reduced default from 50 to 20
     """
-    Memory-efficient LRU cache with automatic cleanup
-    Smaller cache size to prevent memory bloat
+    CRITICAL MEMORY LEAK FIX: Enhanced memory-efficient LRU cache with aggressive cleanup
+    Much smaller cache size and more frequent cleanup to prevent memory bloat
     """
     def decorator(func):
         cached_func = lru_cache(maxsize=maxsize)(func)
@@ -120,11 +120,15 @@ def memory_efficient_cache(maxsize: int = 50):
         def wrapper(*args, **kwargs):
             result = cached_func(*args, **kwargs)
             
-            # Periodic cache cleanup
+            # CRITICAL FIX: More aggressive cache cleanup
             cache_info = cached_func.cache_info()
-            if cache_info.currsize > maxsize * 0.8:  # 80% full
-                logger.debug(f"Cache {func.__name__} approaching limit, considering cleanup")
-                
+            if cache_info.currsize > maxsize * 0.6:  # CRITICAL FIX: Reduced from 80% to 60%
+                logger.debug(f"Cache {func.__name__} at {cache_info.currsize}/{maxsize}, triggering cleanup")
+                # CRITICAL FIX: Clear cache when it gets moderately full
+                if cache_info.currsize >= maxsize * 0.8:  # 80% full
+                    cached_func.cache_clear()
+                    logger.debug(f"🧹 Cache {func.__name__} cleared due to memory pressure")
+                    
             return result
         
         wrapper.cache_info = cached_func.cache_info
@@ -208,16 +212,18 @@ class ModelManager:
                         'text_generator': threading.Lock()
                     }
                     
-                    # Lazy loading and performance tracking
+                    # CRITICAL FIX: Enhanced lazy loading and performance tracking
                     self._lazy_tracker = LazyLoadTracker()
                     self._last_cleanup = time.time()
-                    self._cleanup_interval = 300  # 5 minutes
-                    self._max_idle_time = 600  # 10 minutes before unloading
+                    self._cleanup_interval = 150  # CRITICAL FIX: More frequent cleanup
+                    self._max_idle_time = 300  # CRITICAL FIX: Shorter idle time
                     
                     # Memory management
                     self._memory_monitor = True
-                    self._max_cache_size = 50  # Reduced for memory efficiency
+                    self._max_cache_size = 20  # CRITICAL FIX: Reduced from 50 to 20
                     self._auto_cleanup = True
+                    self._cleanup_interval = 150  # CRITICAL FIX: Reduced from 300 to 150 seconds
+                    self._max_idle_time = 300  # CRITICAL FIX: Reduced from 600 to 300 seconds
                     
                     # Language detection
                     self._language_detector = TurkishLanguageDetector()
@@ -480,15 +486,19 @@ class ModelManager:
             logger.error(f"Failed to get sentence embedding: {e}")
             return None
 
-    @memory_efficient_cache(maxsize=50)  # Reduced cache size for better memory management
+    @memory_efficient_cache(maxsize=20)  # CRITICAL FIX: Reduced from 50 to 20 to prevent memory bloat
     def generate_embedding(self, text: str, force_turkish: bool = None) -> list:
         """
-        🧠 Generate embedding with smart language detection and memory optimization
+        🧠 Generate embedding with CRITICAL memory leak fixes and optimization
         Uses lazy loading - models only load when first needed
         """
         try:
-            # Limit text length to prevent memory issues
-            normalized_text = text.strip().lower()[:500]  # Max 500 chars
+            # CRITICAL FIX: More aggressive text length limiting
+            normalized_text = text.strip().lower()[:200]  # Reduced from 500 to 200 chars
+            
+            # CRITICAL FIX: Skip empty or very short texts immediately
+            if len(normalized_text.strip()) < 3:
+                return []
             
             # Detect language or use forced setting
             config = get_config().ai
@@ -507,51 +517,69 @@ class ModelManager:
                 logger.debug(f"🇺🇸 Using English model for: {normalized_text[:30]}...")
                 model = self.english_sentence_model  # Lazy loaded
             
-            # Generate embedding with memory optimization
+            # CRITICAL FIX: Generate embedding with aggressive memory optimization
             with torch.no_grad():  # Prevent gradient accumulation
-                embedding = model.encode(
-                    [normalized_text], 
-                    convert_to_tensor=False,  # Return numpy array
-                    show_progress_bar=False,
-                    batch_size=1  # Process one at a time
-                )[0].tolist()
-            
-            # Periodic memory cleanup
+                # CRITICAL FIX: Use torch.inference_mode for better memory efficiency
+                with torch.inference_mode():
+                    embedding = model.encode(
+                        [normalized_text], 
+                        convert_to_tensor=False,  # Return numpy array, not tensor
+                        show_progress_bar=False,
+                        batch_size=1,  # Process one at a time
+                        normalize_embeddings=True,  # Normalize for better similarity calculations
+                        device=self.device if self.device != "mps" else "cpu"  # Ensure correct device
+                    )[0]
+                    
+                    # CRITICAL FIX: Convert to list immediately and del numpy array
+                    result = embedding.tolist()
+                    del embedding  # Explicit cleanup
+                    
+            # CRITICAL FIX: More aggressive periodic memory cleanup
             if hasattr(self, '_embedding_counter'):
                 self._embedding_counter += 1
             else:
                 self._embedding_counter = 1
                 
-            # More frequent cleanup for better memory management
-            if self._embedding_counter % 25 == 0:  # Every 25 embeddings
+            # CRITICAL FIX: Much more frequent cleanup - every 15 embeddings instead of 25
+            if self._embedding_counter % 15 == 0:
                 self._force_gc()
+                logger.debug(f"🧹 Memory cleanup after {self._embedding_counter} embeddings")
             
-            return embedding
+            return result
             
         except Exception as e:
             logger.error(f"Embedding generation failed for text: {text[:50]}... Error: {e}")
             # Fallback to English model if Turkish model fails
             if use_turkish_model:
                 logger.warning("🔄 Falling back to English model...")
-                return self.generate_embedding(text, force_turkish=False)
-            raise
+                try:
+                    return self.generate_embedding(text, force_turkish=False)
+                except Exception as fallback_e:
+                    logger.error(f"Fallback also failed: {fallback_e}")
+                    return []
+            return []
         finally:
-            # Periodic cache cleanup for memory efficiency
-            cache_info = self.generate_embedding.cache_info()
-            if cache_info.currsize > 40:  # Near cache limit
-                if cache_info.currsize % 10 == 0:  # Every 10th near-full cache
-                    self._force_gc()
+            # CRITICAL FIX: Aggressive cache cleanup for memory efficiency
+            try:
+                cache_info = self.generate_embedding.cache_info()
+                if cache_info.currsize > 15:  # CRITICAL FIX: Reduced from 40 to 15
+                    if cache_info.currsize >= 18:  # CRITICAL FIX: Clear cache when near full
+                        self.generate_embedding.cache_clear()
+                        self._force_gc()
+                        logger.debug("🧹 Cache cleared due to memory pressure")
+            except Exception as cleanup_e:
+                logger.debug(f"Cache cleanup warning: {cleanup_e}")
     
-    def generate_text_response(self, prompt: str, max_length: int = 80, turkish_context: bool = True) -> str:
+    def generate_text_response(self, prompt: str, max_length: int = 60, turkish_context: bool = True) -> str:
         """
-        Generate text response with improved quality settings and Turkish support
+        CRITICAL FIX: Generate text response with aggressive memory optimization and leak prevention
         """
         try:
             if self.text_generator is None:
                 raise RuntimeError("Text generator not available")
             
-            # Limit prompt length and clean it
-            prompt = prompt[:150]  # Reduced prompt length
+            # CRITICAL FIX: More aggressive prompt length limiting
+            prompt = prompt[:100]  # Reduced from 150
             
             # Enhanced Turkish context for better responses
             if turkish_context and self._language_detector.is_turkish(prompt):
@@ -560,23 +588,25 @@ class ModelManager:
             else:
                 enhanced_prompt = prompt
             
+            # CRITICAL FIX: Enhanced memory management for text generation
             with torch.no_grad():  # Prevent gradient accumulation
-                outputs = self.text_generator(
-                    enhanced_prompt,
-                    max_length=min(max_length, 80),  # Reduced max length for focus
-                    num_return_sequences=1,
-                    temperature=0.6,  # Reduced for more coherent responses
-                    do_sample=True,
-                    top_p=0.85,  # Reduced for better quality
-                    top_k=40,  # Reduced for more focused responses
-                    pad_token_id=self.text_generator.tokenizer.eos_token_id,
-                    eos_token_id=self.text_generator.tokenizer.eos_token_id,
-                    no_repeat_ngram_size=3,  # Increased to prevent repetition
-                    repetition_penalty=1.3,  # Increased to discourage repetition
-                    length_penalty=0.8,  # Encourage shorter, more focused responses
-                    early_stopping=True,  # Stop when EOS token is reached
-                    clean_up_tokenization_spaces=True
-                )
+                with torch.inference_mode():  # CRITICAL FIX: Better memory efficiency
+                    outputs = self.text_generator(
+                        enhanced_prompt,
+                        max_length=min(max_length, 60),  # CRITICAL FIX: Reduced max length
+                        num_return_sequences=1,
+                        temperature=0.6,  # Reduced for more coherent responses
+                        do_sample=True,
+                        top_p=0.85,  # Reduced for better quality
+                        top_k=40,  # Reduced for more focused responses
+                        pad_token_id=self.text_generator.tokenizer.eos_token_id,
+                        eos_token_id=self.text_generator.tokenizer.eos_token_id,
+                        no_repeat_ngram_size=3,  # Increased to prevent repetition
+                        repetition_penalty=1.3,  # Increased to discourage repetition
+                        length_penalty=0.8,  # Encourage shorter, more focused responses
+                        early_stopping=True,  # Stop when EOS token is reached
+                        clean_up_tokenization_spaces=True
+                    )
             
             generated_text = outputs[0]['generated_text'].strip()
             
@@ -590,13 +620,16 @@ class ModelManager:
             # Additional cleaning for better quality
             generated_text = self._post_process_generated_text(generated_text, prompt)
             
-            # Force cleanup after text generation
+            # CRITICAL FIX: Force cleanup after text generation
+            del outputs  # Explicit cleanup
             self._force_gc()
             
             return generated_text
             
         except Exception as e:
             logger.error(f"Text generation failed: {e}")
+            # CRITICAL FIX: Ensure cleanup even on error
+            self._force_gc()
             raise
     
     def _post_process_generated_text(self, text: str, original_prompt: str) -> str:
@@ -635,63 +668,238 @@ class ModelManager:
     
     async def generate_huggingface_response(self, message: str, user_id: str = None) -> str:
         """
-        Generate improved Hugging Face response with quality control
+        ENHANCED: Generate improved Hugging Face response with Turkish quality optimization
         """
         try:
-            # Use the improved text generation method
+            # First try improved Turkish content manager
+            try:
+                from improved_turkish_content_manager import improved_turkish_content
+                static_response = improved_turkish_content.get_response(message)
+                
+                # Check if we got a meaningful static response (not fallback)
+                if static_response and not any(phrase in static_response.lower() for phrase in [
+                    'elimde yeterli bilgi', 'bu konuda size', 'daha detaylandırır'
+                ]):
+                    logger.info("🎯 Using improved Turkish static response")
+                    return static_response
+                    
+            except ImportError:
+                logger.debug("Improved Turkish content manager not available")
+            
+            # Generate AI response with quality control
             response = self.generate_text_response(
                 prompt=message,
-                max_length=100,
+                max_length=80,  # Increased for better responses
                 turkish_context=True
             )
             
-            # Quality check and enhancement
+            # ENHANCED: Quality check and improvement
             if response and len(response.strip()) > 8:
-                cleaned_response = response.strip()
+                cleaned_response = self._enhance_turkish_response(response, message)
                 
-                # Advanced cleaning: remove user message repetition
-                if message.lower() in cleaned_response.lower():
-                    # Find and remove the original message
-                    idx = cleaned_response.lower().find(message.lower())
-                    if idx >= 0:
-                        before = cleaned_response[:idx].strip()
-                        after = cleaned_response[idx + len(message):].strip()
-                        # Keep the part that seems like a response
-                        if len(after) > len(before) and len(after) > 10:
-                            cleaned_response = after
-                        elif len(before) > 10:
-                            cleaned_response = before
+                # Quality threshold check
+                quality_score = self._assess_response_quality(cleaned_response, message)
                 
-                # Check for minimum quality standards
-                if len(cleaned_response.split()) < 3:
-                    return "Üzgünüm, şu anda bu konuda size net bir yanıt veremiyorum. Lütfen sorunuzu daha detaylandırabilir misiniz?"
-                
-                # Check for repetitive or nonsensical content
-                words = cleaned_response.split()
-                if len(set(words)) < len(words) * 0.7:  # Too many repeated words
-                    return "Bu konu hakkında size daha iyi yardımcı olabilmem için sorunuzu biraz daha açabilir misiniz?"
-                
-                # Add appropriate MEFAPEX context for good responses
-                if len(cleaned_response) > 15 and not any(word in cleaned_response.lower() for word in ['mefapex', 'destek', 'yardım', 'asistan']):
-                    formatted_response = f"🤖 **MEFAPEX AI Asistanı:**\n\n{cleaned_response}\n\n💡 Daha detaylı bilgi için destek ekibimizle iletişime geçebilirsiniz."
-                    return formatted_response
+                if quality_score < get_config().ai.turkish_quality_threshold:
+                    logger.warning(f"Response quality too low ({quality_score:.2f}), using fallback")
+                    return self._get_quality_fallback_response(message)
                 
                 return cleaned_response
             
             # Fallback for poor quality responses
-            return "Üzgünüm, şu anda bu konuda size yardımcı olamıyorum. Farklı bir soru sormayı deneyebilir veya destek ekibimizle iletişime geçebilirsiniz."
+            return self._get_quality_fallback_response(message)
             
         except Exception as e:
             logger.error(f"Hugging Face response generation failed: {e}")
-            # Return a helpful fallback instead of raising
-            return "Teknik bir sorun yaşıyorum. Lütfen sorunuzu tekrar sormayı deneyin veya destek ekibimizle iletişime geçin."
+            return self._get_quality_fallback_response(message)
+    
+    def _enhance_turkish_response(self, response: str, original_message: str) -> str:
+        """ENHANCED: Improve Turkish response quality"""
+        try:
+            # Clean the response
+            cleaned = response.strip()
+            
+            # Remove artifacts and repetitions
+            import re
+            
+            # Remove common artifacts
+            cleaned = re.sub(r'</s>|<s>|<pad>|<unk>', '', cleaned)
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            
+            # Remove original message repetition
+            if original_message.lower() in cleaned.lower():
+                idx = cleaned.lower().find(original_message.lower())
+                if idx >= 0:
+                    before = cleaned[:idx].strip()
+                    after = cleaned[idx + len(original_message):].strip()
+                    
+                    # Choose the better part
+                    if len(after) > len(before) and len(after) > 10:
+                        cleaned = after
+                    elif len(before) > 10:
+                        cleaned = before
+            
+            # Fix Turkish-specific issues
+            cleaned = self._fix_turkish_grammar(cleaned)
+            
+            # Ensure proper ending
+            if cleaned and not cleaned.endswith(('.', '!', '?')):
+                cleaned += '.'
+            
+            # Add MEFAPEX context if appropriate
+            if len(cleaned) > 20 and self._should_add_mefapex_context(cleaned):
+                cleaned = f"🤖 **MEFAPEX AI Asistanı:** {cleaned}\n\n💡 Daha detaylı bilgi için ilgili departmanla iletişime geçebilirsiniz."
+            
+            return cleaned
+            
+        except Exception as e:
+            logger.warning(f"Response enhancement failed: {e}")
+            return response
+    
+    def _fix_turkish_grammar(self, text: str) -> str:
+        """Fix common Turkish grammar issues in AI responses"""
+        try:
+            # Turkish-specific fixes
+            fixes = {
+                # Common grammar fixes
+                ' de ': ' da ',  # Turkish "de/da" conjunction
+                ' ve ': ' ve ',  # Ensure proper spacing
+                'mefapex': 'MEFAPEX',  # Proper company name
+                'Mefapex': 'MEFAPEX',
+                
+                # Remove repetitive patterns
+                r'(\w+)\s+\1': r'\1',  # Remove word repetitions
+                r'\.\.+': '.',  # Multiple dots to single
+                r'\s+': ' '  # Multiple spaces to single
+            }
+            
+            import re
+            for pattern, replacement in fixes.items():
+                if pattern.startswith('r\''):
+                    # Regex pattern
+                    pattern = pattern[2:-1]  # Remove r' and '
+                    text = re.sub(pattern, replacement, text)
+                else:
+                    # Simple replacement
+                    text = text.replace(pattern, replacement)
+            
+            return text.strip()
+            
+        except Exception as e:
+            logger.warning(f"Grammar fix failed: {e}")
+            return text
+    
+    def _assess_response_quality(self, response: str, original_message: str) -> float:
+        """Assess the quality of a Turkish response"""
+        try:
+            if not response or len(response.strip()) < 5:
+                return 0.0
+            
+            quality_score = 1.0
+            words = response.split()
+            
+            # Length penalties/bonuses
+            if len(words) < 3:
+                quality_score *= 0.3  # Too short
+            elif len(words) > 100:
+                quality_score *= 0.7  # Too long
+            elif 10 <= len(words) <= 50:
+                quality_score *= 1.2  # Good length
+            
+            # Repetition check
+            unique_words = set(words)
+            if len(unique_words) < len(words) * 0.6:  # Too many repetitions
+                quality_score *= 0.5
+            
+            # Turkish quality indicators
+            turkish_indicators = ['için', 'ile', 'bir', 'bu', 'şu', 've', 'da', 'de']
+            has_turkish = any(word in response.lower() for word in turkish_indicators)
+            if has_turkish:
+                quality_score *= 1.3
+            
+            # MEFAPEX context bonus
+            if 'mefapex' in response.lower() or 'destek' in response.lower():
+                quality_score *= 1.2
+            
+            # Coherence check (simple)
+            if response.endswith(('.', '!', '?')):
+                quality_score *= 1.1
+            
+            return min(quality_score, 1.0)
+            
+        except Exception as e:
+            logger.warning(f"Quality assessment failed: {e}")
+            return 0.5
+    
+    def _should_add_mefapex_context(self, response: str) -> bool:
+        """Check if response should have MEFAPEX context added"""
+        response_lower = response.lower()
+        
+        # Don't add if already has company context
+        if any(word in response_lower for word in ['mefapex', 'şirket', 'company', 'destek']):
+            return False
+        
+        # Add context for technical/business responses
+        if any(word in response_lower for word in [
+            'sistem', 'yazılım', 'teknik', 'proje', 'bilgi', 'hizmet', 'çözüm'
+        ]):
+            return True
+        
+        return False
+    
+    def _get_quality_fallback_response(self, message: str) -> str:
+        """Get high-quality fallback response for poor AI responses"""
+        # Try improved Turkish content manager first
+        try:
+            from improved_turkish_content_manager import improved_turkish_content
+            fallback = improved_turkish_content._get_fallback_response(message)
+            if fallback:
+                return fallback
+        except ImportError:
+            pass
+        
+        # Default high-quality fallback
+        return (
+            f"🤖 **MEFAPEX AI Asistanı**\n\n"
+            f"Sorduğunuz konuda size daha iyi yardımcı olabilmek için, "
+            f"lütfen sorunuzu biraz daha detaylandırır mısınız?\n\n"
+            f"**Size yardımcı olabileceğim konular:**\n"
+            f"• 🏭 Çalışma saatleri ve operasyonlar\n"
+            f"• 💻 Teknik destek ve IT sorunları\n"
+            f"• 👥 İnsan kaynakları ve izin işlemleri\n"
+            f"• 🛡️ Güvenlik kuralları ve prosedürler\n"
+            f"• 🏢 Şirket bilgileri ve hizmetler\n\n"
+            f"**Acil durumlar için:**\n"
+            f"📞 Teknik Destek: destek@mefapex.com\n"
+            f"📧 Genel Bilgi: info@mefapex.com"
+        )
     
     def _force_gc(self):
-        """Force garbage collection and CUDA cache cleanup"""
+        """CRITICAL FIX: Enhanced garbage collection and memory cleanup"""
         try:
-            gc.collect()
+            # CRITICAL FIX: Multiple GC passes for better cleanup
+            import gc
+            for i in range(3):  # Multiple passes
+                gc.collect()
+            
+            # CRITICAL FIX: Clear PyTorch cache more aggressively
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                torch.cuda.synchronize()  # Wait for operations to complete
+            
+            # CRITICAL FIX: Clear MPS cache if available
+            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                try:
+                    torch.mps.empty_cache()
+                except AttributeError:
+                    pass  # Older PyTorch versions
+            
+            # CRITICAL FIX: Force Python garbage collection with all generations
+            if hasattr(gc, 'collect'):
+                collected = gc.collect()
+                if collected > 0:
+                    logger.debug(f"🧹 Collected {collected} objects during cleanup")
+                    
         except Exception as e:
             logger.debug(f"GC cleanup warning: {e}")
     

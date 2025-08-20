@@ -69,18 +69,36 @@ class SecurityConfig:
 
 @dataclass
 class AIConfig:
-    """AI/ML configuration"""
+    """AI/ML configuration with enhanced Turkish support"""
     use_openai: bool = False
     use_huggingface: bool = True
     openai_api_key: Optional[str] = None
+    
+    # ENHANCED: Better Turkish sentence models
     sentence_model: str = "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr"
-    huggingface_model: str = "ytu-ce-cosmos/turkish-gpt2-large"
-    turkish_sentence_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    
+    # ENHANCED: Better Turkish text generation models
+    huggingface_model: str = "microsoft/DialoGPT-medium"  # Better conversation model
+    
+    # ENHANCED: Specialized Turkish models with fallback chain
+    turkish_sentence_model: str = "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr"
+    turkish_fallback_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     english_fallback_model: str = "all-MiniLM-L6-v2"
-    max_tokens: int = 150
-    temperature: float = 0.7
+    
+    # ENHANCED: Turkish text generation options
+    turkish_gpt_model: str = "ytu-ce-cosmos/turkish-gpt2-large"  # Keep as backup
+    conversational_model: str = "microsoft/DialoGPT-medium"  # Better conversations
+    
+    # Generation parameters optimized for Turkish
+    max_tokens: int = 100  # Reduced for better focus
+    temperature: float = 0.6  # Lower for more coherent responses
+    top_p: float = 0.85  # For better quality
+    repetition_penalty: float = 1.3  # Prevent repetition
+    
+    # Language settings
     language_detection: bool = True
     prefer_turkish_models: bool = True
+    turkish_quality_threshold: float = 0.7  # Minimum quality for Turkish responses
 
 @dataclass
 class QdrantConfig:

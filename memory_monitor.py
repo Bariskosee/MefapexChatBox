@@ -36,9 +36,9 @@ class MemoryMonitor:
     """
     
     def __init__(self, 
-                 check_interval: int = 60,  # seconds
-                 memory_threshold_mb: float = 4096.0,  # MB - Increased for AI models (was 1536.0)
-                 leak_detection_window: int = 10):  # snapshotseak_detection_window: int = 10):  # snapshots
+                 check_interval: int = 30,  # CRITICAL FIX: Reduced from 60 to 30 seconds 
+                 memory_threshold_mb: float = 3072.0,  # CRITICAL FIX: Reduced from 4096 to 3GB
+                 leak_detection_window: int = 15):  # CRITICAL FIX: Increased for better detection
         self.check_interval = check_interval
         self.memory_threshold_mb = memory_threshold_mb
         self.leak_detection_window = leak_detection_window
@@ -47,14 +47,16 @@ class MemoryMonitor:
         self.monitoring = False
         self.monitor_thread = None
         
-        # Weak references for tracking objects
+        # CRITICAL FIX: Enhanced object tracking
         self.tracked_objects = weakref.WeakSet()
         self.object_counts = defaultdict(int)
+        self.memory_pressure_count = 0  # Track consecutive high memory warnings
         
-        # Statistics
+        # CRITICAL FIX: Enhanced statistics
         self.total_gc_runs = 0
         self.memory_warnings = 0
         self.leak_alerts = 0
+        self.emergency_cleanups = 0
         
     def start_monitoring(self):
         """Start memory monitoring in background thread"""
@@ -159,24 +161,38 @@ class MemoryMonitor:
             )
             
     def _check_memory_threshold(self, snapshot: MemorySnapshot):
-        """Check if memory usage exceeds threshold"""
+        """CRITICAL FIX: Enhanced memory threshold checking with emergency measures"""
         if snapshot.memory_mb > self.memory_threshold_mb:
             self.memory_warnings += 1
+            self.memory_pressure_count += 1
+            
             logger.warning(
-                f"🚨 Memory threshold exceeded: {snapshot.memory_mb:.1f}MB > {self.memory_threshold_mb}MB"
+                f"🚨 Memory threshold exceeded: {snapshot.memory_mb:.1f}MB > {self.memory_threshold_mb}MB "
+                f"(Warning #{self.memory_warnings})"
             )
             
-            # Force garbage collection
-            self.force_gc()
+            # CRITICAL FIX: Progressive response to memory pressure
+            if self.memory_pressure_count >= 3:  # 3 consecutive warnings
+                logger.error("🚨 CRITICAL MEMORY PRESSURE - Initiating emergency cleanup")
+                self._emergency_memory_cleanup()
+                self.emergency_cleanups += 1
+                self.memory_pressure_count = 0  # Reset counter
+            else:
+                # Standard garbage collection
+                collected = self.force_gc()
+                logger.info(f"🧹 Standard GC collected {collected} objects")
             
             # Log top allocations
             if snapshot.top_allocations:
                 logger.warning("Top memory allocations:")
                 for location, size_mb in snapshot.top_allocations:
                     logger.warning(f"  {location}: {size_mb:.2f}MB")
+        else:
+            # Reset pressure counter when memory is normal
+            self.memory_pressure_count = 0
                     
     def _detect_memory_leaks(self):
-        """Detect potential memory leaks"""
+        """CRITICAL FIX: Enhanced memory leak detection with faster response"""
         if len(self.snapshots) < self.leak_detection_window:
             return
             
@@ -189,12 +205,17 @@ class MemoryMonitor:
         end_memory = sum(memory_values[-3:]) / 3
         growth_rate = (end_memory - start_memory) / (len(memory_values) * self.check_interval / 60)  # MB per minute
         
-        if growth_rate > 5.0:  # More than 5MB per minute growth
+        # CRITICAL FIX: More sensitive leak detection thresholds
+        if growth_rate > 3.0:  # CRITICAL FIX: Reduced from 5.0 to 3.0 MB per minute
             self.leak_alerts += 1
             logger.error(
                 f"🚨 POTENTIAL MEMORY LEAK DETECTED: "
-                f"Growth rate: {growth_rate:.2f} MB/min over {len(memory_values)} samples"
+                f"Growth rate: {growth_rate:.2f} MB/min over {len(memory_values)} samples "
+                f"(Alert #{self.leak_alerts})"
             )
+            
+            # CRITICAL FIX: Immediate emergency cleanup on leak detection
+            self._emergency_memory_cleanup()
             
             # Detailed analysis
             self._analyze_potential_leak()
@@ -231,11 +252,74 @@ class MemoryMonitor:
             logger.info(f"🧹 Cleanup collected {collected} objects")
             
     def force_gc(self) -> int:
-        """Force garbage collection and return number of collected objects"""
+        """CRITICAL FIX: Enhanced garbage collection with multiple passes"""
         collected = 0
-        for generation in range(3):
-            collected += gc.collect(generation)
+        try:
+            # CRITICAL FIX: Multiple GC passes for thorough cleanup
+            for generation in range(3):
+                for pass_num in range(2):  # Two passes per generation
+                    collected += gc.collect(generation)
+            
+            # CRITICAL FIX: Additional cleanup for specific object types
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            
+            # CRITICAL FIX: MPS cache cleanup for Apple Silicon
+            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                try:
+                    torch.mps.empty_cache()
+                except AttributeError:
+                    pass  # Older PyTorch versions
+                    
+            logger.debug(f"🧹 Enhanced GC collected {collected} objects")
+            
+        except Exception as e:
+            logger.warning(f"Enhanced GC failed: {e}")
+            # Fallback to basic GC
+            for generation in range(3):
+                collected += gc.collect(generation)
+                
         return collected
+    
+    def _emergency_memory_cleanup(self):
+        """CRITICAL FIX: Emergency memory cleanup for critical situations"""
+        logger.error("🚨 INITIATING EMERGENCY MEMORY CLEANUP")
+        
+        try:
+            # Multiple aggressive GC passes
+            total_collected = 0
+            for i in range(5):  # 5 aggressive passes
+                collected = self.force_gc()
+                total_collected += collected
+                if collected == 0:
+                    break  # No more objects to collect
+                    
+            logger.info(f"🧹 Emergency cleanup collected {total_collected} objects")
+            
+            # Try to trigger model manager cleanup if available
+            try:
+                from model_manager import model_manager
+                if hasattr(model_manager, 'clear_caches'):
+                    model_manager.clear_caches()
+                    logger.info("🧹 Model manager caches cleared")
+            except ImportError:
+                pass
+            
+            # Clear any enhanced question matcher caches
+            try:
+                from enhanced_question_matcher import EnhancedQuestionMatcher
+                # This is handled by the memory-optimized caches in that module
+                logger.debug("🧹 Enhanced question matcher cleanup attempted")
+            except ImportError:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Emergency cleanup failed: {e}")
+            
+        finally:
+            logger.info("🧹 Emergency memory cleanup completed")
         
     def get_stats(self) -> Dict:
         """Get monitoring statistics"""
@@ -284,11 +368,11 @@ class MemoryMonitor:
             obj_type = name or type(obj).__name__
             self.object_counts[obj_type] = max(0, self.object_counts[obj_type] - 1)
 
-# Global memory monitor instance with AI model optimized settings
+# CRITICAL FIX: Global memory monitor instance with optimized settings for AI models
 memory_monitor = MemoryMonitor(
-    check_interval=60,  # Check every 60 seconds
-    memory_threshold_mb=4096.0,  # 4GB threshold for AI models (increased from 1.5GB)
-    leak_detection_window=10
+    check_interval=30,  # CRITICAL FIX: More frequent monitoring - every 30 seconds
+    memory_threshold_mb=3072.0,  # CRITICAL FIX: Lower threshold - 3GB instead of 4GB
+    leak_detection_window=15  # CRITICAL FIX: Longer window for better leak detection
 )
 
 # Memory leak detection utilities

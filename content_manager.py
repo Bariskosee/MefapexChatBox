@@ -47,6 +47,15 @@ class ContentManager:
             self._ai_enabled = False
             logger.warning(f"⚠️ AI understanding assistance not available: {e}")
         
+        # ENHANCED: Import improved Turkish content manager
+        try:
+            from improved_turkish_content_manager import improved_turkish_content
+            self.improved_turkish = improved_turkish_content
+            logger.info("🇹🇷 Enhanced Turkish content manager integrated")
+        except ImportError as e:
+            self.improved_turkish = None
+            logger.warning(f"⚠️ Enhanced Turkish content manager not available: {e}")
+        
         # Enhanced Question Matcher'ı initialize et
         try:
             from enhanced_question_matcher import EnhancedQuestionMatcher
@@ -99,15 +108,9 @@ class ContentManager:
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
-        Find appropriate response for user message - ENHANCED STATIC SYSTEM with Smart Matching
-        Flow: Cache -> Enhanced Matching -> Direct Match -> AI Semantic Match -> Intent Detection -> Default
+        Find appropriate response for user message - ENHANCED with Turkish Quality Optimization
+        Flow: Cache -> Enhanced Turkish -> Enhanced Matching -> Direct Match -> AI Semantic -> Default
         Returns: (response_text, source)
-        
-        Enhanced matching kullanarak çok daha akıllı soru eşleştirmesi:
-        - Fuzzy matching: "calisma saatleri" -> "çalışma saatleri"
-        - Semantic search: AI embedding ile anlam bazlı eşleştirme
-        - Synonym expansion: "iş saatleri" -> "çalışma saatleri"
-        - Pattern matching: Regex ile gelişmiş kalıp tanıma
         """
         if not user_message or not user_message.strip():
             return self._get_static_default_response(user_message), "default"
@@ -122,7 +125,31 @@ class ContentManager:
             logger.debug(f"🎯 Cache hit for: {user_message[:30]}...")
             return cached_response, f"cache_{source}"
         
-        # ======= YENİ: Enhanced Question Matching =======
+        # ======= NEW: Enhanced Turkish Content Manager (PRIORITY) =======
+        if self.improved_turkish:
+            try:
+                turkish_match = self.improved_turkish.find_best_match(user_message)
+                if turkish_match and turkish_match["score"] > 0.4:  # Higher threshold for quality
+                    turkish_response = self.improved_turkish.get_response(user_message)
+                    
+                    # Check if it's a meaningful response (not fallback)
+                    if turkish_response and not any(phrase in turkish_response.lower() for phrase in [
+                        'elimde yeterli bilgi', 'bu konuda size', 'daha detaylandırır'
+                    ]):
+                        self.stats['turkish_enhanced_matches'] = self.stats.get('turkish_enhanced_matches', 0) + 1
+                        logger.info(f"🇹🇷 Enhanced Turkish match: '{user_message[:30]}...' -> {turkish_match['category']} "
+                                   f"(score: {turkish_match['score']:.3f})")
+                        
+                        # Cache the response
+                        if self._cache_enabled:
+                            self._cache[user_message_lower] = (turkish_response, "turkish_enhanced")
+                        
+                        return turkish_response, "turkish_enhanced"
+                        
+            except Exception as e:
+                logger.warning(f"Enhanced Turkish matching failed: {e}")
+        
+        # ======= Original Enhanced Question Matching =======
         if self.enhanced_matcher:
             try:
                 enhanced_match = self.enhanced_matcher.find_best_match(user_message)
@@ -170,13 +197,26 @@ class ContentManager:
                 self._cache[user_message_lower] = (response, source)
             return response, source
         
-        # No static response found - return enhanced default
+        # No static response found - try Turkish fallback first
+        if self.improved_turkish:
+            try:
+                turkish_fallback = self.improved_turkish.get_response(user_message)
+                if turkish_fallback:
+                    self.stats['turkish_fallback'] = self.stats.get('turkish_fallback', 0) + 1
+                    logger.info(f"🇹🇷 Using Turkish fallback response")
+                    if self._cache_enabled:
+                        self._cache[user_message_lower] = (turkish_fallback, "turkish_fallback")
+                    return turkish_fallback, "turkish_fallback"
+            except Exception as e:
+                logger.warning(f"Turkish fallback failed: {e}")
+        
+        # Final fallback - enhanced default
         self.stats['no_matches'] += 1
         default_response = self._get_enhanced_default_response(user_message)
         if self._cache_enabled:
             self._cache[user_message_lower] = (default_response, "default")
         
-        logger.info(f"📝 No static match found for: {user_message[:50]}... - returning enhanced default")
+        logger.info(f"📝 No match found for: {user_message[:50]}... - returning enhanced default")
         return default_response, "default"
     
     def _get_response_by_category(self, category: str) -> Optional[str]:

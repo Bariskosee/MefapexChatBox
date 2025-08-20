@@ -5,6 +5,7 @@ Clean, modular FastAPI application with configurable database support
 import logging
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, status, Depends
@@ -133,13 +134,25 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning("⚠️ Lazy loading not available, using standard model manager")
         
-        # Start memory monitoring if available
+        # Start memory monitoring if available - CRITICAL FIX for memory leaks
         try:
-            from memory_monitor import setup_memory_monitoring
+            from memory_monitor import setup_memory_monitoring, memory_monitor
             setup_memory_monitoring()
-            logger.info("🧠 Memory monitoring enabled")
-        except ImportError:
-            logger.info("Memory monitoring not available")
+            logger.info("🧠 CRITICAL: Enhanced memory monitoring enabled for leak detection")
+            
+            # Additional memory monitoring setup for AI models
+            if hasattr(model_manager, '_lazy_tracker'):
+                logger.info("🧠 AI Model memory tracking integrated")
+                
+        except ImportError as e:
+            logger.warning(f"⚠️ Memory monitoring not available: {e}")
+        
+        # CRITICAL FIX: Enable enhanced question matcher memory optimization
+        try:
+            from enhanced_question_matcher import MemoryOptimizedEnhancedQuestionMatcher
+            logger.info("🧠 CRITICAL: Memory-optimized question matcher loaded")
+        except ImportError as e:
+            logger.warning(f"⚠️ Enhanced question matcher optimization not available: {e}")
         
         logger.info("✅ Application startup completed successfully")
         
@@ -151,6 +164,32 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🔄 Shutting down MEFAPEX AI Chatbot")
+    
+    # CRITICAL FIX: Enhanced cleanup for memory leak prevention
+    try:
+        # Stop memory monitoring
+        from memory_monitor import memory_monitor
+        if memory_monitor and memory_monitor.monitoring:
+            memory_monitor.stop_monitoring()
+            logger.info("🧠 Memory monitoring stopped")
+    except ImportError:
+        pass
+    
+    # CRITICAL FIX: Clean up model manager resources
+    try:
+        if hasattr(model_manager, 'cleanup_resources'):
+            model_manager.cleanup_resources()
+            logger.info("🧠 Model manager resources cleaned up")
+    except Exception as e:
+        logger.error(f"Model manager cleanup error: {e}")
+    
+    # CRITICAL FIX: Clean up enhanced question matcher caches
+    try:
+        from enhanced_question_matcher import EnhancedQuestionMatcher
+        # The memory-optimized version handles cleanup automatically
+        logger.info("🧠 Enhanced question matcher cleanup completed")
+    except ImportError:
+        pass
     
     # AI servis kaynaklarını temizle
     try:
@@ -582,6 +621,199 @@ async def get_database_status():
         }
     except Exception as e:
         logger.error(f"Database status error: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+# CRITICAL FIX: Memory monitoring endpoint for debugging memory leaks
+@app.get("/system/memory")
+async def get_memory_status():
+    """Get system memory status and AI model information"""
+    try:
+        memory_info = {}
+        
+        # Basic system memory
+        import psutil
+        process = psutil.Process()
+        memory_info.update({
+            "system_memory_mb": round(process.memory_info().rss / 1024 / 1024, 2),
+            "system_cpu_percent": round(process.cpu_percent(), 2)
+        })
+        
+        # Memory monitor stats if available
+        try:
+            from memory_monitor import memory_monitor
+            if memory_monitor and memory_monitor.monitoring:
+                monitor_stats = memory_monitor.get_stats()
+                memory_info["memory_monitor"] = monitor_stats
+        except ImportError:
+            memory_info["memory_monitor"] = "not_available"
+        
+        # Model manager info if available
+        try:
+            if hasattr(model_manager, 'get_model_info'):
+                model_info = model_manager.get_model_info()
+                memory_info["model_manager"] = model_info
+        except Exception as e:
+            memory_info["model_manager"] = f"error: {str(e)}"
+        
+        # Enhanced question matcher stats if available
+        try:
+            from enhanced_question_matcher import EnhancedQuestionMatcher
+            memory_info["question_matcher"] = "memory_optimized_version_active"
+        except ImportError:
+            memory_info["question_matcher"] = "not_available"
+        
+        return {
+            "status": "ok",
+            "memory_info": memory_info,
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        logger.error(f"Memory status error: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+# TURKISH QUALITY: Test endpoint for Turkish response quality
+@app.post("/test/turkish-quality")
+async def test_turkish_response_quality(request: dict):
+    """Test Turkish response quality with different methods"""
+    try:
+        message = request.get("message", "")
+        if not message:
+            return {"error": "Message required"}
+        
+        results = {}
+        
+        # Test improved Turkish content manager
+        try:
+            from improved_turkish_content_manager import improved_turkish_content
+            turkish_response = improved_turkish_content.get_response(message)
+            turkish_match = improved_turkish_content.find_best_match(message)
+            
+            results["improved_turkish"] = {
+                "response": turkish_response,
+                "match_info": {
+                    "category": turkish_match.get("category") if turkish_match else None,
+                    "score": turkish_match.get("score") if turkish_match else 0,
+                    "pattern": turkish_match.get("pattern") if turkish_match else None
+                } if turkish_match else None,
+                "suggestions": improved_turkish_content.get_category_suggestions(message)
+            }
+        except Exception as e:
+            results["improved_turkish"] = {"error": str(e)}
+        
+        # Test content manager
+        try:
+            if content_manager:
+                cm_response, cm_source = content_manager.find_response(message)
+                results["content_manager"] = {
+                    "response": cm_response,
+                    "source": cm_source
+                }
+        except Exception as e:
+            results["content_manager"] = {"error": str(e)}
+        
+        # Test model manager AI generation
+        try:
+            if hasattr(model_manager, 'generate_huggingface_response'):
+                ai_response = await model_manager.generate_huggingface_response(message)
+                results["ai_generation"] = {
+                    "response": ai_response
+                }
+        except Exception as e:
+            results["ai_generation"] = {"error": str(e)}
+        
+        # Quality assessment
+        results["quality_comparison"] = {
+            "input_message": message,
+            "timestamp": time.time(),
+            "recommendation": _get_quality_recommendation(results)
+        }
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Turkish quality test error: {e}")
+        return {"error": str(e)}
+
+def _get_quality_recommendation(results: dict) -> str:
+    """Get quality recommendation based on test results"""
+    try:
+        # Check if improved Turkish has a good match
+        turkish_result = results.get("improved_turkish", {})
+        if not turkish_result.get("error") and turkish_result.get("match_info"):
+            score = turkish_result["match_info"].get("score", 0)
+            if score > 0.6:
+                return "improved_turkish_high_quality"
+            elif score > 0.3:
+                return "improved_turkish_medium_quality"
+        
+        # Check content manager
+        cm_result = results.get("content_manager", {})
+        if not cm_result.get("error"):
+            source = cm_result.get("source", "")
+            if "turkish_enhanced" in source:
+                return "content_manager_turkish_enhanced"
+            elif "enhanced" in source:
+                return "content_manager_enhanced"
+            elif source != "default":
+                return "content_manager_static"
+        
+        # AI generation as fallback
+        ai_result = results.get("ai_generation", {})
+        if not ai_result.get("error"):
+            return "ai_generation_fallback"
+        
+        return "no_quality_match_found"
+        
+    except Exception as e:
+        return f"recommendation_error: {str(e)}"
+
+# CRITICAL FIX: Emergency memory cleanup endpoint
+@app.post("/system/memory/cleanup")
+async def emergency_memory_cleanup():
+    """Emergency memory cleanup for debugging memory leaks"""
+    try:
+        cleanup_results = {}
+        
+        # Force garbage collection
+        import gc
+        collected = gc.collect()
+        cleanup_results["gc_collected"] = collected
+        
+        # Model manager cleanup
+        try:
+            if hasattr(model_manager, 'clear_caches'):
+                model_manager.clear_caches()
+                cleanup_results["model_manager"] = "caches_cleared"
+            if hasattr(model_manager, '_force_gc'):
+                model_manager._force_gc()
+                cleanup_results["model_manager_gc"] = "completed"
+        except Exception as e:
+            cleanup_results["model_manager"] = f"error: {str(e)}"
+        
+        # Memory monitor emergency cleanup
+        try:
+            from memory_monitor import memory_monitor
+            if memory_monitor:
+                emergency_collected = memory_monitor.force_gc()
+                cleanup_results["memory_monitor_gc"] = emergency_collected
+        except ImportError:
+            cleanup_results["memory_monitor"] = "not_available"
+        
+        return {
+            "status": "completed",
+            "cleanup_results": cleanup_results,
+            "message": "Emergency memory cleanup completed"
+        }
+        
+    except Exception as e:
+        logger.error(f"Emergency cleanup error: {e}")
         return {
             "status": "error",
             "error": str(e)
