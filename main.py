@@ -42,30 +42,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import Improved Microservice Integration
+# Import Unified Microservice Architecture
 try:
-    # Geliştirilmiş mikroservis entegrasyonu
-    from improved_microservice_integration import (
-        get_integration_manager, 
-        get_model_manager, 
-        initialize_on_startup,
-        cleanup_microservice_integration,
-        diagnose_microservice_issues
+    # Birleşik mikroservis mimarisi
+    from unified_microservice_architecture import (
+        get_unified_manager,
+        initialize_unified_architecture,
+        cleanup_unified_architecture,
+        diagnose_microservice_architecture,
+        MicroserviceConfig
     )
-    logger.info("🏗️ Geliştirilmiş mikroservis entegrasyonu mevcut")
+    logger.info("🏗️ Birleşik mikroservis mimarisi mevcut")
     
-    # Model manager'ı al (resilient architecture ile)
-    model_manager = get_model_manager()
+    # Unified manager'ı al
+    model_manager = get_unified_manager()
     
-    # Entegrasyon durumunu kontrol et
+    # Konfigürasyon durumunu kontrol et
     import os
-    if os.getenv("AI_SERVICE_ENABLED", "true").lower() == "true":
-        logger.info("✅ Resilient AI Mikroservis aktif")
+    config = MicroserviceConfig.from_env()
+    if config.ai_service_enabled:
+        logger.info("✅ Birleşik AI Mikroservis mimarisi aktif")
     else:
-        logger.info("💻 Yerel model modu - resilient architecture")
+        logger.info("💻 Yerel model modu - birleşik mimari")
         
 except ImportError as e:
-    logger.warning(f"⚠️ Geliştirilmiş entegrasyon yüklenemedi: {e}")
+    logger.warning(f"⚠️ Birleşik mimari yüklenemedi: {e}")
     logger.info("🔄 Fallback olarak orijinal model manager kullanılıyor")
     from model_manager import model_manager
 
@@ -97,9 +98,9 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 MEFAPEX Chatbot uygulaması başlatılıyor...")
     
     try:
-        # Initialize resilient microservice architecture
-        logger.info("🏗️ Resilient mikroservis mimarisi başlatılıyor...")
-        await initialize_on_startup()
+        # Initialize unified microservice architecture
+        logger.info("🏗️ Birleşik mikroservis mimarisi başlatılıyor...")
+        await initialize_unified_architecture()
         
         # Initialize memory monitoring with emergency manager
         try:
@@ -186,12 +187,12 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"WebSocket cleanup warning: {e}")
         
-        # AI servis kaynaklarını temizle
+        # Unified mikroservis kaynaklarını temizle
         try:
-            await cleanup_microservice_integration()
-            logger.info("🧹 Mikroservis entegrasyonu temizlendi")
+            await cleanup_unified_architecture()
+            logger.info("🧹 Birleşik mikroservis mimarisi temizlendi")
         except Exception as e:
-            logger.error(f"❌ Mikroservis temizlik hatası: {e}")
+            logger.error(f"❌ Birleşik mimari temizlik hatası: {e}")
         
     except Exception as e:
         logger.error(f"❌ General shutdown error: {e}")
@@ -957,8 +958,8 @@ async def health_check():
 async def get_microservice_status():
     """Get comprehensive microservice system status"""
     try:
-        integration_manager = get_integration_manager()
-        status = await integration_manager.get_system_status()
+        unified_manager = get_unified_manager()
+        status = await unified_manager.get_system_status()
         
         return {
             "status": "success",
@@ -977,7 +978,7 @@ async def get_microservice_status():
 async def get_microservice_diagnostics():
     """Get microservice diagnostics and troubleshooting info"""
     try:
-        diagnosis = await diagnose_microservice_issues()
+        diagnosis = await diagnose_microservice_architecture()
         
         return {
             "status": "success",
@@ -999,8 +1000,9 @@ async def force_fallback_mode(request: Request):
         data = await request.json()
         reason = data.get("reason", "Manual API trigger")
         
-        integration_manager = get_integration_manager()
-        integration_manager.force_fallback(reason)
+        unified_manager = get_unified_manager()
+        from unified_microservice_architecture import ServiceMode
+        unified_manager.force_mode_switch(ServiceMode.LOCAL_ONLY, reason)
         
         return {
             "status": "success",
@@ -1020,26 +1022,24 @@ async def force_fallback_mode(request: Request):
 async def get_circuit_breaker_status():
     """Get circuit breaker status for all services"""
     try:
-        manager = get_model_manager()
+        unified_manager = get_unified_manager()
         
-        if hasattr(manager, '_service_manager'):
-            circuit_breakers = manager._service_manager.circuit_breakers
-            status = {}
-            
-            for name, cb in circuit_breakers.items():
-                status[name] = cb.get_stats()
-            
-            return {
-                "status": "success",
-                "circuit_breakers": status,
-                "timestamp": time.time()
-            }
-        else:
-            return {
-                "status": "info",
-                "message": "Circuit breakers not available in current mode",
-                "timestamp": time.time()
-            }
+        # Circuit breaker durumlarını al
+        circuit_breaker_status = {}
+        for service_name in unified_manager.registry.list_services():
+            cb = unified_manager.registry.get_circuit_breaker(service_name)
+            if cb:
+                circuit_breaker_status[service_name] = {
+                    "state": getattr(cb, 'state', 'unknown'),
+                    "failure_count": getattr(cb, 'failure_count', 0),
+                    "is_open": cb.is_open()
+                }
+        
+        return {
+            "status": "success",
+            "circuit_breakers": circuit_breaker_status,
+            "timestamp": time.time()
+        }
             
     except Exception as e:
         return {

@@ -1,0 +1,29 @@
+MIKROSERVIS MIMARISI MIGRATION RAPORU
+==================================================
+
+Migration Tarihi: 2025-08-20T16:45:42.632682
+Proje Root: /Users/bariskose/Downloads/MefapexChatBox-main
+Backup Klasörü: /Users/bariskose/Downloads/MefapexChatBox-main/migration_backups/20250820_164542
+
+YAPILANLAR:
+--------------------
+[2025-08-20T16:45:42.621190] Backup klasörü oluşturuldu - /Users/bariskose/Downloads/MefapexChatBox-main/migration_backups/20250820_164542
+[2025-08-20T16:45:42.623076] Dosya yedeklendi: improved_microservice_integration.py - Çelişkili implementasyon
+[2025-08-20T16:45:42.623654] Çelişkili dosya kaldırıldı: improved_microservice_integration.py
+[2025-08-20T16:45:42.629409] Dosya yedeklendi: services/ai_service/integration.py - Eski AI servis entegrasyonu
+[2025-08-20T16:45:42.630103] AI servis integration.py kaldırıldı
+[2025-08-20T16:45:42.631111] Dosya yedeklendi: services/ai_service/adapter.py - Adapter güncelleme öncesi
+[2025-08-20T16:45:42.631745] AI servis adapter güncelleştirildi
+[2025-08-20T16:45:42.632086] Environment template oluşturuldu: .env.unified_microservice
+
+
+TOPLAM İŞLEM: 8
+
+
+SONRAKI ADIMLAR:
+--------------------
+1. Uygulamayı test edin: python main.py
+2. AI servisini başlatın: python services/ai_service/main.py
+3. Health check yapın: curl http://localhost:8000/health
+4. Unified mimari test edin: curl http://localhost:8000/system/microservice-status
+5. Backup dosyalarını kontrol edin ve gerekirse silin

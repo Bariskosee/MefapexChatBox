@@ -1,22 +1,4 @@
 """
-🔄 AI Mikroservis Adaptörü (Unified Architecture Compatible)
-===========================================================
-Unified Microservice Architecture ile uyumlu AI servis adaptörü
-Bu dosya geriye uyumluluk için korunmuştur.
-
-NOT: Yeni projeler için unified_microservice_architecture.py kullanın
-"""
-
-# DEPRECATED: Bu adaptör unified architecture ile değiştirilmiştir
-# Geriye uyumluluk için korunmuştur
-import warnings
-warnings.warn(
-    "AI Service Adapter deprecated. Use unified_microservice_architecture instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
-
-"""
 🔄 AI Mikroservis Adaptörü
 =========================
 Mevcut model_manager arayüzünü koruyarak AI mikroservisine proxy görevi görür
