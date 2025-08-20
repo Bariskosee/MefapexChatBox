@@ -93,6 +93,7 @@ knowledge_backups/
 *.bin
 *.safetensors
 models/
+models_cache/
 
 # Qdrant storage
 qdrant_storage/
