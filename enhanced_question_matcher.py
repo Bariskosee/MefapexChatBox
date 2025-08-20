@@ -18,6 +18,8 @@ import unicodedata
 import gc
 import weakref
 import time
+import json
+import os
 from typing import List, Dict, Tuple, Optional, Set
 from dataclasses import dataclass
 from functools import lru_cache, wraps
@@ -149,8 +151,8 @@ class TurkishTextNormalizer:
         'Ç': 'C', 'Ğ': 'G', 'I': 'I', 'İ': 'I', 'Ö': 'O', 'Ş': 'S', 'Ü': 'U'
     }
     
-    # Kompakt eş anlamlı kelimeler - Memory optimized
-    SYNONYMS = {
+    # Fallback eş anlamlı kelimeler (JSON yüklenemezse kullanılır)
+    FALLBACK_SYNONYMS = {
         'çalışma': ['iş', 'mesai', 'görev'],
         'saat': ['zaman', 'vakit', 'time'],
         'açık': ['open', 'başlama'],
@@ -162,6 +164,67 @@ class TurkishTextNormalizer:
         'bilgi': ['information', 'detay'],
         'kaçta': ['ne zaman', 'when']
     }
+    
+    # Class-level cache for loaded synonyms
+    _synonyms = None
+    _synonyms_file_path = None
+    
+    @classmethod
+    def load_synonyms(cls) -> Dict[str, List[str]]:
+        """JSON dosyasından eş anlamlıları yükle"""
+        if cls._synonyms is not None:
+            return cls._synonyms
+        
+        try:
+            # Synonyms dosyasının yolunu belirle
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            synonyms_path = os.path.join(current_dir, 'content', 'synonyms.json')
+            
+            # Alternative path if not found
+            if not os.path.exists(synonyms_path):
+                synonyms_path = os.path.join(current_dir, '..', 'content', 'synonyms.json')
+            
+            # Alternative path for direct access
+            if not os.path.exists(synonyms_path):
+                synonyms_path = os.path.join('content', 'synonyms.json')
+            
+            cls._synonyms_file_path = synonyms_path
+            
+            if os.path.exists(synonyms_path):
+                with open(synonyms_path, 'r', encoding='utf-8') as f:
+                    cls._synonyms = json.load(f)
+                    logger.info(f"✅ Eş anlamlılar başarıyla yüklendi: {len(cls._synonyms)} kelime")
+            else:
+                logger.warning(f"⚠️ Synonyms dosyası bulunamadı: {synonyms_path}")
+                cls._synonyms = cls.FALLBACK_SYNONYMS.copy()
+                
+        except Exception as e:
+            logger.error(f"❌ Synonyms yükleme hatası: {e}")
+            cls._synonyms = cls.FALLBACK_SYNONYMS.copy()
+        
+        return cls._synonyms
+    
+    @classmethod
+    def reload_synonyms(cls):
+        """Eş anlamlıları yeniden yükle"""
+        cls._synonyms = None
+        return cls.load_synonyms()
+    
+    @classmethod
+    def get_synonyms_info(cls) -> Dict[str, any]:
+        """Eş anlamlılar hakkında bilgi döndür"""
+        synonyms = cls.load_synonyms()
+        return {
+            'total_words': len(synonyms),
+            'total_synonyms': sum(len(syns) for syns in synonyms.values()),
+            'file_path': cls._synonyms_file_path,
+            'using_fallback': synonyms == cls.FALLBACK_SYNONYMS
+        }
+    
+    # Legacy property for backward compatibility
+    @property
+    def SYNONYMS(self):
+        return self.load_synonyms()
     
     @classmethod
     @memory_optimized_cache(maxsize=100)  # Reduced from unlimited
@@ -203,12 +266,26 @@ class TurkishTextNormalizer:
     @classmethod
     def expand_synonyms(cls, text: str) -> Set[str]:
         """Eş anlamlı kelimeleri genişlet - Memory optimized"""
-        words = text.split()[:20]  # Limit to 20 words max
-        expanded = set(words)
+        synonyms = cls.load_synonyms()
         
-        for word in words:
-            if word in cls.SYNONYMS:
-                expanded.update(cls.SYNONYMS[word][:3])  # Limit synonyms
+        # Hem orijinal hem de normalleştirilmiş kelimeleri kullan
+        original_words = text.split()[:20]  # Limit to 20 words max
+        normalized_text = cls.normalize_text(text)
+        normalized_words = normalized_text.split()[:20]
+        
+        # Her iki forma da dahil et
+        expanded = set(original_words + normalized_words)
+        
+        # Orijinal kelimeler için eş anlamlı ara
+        for word in original_words:
+            word_lower = word.lower()
+            if word_lower in synonyms:
+                expanded.update(synonyms[word_lower][:5])
+        
+        # Normalleştirilmiş kelimeler için eş anlamlı ara
+        for word in normalized_words:
+            if word in synonyms:
+                expanded.update(synonyms[word][:5])
         
         return expanded
 
