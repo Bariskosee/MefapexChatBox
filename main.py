@@ -42,34 +42,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import AI Service Integration
+# Import Improved Microservice Integration
 try:
-    # AI Mikroservis entegrasyonu
-    from services.ai_service.integration import setup_ai_service_integration, get_model_manager, cleanup_ai_service
-    logger.info("🤖 AI Mikroservis entegrasyonu mevcut")
+    # Geliştirilmiş mikroservis entegrasyonu
+    from improved_microservice_integration import (
+        get_integration_manager, 
+        get_model_manager, 
+        initialize_on_startup,
+        cleanup_microservice_integration,
+        diagnose_microservice_issues
+    )
+    logger.info("🏗️ Geliştirilmiş mikroservis entegrasyonu mevcut")
     
-    # Model manager'ı al (AI servis veya fallback)
+    # Model manager'ı al (resilient architecture ile)
     model_manager = get_model_manager()
     
     # Entegrasyon durumunu kontrol et
     import os
     if os.getenv("AI_SERVICE_ENABLED", "true").lower() == "true":
-        logger.info("✅ AI Mikroservis aktif")
+        logger.info("✅ Resilient AI Mikroservis aktif")
     else:
-        logger.info("ℹ️ AI Mikroservis devre dışı, yerel model manager kullanılıyor")
+        logger.info("💻 Yerel model modu - resilient architecture")
         
 except ImportError as e:
-    logger.warning(f"⚠️ AI Mikroservis entegrasyonu başarısız: {e}")
-    
-    # Fallback: Orijinal model manager
-    try:
-        # Try emergency model manager first
-        from model_manager_emergency import model_manager
-        logger.warning("🚨 Using Emergency Model Manager for memory leak fixes")
-    except ImportError:
-        # Fallback to original
-        from model_manager import model_manager
-        logger.info("Using original model manager")
+    logger.warning(f"⚠️ Geliştirilmiş entegrasyon yüklenemedi: {e}")
+    logger.info("🔄 Fallback olarak orijinal model manager kullanılıyor")
+    from model_manager import model_manager
 
 # Content Manager import
 try:
@@ -95,117 +93,141 @@ except ImportError as e:
 # Initialize services
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management"""
-    # Startup
-    logger.info("🚀 Starting MEFAPEX AI Chatbot (Unified Version)")
-    
-    global db_manager
+    """Application lifespan manager with resilient microservice initialization"""
+    logger.info("🚀 MEFAPEX Chatbot uygulaması başlatılıyor...")
     
     try:
-        # Database manager is already initialized in database/manager.py
-        logger.info("✅ Database manager ready")
+        # Initialize resilient microservice architecture
+        logger.info("🏗️ Resilient mikroservis mimarisi başlatılıyor...")
+        await initialize_on_startup()
         
-        # Test database connection
-        health = db_manager.health_check()
-        logger.info(f"✅ Database health: {health.get('status', 'unknown')}")
+        # Initialize memory monitoring with emergency manager
+        try:
+            from memory_monitor import memory_monitor
+            memory_monitor.start_monitoring()
+            logger.info("🧠 Memory monitoring started")
+        except Exception as e:
+            logger.warning(f"Memory monitoring başlatılamadı: {e}")
+        
+        # Enhanced Turkish content initialization
+        try:
+            from improved_turkish_content_manager import improved_turkish_content
+            # Warm up the Turkish content system
+            test_response = improved_turkish_content.get_response("test")
+            if test_response:
+                logger.info("🇹🇷 Enhanced Turkish content system ready")
+        except Exception as e:
+            logger.warning(f"Turkish content system initialization warning: {e}")
         
         # Initialize authentication service
-        logger.info("🔐 Initializing authentication...")
-        init_auth_service(secret_key=config.security.secret_key, environment=config.environment.value)
-        logger.info("✅ Authentication service initialized")
-        
-        # Initialize distributed cache
-        if distributed_cache and hasattr(distributed_cache, 'initialize'):
-            logger.info("🔄 Initializing distributed cache...")
-            await distributed_cache.initialize()
-            cache_health = await distributed_cache.health_check() if hasattr(distributed_cache, 'health_check') else {'status': 'unknown'}
-            logger.info(f"✅ Distributed cache ready: {cache_health}")
-        
-        # Lazy warm up of AI models (optional - models will load on first use)
-        logger.info("🧠 Setting up lazy loading for AI models...")
-        if hasattr(model_manager, 'warmup_models'):
-            # Configure auto-cleanup for memory efficiency
-            model_manager.set_auto_cleanup(
-                enabled=True,
-                cleanup_interval=300,  # 5 minutes
-                max_idle_time=600      # 10 minutes before unloading
+        try:
+            init_auth_service(
+                secret_key=config.security.secret_key,
+                environment=config.environment.value
             )
-            logger.info("✅ Lazy loading configured - models will load on first use")
-        else:
-            logger.warning("⚠️ Lazy loading not available, using standard model manager")
+            logger.info("🔐 Authentication service initialized")
+        except Exception as e:
+            logger.error(f"❌ Authentication service failed: {e}")
+            raise
         
-        # Start memory monitoring if available - CRITICAL FIX for memory leaks
+        # Initialize database
         try:
-            from memory_monitor import setup_memory_monitoring, memory_monitor
-            setup_memory_monitoring()
-            logger.info("🧠 CRITICAL: Enhanced memory monitoring enabled for leak detection")
-            
-            # Additional memory monitoring setup for AI models
-            if hasattr(model_manager, '_lazy_tracker'):
-                logger.info("🧠 AI Model memory tracking integrated")
-                
-        except ImportError as e:
-            logger.warning(f"⚠️ Memory monitoring not available: {e}")
+            await db_manager.initialize()
+            logger.info("🗄️ Database initialized")
+        except Exception as e:
+            logger.error(f"❌ Database initialization failed: {e}")
+            raise
         
-        # CRITICAL FIX: Enable enhanced question matcher memory optimization
+        # Initialize WebSocket manager
         try:
-            from enhanced_question_matcher import MemoryOptimizedEnhancedQuestionMatcher
-            logger.info("🧠 CRITICAL: Memory-optimized question matcher loaded")
-        except ImportError as e:
-            logger.warning(f"⚠️ Enhanced question matcher optimization not available: {e}")
+            websocket_manager.set_message_handler(message_handler)
+            logger.info("🔌 WebSocket manager initialized")
+        except Exception as e:
+            logger.warning(f"WebSocket manager warning: {e}")
         
-        logger.info("✅ Application startup completed successfully")
+        # Set rate limiters for APIs
+        try:
+            set_auth_rate_limiter(rate_limiter)
+            set_chat_rate_limiter(rate_limiter)
+            logger.info("🚦 Rate limiters configured")
+        except Exception as e:
+            logger.warning(f"Rate limiter warning: {e}")
+        
+        logger.info("✅ Tüm servisler başarıyla başlatıldı")
         
     except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
+        logger.error(f"❌ Application startup failed: {e}")
         raise
     
+    # Application is running
     yield
     
-    # Shutdown
-    logger.info("🔄 Shutting down MEFAPEX AI Chatbot")
+    # Shutdown sequence
+    logger.info("� MEFAPEX Chatbot uygulaması kapatılıyor...")
     
-    # CRITICAL FIX: Enhanced cleanup for memory leak prevention
     try:
         # Stop memory monitoring
-        from memory_monitor import memory_monitor
-        if memory_monitor and memory_monitor.monitoring:
+        try:
+            from memory_monitor import memory_monitor
             memory_monitor.stop_monitoring()
             logger.info("🧠 Memory monitoring stopped")
-    except ImportError:
-        pass
-    
-    # CRITICAL FIX: Clean up model manager resources
-    try:
-        if hasattr(model_manager, 'cleanup_resources'):
-            model_manager.cleanup_resources()
-            logger.info("🧠 Model manager resources cleaned up")
+        except Exception as e:
+            logger.warning(f"Memory monitoring stop warning: {e}")
+        
+        # Cleanup AI models and microservices
+        if hasattr(model_manager, 'cleanup'):
+            await model_manager.cleanup()
+            logger.info("� AI models and services cleaned up")
+        
+        # Close WebSocket connections
+        try:
+            await websocket_manager.close_all_connections()
+            logger.info("🔌 WebSocket connections closed")
+        except Exception as e:
+            logger.warning(f"WebSocket cleanup warning: {e}")
+        
+        # AI servis kaynaklarını temizle
+        try:
+            await cleanup_microservice_integration()
+            logger.info("🧹 Mikroservis entegrasyonu temizlendi")
+        except Exception as e:
+            logger.error(f"❌ Mikroservis temizlik hatası: {e}")
+        
     except Exception as e:
-        logger.error(f"Model manager cleanup error: {e}")
-    
-    # CRITICAL FIX: Clean up enhanced question matcher caches
-    try:
-        from enhanced_question_matcher import EnhancedQuestionMatcher
-        # The memory-optimized version handles cleanup automatically
-        logger.info("🧠 Enhanced question matcher cleanup completed")
-    except ImportError:
-        pass
-    
-    # AI servis kaynaklarını temizle
-    try:
-        await cleanup_ai_service()
-    except Exception as e:
-        logger.error(f"❌ AI servis temizlik hatası: {e}")
+        logger.error(f"❌ General shutdown error: {e}")
     
     # Cleanup distributed cache
     if distributed_cache and hasattr(distributed_cache, 'shutdown'):
         try:
             await distributed_cache.shutdown()
-            logger.info("✅ Distributed cache shutdown completed")
+            logger.info("💾 Distributed cache shutdown")
         except Exception as e:
-            logger.error(f"❌ Cache shutdown error: {e}")
+            logger.warning(f"Cache shutdown warning: {e}")
     
-    # Database manager cleanup is handled automatically
+    # Close database connections
+    try:
+        await db_manager.close()
+        logger.info("🗄️ Database connections closed")
+    except Exception as e:
+        logger.warning(f"Database close warning: {e}")
+    
+    logger.info("✅ Application shutdown completed")
+    
+    # Cleanup distributed cache
+    if distributed_cache and hasattr(distributed_cache, 'shutdown'):
+        try:
+            await distributed_cache.shutdown()
+            logger.info("💾 Distributed cache shutdown")
+        except Exception as e:
+            logger.warning(f"Cache shutdown warning: {e}")
+    
+    # Close database connections
+    try:
+        await db_manager.close()
+        logger.info("🗄️ Database connections closed")
+    except Exception as e:
+        logger.warning(f"Database close warning: {e}")
+    
     logger.info("✅ Application shutdown completed")
 
 # Create FastAPI application
@@ -928,6 +950,107 @@ async def health_check():
     except Exception as e:
         logger.error(f"Health check error: {e}")
         return {"status": "unhealthy", "error": str(e)}
+
+# MICROSERVICE MONITORING: New endpoints for resilient architecture monitoring
+
+@app.get("/system/microservice-status")
+async def get_microservice_status():
+    """Get comprehensive microservice system status"""
+    try:
+        integration_manager = get_integration_manager()
+        status = await integration_manager.get_system_status()
+        
+        return {
+            "status": "success",
+            "microservice_status": status,
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+@app.get("/system/microservice-diagnostics")
+async def get_microservice_diagnostics():
+    """Get microservice diagnostics and troubleshooting info"""
+    try:
+        diagnosis = await diagnose_microservice_issues()
+        
+        return {
+            "status": "success",
+            "diagnostics": diagnosis,
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+@app.post("/system/force-fallback")
+async def force_fallback_mode(request: Request):
+    """Force system to fallback mode"""
+    try:
+        data = await request.json()
+        reason = data.get("reason", "Manual API trigger")
+        
+        integration_manager = get_integration_manager()
+        integration_manager.force_fallback(reason)
+        
+        return {
+            "status": "success",
+            "message": "System forced to fallback mode",
+            "reason": reason,
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+@app.get("/system/circuit-breaker-status")
+async def get_circuit_breaker_status():
+    """Get circuit breaker status for all services"""
+    try:
+        manager = get_model_manager()
+        
+        if hasattr(manager, '_service_manager'):
+            circuit_breakers = manager._service_manager.circuit_breakers
+            status = {}
+            
+            for name, cb in circuit_breakers.items():
+                status[name] = cb.get_stats()
+            
+            return {
+                "status": "success",
+                "circuit_breakers": status,
+                "timestamp": time.time()
+            }
+        else:
+            return {
+                "status": "info",
+                "message": "Circuit breakers not available in current mode",
+                "timestamp": time.time()
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+# =============================================================================
+# APPLICATION STARTUP
+# =============================================================================
 
 if __name__ == "__main__":
     import uvicorn
