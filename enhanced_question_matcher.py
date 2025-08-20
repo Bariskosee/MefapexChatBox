@@ -226,10 +226,175 @@ class TurkishTextNormalizer:
     def SYNONYMS(self):
         return self.load_synonyms()
     
+    # Turkish morphological analysis patterns for common suffixes
+    TURKISH_SUFFIX_PATTERNS = [
+        # Derivational suffixes (put these early to avoid conflicts with case endings)
+        (r'lığı$', ''), (r'liği$', ''), (r'luğu$', ''), (r'lüğü$', ''),  # güvenliği -> güven
+        (r'lığın$', ''), (r'liğin$', ''), (r'luğun$', ''), (r'lüğün$', ''),  # güvenliğin -> güven
+        (r'lık$', ''), (r'lik$', ''), (r'luk$', ''), (r'lük$', ''),  # güvenlik -> güven
+        (r'sızlık$', ''), (r'sizlik$', ''), (r'suzluk$', ''), (r'süzlük$', ''),  # güvensizlik -> güven
+        (r'sız$', ''), (r'siz$', ''), (r'suz$', ''), (r'süz$', ''),  # güvensiz -> güven
+        (r'lıdır$', ''), (r'lidir$', ''), (r'ludur$', ''), (r'lüdür$', ''),  # güvenlidir -> güven
+        (r'sal$', ''), (r'sel$', ''),  # kurumsal -> kurum
+        (r'cılık$', ''), (r'cilik$', ''), (r'culuk$', ''), (r'cülük$', ''),  # işçilik -> iş
+        (r'ci$', ''), (r'cı$', ''), (r'cu$', ''), (r'cü$', ''),  # işçi -> iş
+        (r'çi$', ''), (r'çı$', ''), (r'çu$', ''), (r'çü$', ''),  # işçi -> iş (alternative)
+        (r'lı$', ''), (r'li$', ''), (r'lu$', ''), (r'lü$', ''),  # güvenli -> güven (but only for longer words)
+        
+        # Verb suffixes (present, past, future tenses) - more precise patterns
+        (r'ıyorum$', ''),  # çalışıyorum -> çalış
+        (r'iyorum$', ''),  # geliyorum -> gel
+        (r'uyorum$', ''),  # konuşuyorum -> konuş
+        (r'üyorum$', ''),  # düşünüyorum -> düşün
+        (r'ıyorsun$', ''),  # çalışıyorsun -> çalış
+        (r'iyorsun$', ''),  # geliyorsun -> gel
+        (r'uyorsun$', ''),  # konuşuyorsun -> konuş
+        (r'üyorsun$', ''),  # düşünüyorsun -> düşün
+        (r'ıyoruz$', ''),  # çalışıyoruz -> çalış
+        (r'iyoruz$', ''),  # geliyoruz -> gel
+        (r'uyoruz$', ''),  # konuşuyoruz -> konuş
+        (r'üyoruz$', ''),  # düşünüyoruz -> düşün
+        (r'ıyor$', ''),  # çalışıyor -> çalış
+        (r'iyor$', ''),  # geliyor -> gel
+        (r'uyor$', ''),  # konuşuyor -> konuş
+        (r'üyor$', ''),  # düşünüyor -> düşün
+        (r'acağım$', ''),  # çalışacağım -> çalış
+        (r'eceğim$', ''),  # geleceğim -> gel
+        (r'acağız$', ''),  # çalışacağız -> çalış
+        (r'eceğiz$', ''),  # geleceğiz -> gel
+        (r'acak$', ''),  # çalışacak -> çalış
+        (r'ecek$', ''),  # gelecek -> gel
+        (r'dım$', ''), (r'dim$', ''), (r'dum$', ''), (r'düm$', ''),  # çalıştım -> çalış
+        (r'dın$', ''), (r'din$', ''), (r'dun$', ''), (r'dün$', ''),  # çalıştın -> çalış
+        (r'dı$', ''), (r'di$', ''), (r'du$', ''), (r'dü$', ''),  # çalıştı -> çalış
+        (r'tım$', ''), (r'tim$', ''), (r'tum$', ''), (r'tüm$', ''),  # gittim -> git
+        (r'tın$', ''), (r'tin$', ''), (r'tun$', ''), (r'tün$', ''),  # gittin -> git
+        (r'tı$', ''), (r'ti$', ''), (r'tu$', ''), (r'tü$', ''),  # gitti -> git
+        (r'mışım$', ''), (r'mişim$', ''), (r'muşum$', ''), (r'müşüm$', ''),  # çalışmışım -> çalış
+        (r'mış$', ''), (r'miş$', ''), (r'muş$', ''), (r'müş$', ''),  # çalışmış -> çalış
+        (r'arım$', ''), (r'erim$', ''), (r'ırım$', ''), (r'irım$', ''), (r'urım$', ''), (r'ürüm$', ''),  # çalışırım -> çalış
+        
+        # Plural suffixes - VERY SPECIFIC - put these early to avoid conflicts
+        (r'ler$', ''),  # evler -> ev
+        (r'lar$', ''),  # arabalar -> araba
+        
+        # Possessive suffixes - be careful with order, more specific patterns first
+        (r'larımızı$', ''), (r'lerimizi$', ''),  # kitaplarımızı -> kitap
+        (r'larımız$', ''), (r'lerimiz$', ''),  # kitaplarımız -> kitap
+        (r'larınızı$', ''), (r'lerinizi$', ''),  # kitaplarınızı -> kitap
+        (r'larınız$', ''), (r'leriniz$', ''),  # kitaplarınız -> kitap
+        (r'larını$', ''), (r'lerini$', ''),  # kitaplarını -> kitap
+        (r'ları$', ''), (r'leri$', ''),  # kitapları -> kitap
+        (r'larım$', ''), (r'lerim$', ''),  # kitaplarım -> kitap
+        (r'ların$', ''), (r'lerin$', ''),  # kitapların -> kitap
+        (r'ımızı$', ''), (r'imizi$', ''), (r'umuzı$', ''), (r'ümüzü$', ''),  # performansımızı -> performans
+        (r'ımız$', ''), (r'imiz$', ''), (r'umuz$', ''), (r'ümüz$', ''),  # evimiz -> ev
+        (r'ınızı$', ''), (r'inizi$', ''), (r'unuzu$', ''), (r'ünüzü$', ''),  # evinizi -> ev
+        (r'ınız$', ''), (r'iniz$', ''), (r'unuz$', ''), (r'ünüz$', ''),  # eviniz -> ev
+        (r'ımı$', ''), (r'imi$', ''), (r'umu$', ''), (r'ümü$', ''),  # evimi -> ev
+        (r'ım$', ''), (r'im$', ''), (r'um$', ''), (r'üm$', ''),  # evim -> ev
+        (r'ını$', ''), (r'ini$', ''), (r'unu$', ''), (r'ünü$', ''),  # evini -> ev
+        (r'ın$', ''), (r'in$', ''), (r'un$', ''), (r'ün$', ''),  # evin -> ev
+        (r'sını$', ''), (r'sini$', ''), (r'sunu$', ''), (r'sünü$', ''),  # arabasını -> araba
+        (r'sı$', ''), (r'si$', ''), (r'su$', ''), (r'sü$', ''),  # arabası -> araba
+        
+        # Case suffixes - more precise patterns (put specific ones first)
+        (r'ında$', ''), (r'inde$', ''), (r'unda$', ''), (r'ünde$', ''),  # evinde -> ev
+        (r'ından$', ''), (r'inden$', ''), (r'undan$', ''), (r'ünden$', ''),  # evinden -> ev
+        (r'ına$', ''), (r'ine$', ''), (r'una$', ''), (r'üne$', ''),  # evine -> ev
+        (r'ını$', ''), (r'ini$', ''), (r'unu$', ''), (r'ünü$', ''),  # evini -> ev
+        (r'ının$', ''), (r'inin$', ''), (r'unun$', ''), (r'ünün$', ''),  # evinin -> ev
+        (r'da$', ''), (r'de$', ''), (r'ta$', ''), (r'te$', ''),  # evde -> ev
+        (r'dan$', ''), (r'den$', ''), (r'tan$', ''), (r'ten$', ''),  # evden -> ev
+        (r'na$', ''), (r'ne$', ''), (r'ya$', ''), (r'ye$', ''),  # eve -> ev (dative)
+        (r'nı$', ''), (r'ni$', ''), (r'nu$', ''), (r'nü$', ''),  # onu -> o
+        (r'yı$', ''), (r'yi$', ''), (r'yu$', ''), (r'yü$', ''),  # onu -> o
+        (r'nın$', ''), (r'nin$', ''), (r'nun$', ''), (r'nün$', ''),  # onun -> o
+        # Accusative case (direct object) - be more specific for 3-4 letter words
+        (r'i$', ''),  # evi -> ev (accusative)
+        (r'ı$', ''),  # arabayı -> araba (but this pattern would be yı)
+        (r'u$', ''),  # onu -> o  
+        (r'ü$', ''),  # gülü -> gül
+        (r'e$', ''),  # eve -> ev (dative, but also some accusatives)
+        (r'a$', ''),  # some words end in -a
+        
+        # Remove remaining verb endings that might be missed
+        (r'ar$', ''), (r'er$', ''), (r'ir$', ''), (r'ur$', ''), (r'ür$', ''),  # çalışır -> çalış (but be careful!)
+    ]
+    
+    @classmethod
+    @memory_optimized_cache(maxsize=200)  # Increased cache for morphological analysis
+    def morphological_normalize(cls, word: str) -> str:
+        """
+        Türkçe morfolojik analiz ile kelimeyi kök forma getir
+        Turkish morphological analysis to get root form
+        """
+        if not word or len(word) < 3:
+            return word
+        
+        original_word = word.lower()
+        normalized_word = original_word
+        
+        try:
+            # Apply suffix removal patterns in order
+            for pattern, replacement in cls.TURKISH_SUFFIX_PATTERNS:
+                if re.search(pattern, normalized_word):
+                    new_word = re.sub(pattern, replacement, normalized_word)
+                    
+                    # Apply length and sanity checks
+                    if len(new_word) >= 2:
+                        # Special handling for certain patterns to avoid over-truncation
+                        
+                        # Don't remove single vowels from very short words (less than 4 chars)
+                        # But allow common case endings like evi->ev, eve->ev
+                        if pattern in [r'ı$', r'i$', r'u$', r'ü$', r'a$', r'e$']:
+                            # Allow if it's a common Turkish word pattern (consonant+vowel+vowel)
+                            if len(original_word) == 3 and original_word in ['evi', 'eve', 'ona', 'onu']:
+                                pass  # Allow these common patterns
+                            elif len(original_word) < 4:
+                                continue  # Skip for other short words
+                        
+                        # Don't remove -li/-lı from short words
+                        if pattern in [r'lı$', r'li$', r'lu$', r'lü$'] and len(original_word) < 6:
+                            continue
+                        
+                        # Don't remove -ar/-er from short words (to avoid "evler" -> "evl")
+                        if pattern in [r'ar$', r'er$', r'ir$', r'ur$', r'ür$'] and len(original_word) < 6:
+                            continue
+                        
+                        # Special check: don't leave obvious incomplete words
+                        if new_word.endswith('l') and len(new_word) == 3 and pattern in [r'er$', r'ar$']:
+                            continue  # Don't turn "evler" into "evl"
+                        
+                        normalized_word = new_word
+                        break  # Apply only the first matching pattern
+            
+            # Handle Turkish consonant harmony/mutations at word boundaries
+            if len(normalized_word) >= 2 and normalized_word != original_word:
+                # Common consonant changes when suffixes are removed
+                last_char = normalized_word[-1]
+                
+                # Handle specific cases where we know the consonant change patterns
+                if last_char == 'd' and len(normalized_word) >= 3:
+                    # For verbs ending in 'd' after suffix removal, often should be 't'
+                    if any(suffix in original_word for suffix in ['dı', 'di', 'du', 'dü', 'tı', 'ti', 'tu', 'tü']):
+                        # Only change if it seems like a verb root
+                        normalized_word = normalized_word[:-1] + 't'
+                elif last_char == 'p' and len(normalized_word) >= 3:
+                    # For some nouns, 'p' might become 'b' in root form
+                    # But be conservative - only change if we're confident
+                    pass
+            
+            return normalized_word
+            
+        except Exception as e:
+            # If morphological analysis fails, return original word
+            return original_word
+    
     @classmethod
     @memory_optimized_cache(maxsize=100)  # Reduced from unlimited
     def normalize_text(cls, text: str) -> str:
-        """Memory-optimized text normalization"""
+        """Memory-optimized text normalization with morphological analysis"""
         if not text:
             return ""
         
@@ -248,7 +413,23 @@ class TurkishTextNormalizer:
         # Noktalama işaretlerini temizle (sadece gerekli olanları)
         text = re.sub(r'[^\w\sğüşıöçĞÜŞIİÖÇ]', '', text)
         
-        return text
+        # Apply morphological normalization to each word
+        try:
+            words = text.split()
+            normalized_words = []
+            
+            for word in words:
+                if len(word) >= 3:  # Only apply morphological analysis to words of 3+ chars
+                    normalized_word = cls.morphological_normalize(word)
+                    normalized_words.append(normalized_word)
+                else:
+                    normalized_words.append(word)
+            
+            return ' '.join(normalized_words)
+            
+        except Exception as e:
+            # If morphological analysis fails, return basic normalization
+            return text
     
     @classmethod
     @memory_optimized_cache(maxsize=50)  # Reduced cache

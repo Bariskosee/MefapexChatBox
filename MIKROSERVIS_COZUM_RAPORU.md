@@ -215,7 +215,7 @@ environment:
 
 ### **Migration Report:**
 ```
-📁 Backup Location: migration_backups/20250820_164542/
+📁 Backup Location: migration_backups/ (cleaned up)
 📊 Files Processed: 15
 🔄 Imports Updated: 8
 ✅ Conflicts Resolved: 4
