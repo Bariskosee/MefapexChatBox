@@ -57,9 +57,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"  # Safari uyumlu
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: ws: wss: http: https:; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "default-src 'self' data: ws: wss: http: https:; "
+            "script-src 'self'; "
+            "style-src 'self'; "
             "img-src 'self' data: https: http:; "
             "font-src 'self' data:; "
             "connect-src 'self' ws: wss: http: https:; "
