@@ -1,9 +1,19 @@
-// Event handlers and functions for index.html
+// Event handlers and functions for index.html - Enhanced with accessibility
 
 function openChatHistorySidebar() {
     const sidebar = document.getElementById('chatHistorySidebar');
     if (sidebar) {
         sidebar.style.transform = 'translateX(0)';
+        
+        // Enable focus trap for accessibility
+        if (window.accessibilityManager) {
+            window.accessibilityManager.onSidebarOpen();
+        }
+        
+        // Announce to screen readers
+        if (window.accessibilityManager) {
+            window.accessibilityManager.announceMessage('Geçmiş paneli açıldı', 'polite');
+        }
     }
 }
 
@@ -11,6 +21,16 @@ function closeChatHistorySidebar() {
     const sidebar = document.getElementById('chatHistorySidebar');
     if (sidebar) {
         sidebar.style.transform = 'translateX(-100%)';
+        
+        // Disable focus trap for accessibility
+        if (window.accessibilityManager) {
+            window.accessibilityManager.onSidebarClose();
+        }
+        
+        // Announce to screen readers
+        if (window.accessibilityManager) {
+            window.accessibilityManager.announceMessage('Geçmiş paneli kapatıldı', 'polite');
+        }
     }
 }
 
@@ -45,7 +65,7 @@ function logout() {
     const chatMessages = document.getElementById('chatMessages');
     if (chatMessages) {
         chatMessages.innerHTML = `
-            <div class="welcome-message">
+            <div class="welcome-message" role="status">
                 👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
                 Size nasıl yardımcı olabilirim?
             </div>
@@ -58,6 +78,11 @@ function logout() {
     
     // Focus on username field
     if (usernameField) usernameField.focus();
+    
+    // Announce logout to screen readers
+    if (window.accessibilityManager) {
+        window.accessibilityManager.announceMessage('Başarıyla çıkış yapıldı', 'polite');
+    }
 }
 
 function login() {
@@ -88,6 +113,11 @@ function showLoginError(message) {
     if (loginError) {
         loginError.textContent = message;
         loginError.style.display = 'block';
+        
+        // Announce error to screen readers
+        if (window.accessibilityManager) {
+            window.accessibilityManager.announceMessage(`Hata: ${message}`, 'assertive');
+        }
     }
 }
 

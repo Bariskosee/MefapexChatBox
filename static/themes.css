@@ -1,0 +1,250 @@
+/* Theme CSS Variables and Light/Dark Theme Support */
+
+/* Dark Theme (Default) */
+[data-theme="dark"] {
+    --primary-bg: linear-gradient(135deg, #0a0e13 0%, #1a202c 15%, #2d3748 30%, #374151 45%, #2d3748 60%, #1a202c 75%, #0f1419 85%, #0a0e13 100%);
+    --container-bg: linear-gradient(145deg, #1a202c 0%, #2d3748 50%, #1a202c 100%);
+    --header-bg: linear-gradient(135deg, #0f1419 0%, #1a202c 100%);
+    --login-bg: linear-gradient(145deg, #2d3748 0%, #24303f 25%, #1f2937 50%, #1d2833 75%, #1a202c 100%);
+    --chat-bg: #34495e;
+    --chat-messages-bg: #3a4a5c;
+    --input-bg: linear-gradient(135deg, #2d3748 0%, #253241 30%, #1e2a36 70%, #1a202c 100%);
+    --input-focus-bg: linear-gradient(135deg, #374151 0%, #2d3748 30%, #253241 70%, #1f2937 100%);
+    --message-bg: #4a5a6b;
+    --button-primary: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    --button-secondary: rgba(255,255,255,0.15);
+    --text-primary: #ecf0f1;
+    --text-secondary: #bdc3c7;
+    --text-muted: #7f8c8d;
+    --border-color: #4a5a6b;
+    --border-focus: #5dade2;
+    --shadow-primary: rgba(0, 0, 0, 0.6);
+    --shadow-button: rgba(52, 152, 219, 0.4);
+    --scrollbar-track: #2c3e50;
+    --scrollbar-thumb: linear-gradient(135deg, #5a6b7d 0%, #4a5a6b 100%);
+    --sidebar-bg: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+}
+
+/* Light Theme */
+[data-theme="light"] {
+    --primary-bg: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 15%, #dee2e6 30%, #ced4da 45%, #dee2e6 60%, #e9ecef 75%, #f1f3f4 85%, #f8f9fa 100%);
+    --container-bg: linear-gradient(145deg, #ffffff 0%, #f8f9fa 50%, #ffffff 100%);
+    --header-bg: linear-gradient(135deg, #343a40 0%, #495057 100%);
+    --login-bg: linear-gradient(145deg, #ffffff 0%, #f8f9fa 25%, #e9ecef 50%, #f1f3f4 75%, #ffffff 100%);
+    --chat-bg: #f8f9fa;
+    --chat-messages-bg: #ffffff;
+    --input-bg: linear-gradient(135deg, #ffffff 0%, #f8f9fa 30%, #e9ecef 70%, #ffffff 100%);
+    --input-focus-bg: linear-gradient(135deg, #f8f9fa 0%, #ffffff 30%, #f1f3f4 70%, #e9ecef 100%);
+    --message-bg: #e9ecef;
+    --button-primary: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+    --button-secondary: rgba(0,0,0,0.1);
+    --text-primary: #212529;
+    --text-secondary: #495057;
+    --text-muted: #6c757d;
+    --border-color: #ced4da;
+    --border-focus: #007bff;
+    --shadow-primary: rgba(0, 0, 0, 0.15);
+    --shadow-button: rgba(0, 123, 255, 0.25);
+    --scrollbar-track: #f1f3f4;
+    --scrollbar-thumb: linear-gradient(135deg, #ced4da 0%, #adb5bd 100%);
+    --sidebar-bg: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    background: var(--button-secondary);
+    color: var(--text-primary);
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-right: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+[data-theme="light"] .theme-toggle {
+    border-color: rgba(0,0,0,0.2);
+}
+
+.theme-toggle:hover {
+    background: var(--button-secondary);
+    transform: translateY(-1px);
+    opacity: 0.8;
+}
+
+.theme-toggle:focus {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+}
+
+/* Screen Reader Only Text */
+.sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Focus Management */
+.focus-trap {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+    [data-theme="dark"] {
+        --text-primary: #ffffff;
+        --text-secondary: #ffffff;
+        --border-color: #ffffff;
+        --button-primary: linear-gradient(135deg, #ffffff 0%, #cccccc 100%);
+    }
+    
+    [data-theme="light"] {
+        --text-primary: #000000;
+        --text-secondary: #000000;
+        --border-color: #000000;
+        --button-primary: linear-gradient(135deg, #000000 0%, #333333 100%);
+    }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+    
+    .container {
+        animation: none !important;
+    }
+}
+
+/* Theme transition for smooth switching */
+* {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease !important;
+}
+
+/* Update existing styles to use CSS variables */
+body {
+    background: var(--primary-bg);
+    color: var(--text-primary);
+}
+
+.container {
+    background: var(--container-bg);
+    box-shadow: 0 20px 60px var(--shadow-primary);
+}
+
+.header {
+    background: var(--header-bg);
+    color: var(--text-primary);
+}
+
+.login-container {
+    background: var(--login-bg);
+}
+
+.login-form h2 {
+    color: var(--text-primary);
+}
+
+.login-form input {
+    background: var(--input-bg);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.login-form input::placeholder {
+    color: var(--text-secondary);
+}
+
+.login-form input:focus {
+    border-color: var(--border-focus);
+    background: var(--input-focus-bg);
+}
+
+.login-form button {
+    background: var(--button-primary);
+    box-shadow: 0 8px 25px var(--shadow-button);
+}
+
+.chat-container {
+    background: var(--chat-bg);
+}
+
+.chat-messages {
+    background: var(--chat-messages-bg);
+}
+
+.chat-messages::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+}
+
+.message.bot .message-bubble {
+    background: var(--message-bg);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.chat-input {
+    background: var(--input-bg);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.chat-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.chat-input:focus {
+    border-color: var(--border-focus);
+    background: var(--input-focus-bg);
+}
+
+.send-button {
+    background: var(--button-primary);
+    box-shadow: 0 4px 15px var(--shadow-button);
+}
+
+.welcome-message {
+    color: var(--text-secondary);
+}
+
+.chat-history-sidebar {
+    background: var(--sidebar-bg);
+    color: var(--text-primary);
+}
+
+.typing-indicator {
+    color: var(--text-muted);
+}
+
+.error-message {
+    background: #fee;
+    border-color: #fcc;
+    color: #c33;
+}
+
+[data-theme="light"] .error-message {
+    background: #fff5f5;
+    border-color: #fed7d7;
+    color: #e53e3e;
+}

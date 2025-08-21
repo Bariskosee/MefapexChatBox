@@ -60,8 +60,19 @@ document.addEventListener('DOMContentLoaded', function() {
         chatMessages.addEventListener('scroll', handleScroll);
     }
     
+    // Set up scroll to top button
+    if (scrollToTopBtn) {
+        scrollToTopBtn.addEventListener('click', scrollToTop);
+    }
+    
     // Update history button visibility
     updateHistoryButtonVisibility();
+    
+    // Set up sidebar close button
+    const sidebarCloseBtn = document.querySelector('.sidebar-close-btn');
+    if (sidebarCloseBtn) {
+        sidebarCloseBtn.addEventListener('click', closeChatHistorySidebar);
+    }
     
     console.log('✅ Event listeners added!');
 });
@@ -93,6 +104,16 @@ async function checkAuthStatus() {
             
             // Update history button visibility
             updateHistoryButtonVisibility();
+            
+            // Refresh theme for user
+            if (window.themeManager) {
+                window.themeManager.refreshForUser();
+            }
+            
+            // Announce login success to screen readers
+            if (window.accessibilityManager) {
+                window.accessibilityManager.announceMessage('Başarıyla giriş yapıldı', 'polite');
+            }
         } else {
             console.log('❌ Not authenticated or session expired');
             // User not authenticated
@@ -337,8 +358,46 @@ async function loginLegacyFallback(username, password) {
     }
 }
 
-// Make login function available globally
-window.login = login;
+// Add message to UI function - Enhanced with accessibility
+function addMessageToUI(message, sender) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}`;
+    messageDiv.setAttribute('role', 'listitem');
+    
+    const messageBubble = document.createElement('div');
+    messageBubble.className = 'message-bubble';
+    messageBubble.textContent = message;
+    
+    // Add timestamp for screen readers
+    const timestamp = new Date().toLocaleTimeString('tr-TR');
+    const srTimestamp = document.createElement('span');
+    srTimestamp.className = 'sr-only';
+    srTimestamp.textContent = ` ${timestamp}`;
+    messageBubble.appendChild(srTimestamp);
+    
+    // Add sender information for screen readers
+    if (sender === 'user') {
+        messageBubble.setAttribute('aria-label', `Siz: ${message} ${timestamp}`);
+    } else {
+        messageBubble.setAttribute('aria-label', `AI: ${message} ${timestamp}`);
+    }
+    
+    messageDiv.appendChild(messageBubble);
+    chatMessages.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Update message count for accessibility
+    if (window.accessibilityManager) {
+        window.accessibilityManager.updateMessageCount();
+    }
+}
+
+// Add this function if it doesn't exist
+if (typeof addMessageToUI === 'undefined') {
+    window.addMessageToUI = addMessageToUI;
+}
 
 // Logout function - Cookie-based with token cleanup
 async function logout() {
@@ -565,7 +624,7 @@ window.addEventListener('unhandledrejection', function(event) {
     console.error('Unhandled promise rejection:', event.reason);
 });
 
-// Sidebar open/close logic - Updated for session manager
+// Sidebar open/close logic - Updated for session manager with accessibility
 function openChatHistorySidebar() {
     console.log('🔍 openChatHistorySidebar called');
     console.log('🔍 sessionManager exists:', !!window.sessionManager);
@@ -580,6 +639,16 @@ function openChatHistorySidebar() {
     
     if (sidebar) {
         sidebar.style.transform = 'translateX(0)';
+        
+        // Enable focus trap for accessibility
+        if (window.accessibilityManager) {
+            window.accessibilityManager.onSidebarOpen();
+        }
+        
+        // Announce to screen readers
+        if (window.accessibilityManager) {
+            window.accessibilityManager.announceMessage('Geçmiş paneli açıldı', 'polite');
+        }
     }
     
     // Check login state first
@@ -587,11 +656,12 @@ function openChatHistorySidebar() {
         console.log('🔍 User not logged in, showing login required message');
         if (historyList) {
             historyList.innerHTML = `
-                <li style="padding: 40px; text-align: center; color: #ffd700;">
+                <li role="listitem" style="padding: 40px; text-align: center; color: #ffd700;">
                     🔒 Geçmiş sohbetleri görüntülemek için<br>
                     giriş yapmanız gerekiyor<br><br>
                     <button onclick="closeChatHistorySidebar()" 
-                            style="margin-top: 10px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                            style="margin-top: 10px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
+                            aria-label="Geçmiş panelini kapat">
                         Tamam
                     </button>
                 </li>
@@ -607,9 +677,11 @@ function openChatHistorySidebar() {
         console.error('❌ SessionManager or loadHistoryPanel not available');
         if (historyList) {
             historyList.innerHTML = `
-                <li style="padding: 40px; text-align: center; color: #e74c3c;">
+                <li role="listitem" style="padding: 40px; text-align: center; color: #e74c3c;">
                     ❌ SessionManager yüklenemedi<br>
-                    <button onclick="location.reload()" style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    <button onclick="location.reload()" 
+                            style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                            aria-label="Sayfayı yenile">
                         Sayfayı Yenile
                     </button>
                 </li>
@@ -619,7 +691,20 @@ function openChatHistorySidebar() {
 }
 
 function closeChatHistorySidebar() {
-    document.getElementById('chatHistorySidebar').style.transform = 'translateX(-100%)';
+    const sidebar = document.getElementById('chatHistorySidebar');
+    if (sidebar) {
+        sidebar.style.transform = 'translateX(-100%)';
+        
+        // Disable focus trap for accessibility
+        if (window.accessibilityManager) {
+            window.accessibilityManager.onSidebarClose();
+        }
+        
+        // Announce to screen readers
+        if (window.accessibilityManager) {
+            window.accessibilityManager.announceMessage('Geçmiş paneli kapatıldı', 'polite');
+        }
+    }
 }
 
 // Expose for HTML

@@ -1,85 +1,121 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="tr" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MEFAPEX AI Asistan</title>
+    <meta name="description" content="MEFAPEX AI Asistan - Fabrika personeli için akıllı yardım sistemi">
     <link rel="icon" type="image/png" sizes="32x32" href="static/images/logo.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/images/logo.png">
     <link rel="shortcut icon" href="static/images/logo.png">
     <link rel="apple-touch-icon" href="static/images/logo.png">
     <link rel="stylesheet" href="static/styles.css">
+    <link rel="stylesheet" href="static/themes.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
+    <div class="container" role="main" aria-label="MEFAPEX AI Asistan Ana İçerik">
+        <div class="header" role="banner">
             <div class="header-controls">
                 <div class="header-left">
-                    <button id="openHistoryBtn" class="history-button-topLeft">Geçmiş</button>
+                    <button id="openHistoryBtn" class="history-button-topLeft" 
+                            aria-label="Sohbet geçmişini aç" 
+                            title="Geçmiş sohbetlerinizi görüntüleyin">
+                        Geçmiş
+                    </button>
                 </div>
                 <div class="header-right">
-                    <button class="logout-button" id="logoutBtn" style="display: none;">Çıkış</button>
+                    <button id="themeToggle" class="theme-toggle" 
+                            aria-label="Tema değiştir" 
+                            title="Açık/Koyu tema arasında geçiş yapın">
+                        🌙
+                    </button>
+                    <button class="logout-button" id="logoutBtn" 
+                            style="display: none;" 
+                            aria-label="Çıkış yap" 
+                            title="Oturumdan çıkış yapın">
+                        Çıkış
+                    </button>
                 </div>
             </div>
-            <h1><img src="static/images/logo.png" alt="MEFAPEX" class="logo"> MEFAPEX AI</h1>
+            <h1><img src="static/images/logo.png" alt="MEFAPEX logosu" class="logo"> MEFAPEX AI</h1>
             <p>Fabrika personeli için akıllı yardım sistemi</p>
         </div>
 
         <!-- Login Container -->
-        <div class="login-container" id="loginContainer">
+        <section class="login-container" id="loginContainer" role="form" aria-labelledby="login-title">
             <div class="login-form">
-                <h2>Giriş Yap</h2>
-                <div id="loginError" class="error-message" style="display: none;"></div>
-                <input type="text" id="username" placeholder="Kullanıcı Adı" value="">
-                <input type="password" id="password" placeholder="Şifre" value="">
-                <button id="loginButton">Giriş Yap</button>
+                <h2 id="login-title">Giriş Yap</h2>
+                <div id="loginError" class="error-message" style="display: none;" role="alert" aria-live="polite"></div>
+                <label for="username" class="sr-only">Kullanıcı Adı</label>
+                <input type="text" id="username" placeholder="Kullanıcı Adı" value="" 
+                       aria-label="Kullanıcı adınızı girin" aria-required="true">
+                <label for="password" class="sr-only">Şifre</label>
+                <input type="password" id="password" placeholder="Şifre" value="" 
+                       aria-label="Şifrenizi girin" aria-required="true">
+                <button id="loginButton" aria-describedby="login-title">Giriş Yap</button>
             </div>
-        </div>
+        </section>
 
         <!-- Chat Container -->
-        <div class="chat-container" id="chatContainer">
-            <div class="chat-messages" id="chatMessages">
-                <div class="welcome-message">
+        <section class="chat-container" id="chatContainer" role="region" aria-label="Sohbet alanı">
+            <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-label="Sohbet mesajları">
+                <div class="welcome-message" role="status">
                     👋 Merhaba! MEFAPEX AI asistanına hoş geldiniz.<br>
                     Size nasıl yardımcı olabilirim?
                 </div>
             </div>
-            <button class="scroll-to-top" id="scrollToTop">
+            <button class="scroll-to-top" id="scrollToTop" 
+                    aria-label="En üste kaydır" 
+                    title="Sohbetin başına git">
                 ↑
             </button>
-            <div class="typing-indicator" id="typingIndicator">
+            <div class="typing-indicator" id="typingIndicator" role="status" aria-live="polite">
                 AI asistan yazıyor...
             </div>
-            <div class="chat-input-container">
+            <div class="chat-input-container" role="region" aria-label="Mesaj gönder">
+                <label for="messageInput" class="sr-only">Mesajınızı yazın</label>
                 <input 
                     type="text" 
                     class="chat-input" 
                     id="messageInput" 
                     placeholder="Sorunuzu buraya yazın..."
+                    aria-label="Sorunuzu buraya yazın"
+                    aria-describedby="send-button-help"
                 >
-                <button class="send-button" id="sendButton">
+                <button class="send-button" id="sendButton" 
+                        aria-label="Mesajı gönder" 
+                        title="Mesajınızı gönderin (Enter tuşuna da basabilirsiniz)">
                     ➤
                 </button>
+                <span id="send-button-help" class="sr-only">Enter tuşuna basarak da mesaj gönderebilirsiniz</span>
             </div>
-        </div>
+        </section>
     </div>
 
     <!-- Chat History Sidebar -->
-    <div id="chatHistorySidebar" class="chat-history-sidebar">
+    <aside id="chatHistorySidebar" class="chat-history-sidebar" role="complementary" aria-label="Sohbet geçmişi">
         <div class="sidebar-header">
-            <span class="sidebar-title">Geçmiş</span>
-            <button class="sidebar-close-btn">&times;</button>
+            <h2 class="sidebar-title">Geçmiş</h2>
+            <button class="sidebar-close-btn" 
+                    aria-label="Geçmiş panelini kapat" 
+                    title="Kapatmak için ESC tuşuna da basabilirsiniz">
+                &times;
+            </button>
         </div>
-        <ul id="chatHistoryList" class="chat-history-list"></ul>
-    </div>
+        <ul id="chatHistoryList" class="chat-history-list" role="list" aria-label="Geçmiş sohbet listesi"></ul>
+    </aside>
 
     <!-- Shared Utilities -->
     <script src="static/utils.js"></script>
+    <!-- Theme Manager -->
+    <script src="static/theme-manager.js"></script>
     <!-- WebSocket Client -->
     <script src="static/websocket_client.js"></script>
     <!-- Session Manager -->
     <script src="static/session-manager.js"></script>
+    <!-- Accessibility Manager -->
+    <script src="static/accessibility.js"></script>
     <!-- Event Handlers -->
     <script src="static/index-handlers.js"></script>
     <!-- Main Application Script -->

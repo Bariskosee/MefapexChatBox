@@ -6,11 +6,12 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #0a0e13 0%, #1a202c 15%, #2d3748 30%, #374151 45%, #2d3748 60%, #1a202c 75%, #0f1419 85%, #0a0e13 100%);
+    background: var(--primary-bg, linear-gradient(135deg, #0a0e13 0%, #1a202c 15%, #2d3748 30%, #374151 45%, #2d3748 60%, #1a202c 75%, #0f1419 85%, #0a0e13 100%));
     background-size: 600% 600%;
     animation: gradientShift 12s ease infinite;
     height: 100vh;
     margin: 0;
+    color: var(--text-primary, #ecf0f1);
 }
 
 @keyframes gradientShift {
@@ -41,7 +42,7 @@ body {
 }
 
 .container {
-    background: linear-gradient(145deg, #1a202c 0%, #2d3748 50%, #1a202c 100%);
+    background: var(--container-bg, linear-gradient(145deg, #1a202c 0%, #2d3748 50%, #1a202c 100%));
     width: 95%;
     max-width: 900px;
     height: 85vh;
@@ -50,12 +51,12 @@ body {
     overflow: hidden;
     position: relative;
     border-radius: 25px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 20px 60px var(--shadow-primary, rgba(0, 0, 0, 0.6));
 }
 
 .header {
-    background: linear-gradient(135deg, #0f1419 0%, #1a202c 100%);
-    color: white;
+    background: var(--header-bg, linear-gradient(135deg, #0f1419 0%, #1a202c 100%));
+    color: var(--text-primary, white);
     padding: 25px 30px;
     text-align: center;
     position: relative;
