@@ -5,6 +5,11 @@ function openChatHistorySidebar() {
     if (sidebar) {
         sidebar.style.transform = 'translateX(0)';
         
+        // Load history data when sidebar opens
+        if (window.sessionManager) {
+            window.sessionManager.loadHistoryPanel();
+        }
+        
         // Enable focus trap for accessibility
         if (window.accessibilityManager) {
             window.accessibilityManager.onSidebarOpen();

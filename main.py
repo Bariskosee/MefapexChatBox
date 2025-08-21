@@ -39,9 +39,9 @@ from core.websocket_middleware import setup_websocket_middleware, WebSocketSessi
 from auth_service import init_auth_service, get_auth_service, verify_token, verify_token_from_request
 
 # Configure logging
-config = get_config()
+main_config = get_config()
 logging.basicConfig(
-    level=logging.INFO if config.server.debug else logging.WARNING,
+    level=logging.INFO if main_config.server.debug else logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -137,26 +137,21 @@ async def lifespan(app: FastAPI):
         # Initialize authentication service
         try:
             init_auth_service(
-                secret_key=config.security.secret_key,
-                environment=config.environment.value
+                secret_key=main_config.security.secret_key,
+                environment=main_config.environment.value
             )
             logger.info("🔐 Authentication service initialized")
         except Exception as e:
             logger.error(f"❌ Authentication service failed: {e}")
             raise
         
-        # Initialize database
-        try:
-            await db_manager.initialize()
-            logger.info("🗄️ Database initialized")
-        except Exception as e:
-            logger.error(f"❌ Database initialization failed: {e}")
-            raise
+        # Database is already initialized in constructor
+        logger.info("🗄️ Database initialized")
         
         # Initialize cache manager
         try:
             if cache_manager_available:
-                await initialize_cache_manager(config)
+                await initialize_cache_manager(main_config)
                 logger.info("🗄️ Cache manager initialized")
             else:
                 logger.info("🗄️ Using basic cache implementation")
@@ -277,14 +272,14 @@ app.add_middleware(SecurityHeadersMiddleware)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.server.allowed_origins,
+    allow_origins=main_config.server.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
 # Trusted host middleware for production
-if config.environment == Environment.PRODUCTION:
+if main_config.environment == Environment.PRODUCTION:
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=["mefapex.com", "www.mefapex.com", "api.mefapex.com"]
@@ -467,8 +462,10 @@ async def chat_authenticated(chat_msg: ChatMessage, request: Request):
         username = current_user.get("username", "Kullanıcı")
         
         # Generate response using content manager
+        logger.info(f"🔍 Chat request from {username}: '{message}'")
         if content_manager:
             response, response_type = content_manager.find_response(message)
+            logger.info(f"🔍 Content manager response: '{response[:50] if response else None}...', type: {response_type}")
             if response:
                 ai_response = response
                 source = "static_content"
@@ -476,6 +473,7 @@ async def chat_authenticated(chat_msg: ChatMessage, request: Request):
                 ai_response = f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır."
                 source = "fallback"
         else:
+            logger.warning("⚠️ Content manager not available")
             ai_response = f"Merhaba {username}! Mesajınızı aldım: '{message}'. Bu bir test yanıtıdır."
             source = "fallback"
         
@@ -1111,14 +1109,14 @@ async def get_circuit_breaker_status():
 if __name__ == "__main__":
     import uvicorn
     
-    logger.info(f"🚀 Starting MEFAPEX Chatbot on {config.server.host}:{config.server.port}")
-    logger.info(f"🔧 Debug mode: {config.server.debug}")
-    logger.info(f"🗄️ Database: PostgreSQL ({config.database.host}:{config.database.port})")
+    logger.info(f"🚀 Starting MEFAPEX Chatbot on {main_config.server.host}:{main_config.server.port}")
+    logger.info(f"🔧 Debug mode: {main_config.server.debug}")
+    logger.info(f"🗄️ Database: PostgreSQL ({main_config.database.host}:{main_config.database.port})")
     
     uvicorn.run(
         "main:app",
-        host=config.server.host,
-        port=config.server.port,
+        host=main_config.server.host,
+        port=main_config.server.port,
         reload=False,  # Disable reload to fix connection issues
-        log_level="info" if config.server.debug else "warning"
+        log_level="info" if main_config.server.debug else "warning"
     )

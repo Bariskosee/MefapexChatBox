@@ -536,20 +536,25 @@ class SessionManager {
     }
 
     renderHistoryList(sessions) {
+        console.log('🎯 renderHistoryList called with sessions:', sessions);
         const historyList = document.getElementById('chatHistoryList');
-        if (!historyList) return;
+        if (!historyList) {
+            console.error('❌ chatHistoryList element not found');
+            return;
+        }
 
         let html = ``;
 
         // Show current session if it has messages
         if (this.currentSession && this.messages.length > 0) {
+            console.log('📝 Adding current session to history list');
             html += `
-                <li style="padding: 16px 20px; border-bottom: 2px solid #28a745; background: rgba(40,167,69,0.1);">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="color: #28a745; font-weight: 600;">🔥 Aktif Sohbet</span>
-                        <span style="color: #999; font-size: 12px;">${this.messages.length} mesaj</span>
+                <li class="history-session-item active-session">
+                    <div class="session-header">
+                        <span class="session-title">🔥 Aktif Sohbet</span>
+                        <span class="session-count">${this.messages.length} mesaj</span>
                     </div>
-                    <div style="color: #ccc; font-size: 13px; margin-top: 4px;">
+                    <div class="session-preview">
                         ${this.getSessionPreview(this.messages)}
                     </div>
                 </li>
@@ -558,35 +563,48 @@ class SessionManager {
 
         // Render history sessions
         sessions.forEach((session, index) => {
+            console.log('📚 Processing session:', session);
             const timeAgo = this.getTimeAgo(new Date(session.startedAt || session.created_at));
             const preview = session.preview || this.getSessionPreview(session.messages || []);
             
             html += `
-                <li style="padding: 16px 20px; border-bottom: 1px solid #444; cursor: pointer; transition: background 0.3s;"
-                    onmouseover="this.style.background='rgba(255,255,255,0.05)'"
-                    onmouseout="this.style.background='transparent'"
-                    onclick="sessionManager.loadHistorySession('${session.sessionId || session.session_id}')">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="color: #5dade2; font-weight: 500;">💬 Sohbet #${sessions.length - index}</span>
-                        <span style="color: #999; font-size: 12px;">${session.messageCount || session.message_count || 0} mesaj</span>
+                <li class="history-session-item" data-session-id="${session.sessionId || session.session_id}">
+                    <div class="session-header">
+                        <span class="session-title">💬 Sohbet #${sessions.length - index}</span>
+                        <span class="session-count">${session.messageCount || session.message_count || 0} mesaj</span>
                     </div>
-                    <div style="color: #ccc; font-size: 13px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" 
-                         title="${preview}">
+                    <div class="session-preview" title="${preview}">
                         "${preview}"
                     </div>
-                    <div style="color: #888; font-size: 11px; margin-top: 2px;">🕒 ${timeAgo}</div>
+                    <div class="session-time">🕒 ${timeAgo}</div>
                 </li>
             `;
         });
 
         // Footer info
         html += `
-            <li style="padding: 12px 20px; background: rgba(255,255,255,0.05); border-top: 1px solid #666; color: #888; text-align: center; font-size: 12px;">
+            <li class="history-footer">
                 💡 En son ${this.MAX_HISTORY_SESSIONS} sohbet saklanır
             </li>
         `;
 
+        console.log('📝 Setting historyList innerHTML');
         historyList.innerHTML = html;
+        
+        // Add event listeners for session items
+        const sessionItems = historyList.querySelectorAll('.history-session-item');
+        console.log('🎯 Adding event listeners to', sessionItems.length, 'session items');
+        sessionItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const sessionId = item.getAttribute('data-session-id');
+                console.log('🎯 Session item clicked:', sessionId);
+                if (sessionId) {
+                    this.loadHistorySession(sessionId);
+                }
+            });
+        });
+        console.log('✅ Event listeners added successfully');
     }
 
     async loadHistorySession(sessionId) {
@@ -643,7 +661,11 @@ class SessionManager {
             }
 
             // Close sidebar
-            this.closeHistorySidebar();
+            if (window.closeChatHistorySidebar) {
+                window.closeChatHistorySidebar();
+            } else {
+                this.closeHistorySidebar();
+            }
             
         } catch (error) {
             console.error('❌ Failed to load history session:', error);
