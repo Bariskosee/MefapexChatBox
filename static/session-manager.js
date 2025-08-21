@@ -11,7 +11,7 @@
 class SessionManager {
     constructor() {
         this.currentSession = null;
-        this.authToken = null;
+        this.isAuthenticated = false;
         this.userId = null;
         this.API_BASE_URL = window.location.origin;
         
@@ -39,15 +39,15 @@ class SessionManager {
      * CORE: New session on login
      * Create fresh session - clean start, no history display
      */
-    async startNewSessionOnLogin(authToken, userId) {
+    async startNewSessionOnLogin(isAuthenticated, userId) {
         console.log('🆕 Starting new session on login');
-        console.log('🔑 Auth token provided:', !!authToken);
+        console.log('🔑 Is authenticated:', !!isAuthenticated);
         console.log('👤 User ID provided:', userId);
         
-        this.authToken = authToken;
+        this.isAuthenticated = !!isAuthenticated;
         this.userId = userId;
         
-        console.log('🔑 Auth token set in sessionManager:', !!this.authToken);
+        console.log('🔑 Auth status set in sessionManager:', this.isAuthenticated);
         console.log('👤 User ID set in sessionManager:', this.userId);
         
         // Always create fresh session on login
@@ -67,6 +67,39 @@ class SessionManager {
         console.log(`✅ New session started: ${this.currentSession}`);
         return this.currentSession;
     }
+    
+    /**
+     * Get authentication headers for API requests
+     */
+    getAuthHeaders() {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        
+        // Add JWT token if available (for fallback compatibility)
+        if (window.jwtToken) {
+            headers['Authorization'] = `Bearer ${window.jwtToken}`;
+        }
+        
+        return headers;
+    }
+    
+    /**
+     * Get fetch options with credentials for cookie-based auth
+     */
+    getFetchOptions(method = 'GET', body = null) {
+        const options = {
+            method: method,
+            headers: this.getAuthHeaders(),
+            credentials: 'include' // Include cookies
+        };
+        
+        if (body) {
+            options.body = JSON.stringify(body);
+        }
+        
+        return options;
+    }
 
     /**
      * CORE: Save on logout
@@ -75,7 +108,7 @@ class SessionManager {
     async saveSessionOnLogout() {
         console.log('💾 Save session on logout triggered');
         
-        if (!this.currentSession || !this.authToken || !this.userId) {
+        if (!this.currentSession || !this.isAuthenticated || !this.userId) {
             console.log('❌ No session to save - missing session, auth, or user');
             return { success: true, reason: 'no_session' };
         }
@@ -123,12 +156,12 @@ class SessionManager {
      */
     async loadHistoryPanel() {
         console.log('📚 Loading history panel');
-        console.log('📚 Auth token exists:', !!this.authToken);
+        console.log('📚 Auth status:', this.isAuthenticated);
         console.log('📚 User ID:', this.userId);
         
         // Check if user is logged in first
-        if (!this.authToken || !this.userId) {
-            console.warn('⚠️ No auth token or user ID - user not logged in');
+        if (!this.isAuthenticated || !this.userId) {
+            console.warn('⚠️ Not authenticated or no user ID - user not logged in');
             this.showHistoryLoginRequired();
             return;
         }
@@ -274,8 +307,8 @@ class SessionManager {
      * Save current session to database
      */
     async saveCurrentSessionToDatabase() {
-        if (!this.authToken || !this.currentSession || this.messages.length === 0) {
-            console.log('⚠️ Cannot save: missing auth token, session, or no messages');
+        if (!this.isAuthenticated || !this.currentSession || this.messages.length === 0) {
+            console.log('⚠️ Cannot save: not authenticated, no session, or no messages');
             return;
         }
 
@@ -284,14 +317,7 @@ class SessionManager {
         console.log('💾 Saving current session to database:', sessionData.sessionId);
         console.log('💾 Message count:', sessionData.messageCount);
 
-        const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.authToken}`
-            },
-            body: JSON.stringify(sessionData)
-        });
+        const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, this.getFetchOptions('POST', sessionData));
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -340,21 +366,14 @@ class SessionManager {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 console.log(`💾 Save attempt ${attempt}/${maxRetries}`);
-                console.log(`🔑 Auth token available: ${!!this.authToken}`);
+                console.log(`🔑 Auth status: ${this.isAuthenticated}`);
                 console.log(`📝 Session data:`, sessionData);
                 
-                if (!this.authToken) {
-                    throw new Error('No authentication token available');
+                if (!this.isAuthenticated) {
+                    throw new Error('User not authenticated');
                 }
                 
-                const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.authToken}`
-                    },
-                    body: JSON.stringify(sessionData)
-                });
+                const response = await fetch(`${this.API_BASE_URL}/chat/sessions/save`, this.getFetchOptions('POST', sessionData));
 
                 console.log(`📊 Response status: ${response.status}`);
                 console.log(`📊 Response headers:`, [...response.headers.entries()]);
@@ -391,13 +410,9 @@ class SessionManager {
 
         console.log('📡 Fetching fresh history from backend');
         console.log('📡 API URL:', `${this.API_BASE_URL}/chat/sessions/${this.userId}`);
-        console.log('📡 Auth token available:', !!this.authToken);
+        console.log('📡 Auth status:', this.isAuthenticated);
         
-        const response = await fetch(`${this.API_BASE_URL}/chat/sessions/${this.userId}`, {
-            headers: {
-                'Authorization': `Bearer ${this.authToken}`
-            }
-        });
+        const response = await fetch(`${this.API_BASE_URL}/chat/sessions/${this.userId}`, this.getFetchOptions());
 
         console.log('📡 Response status:', response.status);
         console.log('📡 Response headers:', [...response.headers.entries()]);
@@ -578,11 +593,7 @@ class SessionManager {
         console.log(`📖 Loading history session: ${sessionId}`);
         
         try {
-            const response = await fetch(`${this.API_BASE_URL}/chat/sessions/${sessionId}/messages`, {
-                headers: {
-                    'Authorization': `Bearer ${this.authToken}`
-                }
-            });
+            const response = await fetch(`${this.API_BASE_URL}/chat/sessions/${sessionId}/messages`, this.getFetchOptions());
 
             if (!response.ok) {
                 throw new Error(`Failed to load session: ${response.status}`);
@@ -709,7 +720,7 @@ class SessionManager {
     
     cleanup() {
         console.log('🧹 Cleaning up SessionManager...');
-        console.log('🧹 Before cleanup - authToken:', !!this.authToken, 'userId:', this.userId);
+        console.log('🧹 Before cleanup - isAuthenticated:', this.isAuthenticated, 'userId:', this.userId);
         
         // Clear any pending save timeout
         if (this.saveTimeout) {
@@ -718,7 +729,7 @@ class SessionManager {
         }
         
         this.currentSession = null;
-        this.authToken = null;
+        this.isAuthenticated = false;
         this.userId = null;
         this.sessionStartedAt = null;
         this.messages = [];
@@ -726,7 +737,7 @@ class SessionManager {
         this.pendingSaveRequest = false;
         this.invalidateHistoryCache();
         
-        console.log('🧹 After cleanup - authToken:', !!this.authToken, 'userId:', this.userId);
+        console.log('🧹 After cleanup - isAuthenticated:', this.isAuthenticated, 'userId:', this.userId);
         console.log('🧹 SessionManager cleaned up');
     }
 }

@@ -1,14 +1,14 @@
 """
 🔐 Authentication API Routes
-User registration, login, and authentication endpoints
+User registration, login, and authentication endpoints with secure cookie support
 """
-from fastapi import APIRouter, HTTPException, Depends, status, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Request, Response
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
 
-from auth_service import get_auth_service, verify_token
+from auth_service import get_auth_service, verify_token, verify_token_from_request
 from database.manager import db_manager
 from security_config import input_validator
 from core.configuration import get_config
@@ -35,6 +35,9 @@ class Token(BaseModel):
     token_type: str
     expires_in: int
     user_info: dict
+
+class RefreshTokenRequest(BaseModel):
+    pass  # Refresh token will come from HTTP-only cookie
 
 def set_rate_limiter(limiter):
     """Set rate limiter from main app"""
@@ -108,9 +111,9 @@ async def register_user(user: UserRegister, request: Request):
             detail="Registration failed"
         )
 
-@router.post("/login", response_model=Token)
-async def login_user(user: UserLogin, request: Request):
-    """User login with comprehensive security"""
+@router.post("/login", response_model=dict)
+async def login_user(user: UserLogin, request: Request, response: Response):
+    """User login with secure cookie-based authentication"""
     try:
         client_ip = request.client.host
         
@@ -133,24 +136,30 @@ async def login_user(user: UserLogin, request: Request):
                 detail="Invalid credentials"
             )
         
-        # Create access token
+        # Create tokens
         token_data = {
             "sub": user.username,
             "user_id": auth_result["user_id"],
             "username": user.username
         }
         
+        # Create access token (short-lived)
         access_token = auth_service.create_access_token(
             data=token_data,
-            expires_delta=timedelta(hours=24)
+            expires_delta=timedelta(minutes=15)  # 15 minutes
         )
+        
+        # Create refresh token (long-lived)
+        refresh_token, family = auth_service.create_refresh_token(auth_result["user_id"])
+        
+        # Set secure HTTP-only cookies
+        auth_service.set_auth_cookies(response, access_token, refresh_token)
         
         logger.info(f"Successful login: {user.username}")
         
         return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "expires_in": 86400,  # 24 hours in seconds
+            "success": True,
+            "message": "Login successful",
             "user_info": {
                 "user_id": auth_result["user_id"],
                 "username": user.username,
@@ -169,8 +178,9 @@ async def login_user(user: UserLogin, request: Request):
         )
 
 @router.get("/me")
-async def get_current_user_info(current_user: dict = Depends(verify_token)):
-    """Get current user information"""
+async def get_current_user_info(request: Request):
+    """Get current user information from cookie or header"""
+    current_user = verify_token_from_request(request)
     return {
         "user_id": current_user.get("user_id"),
         "username": current_user.get("username"),
@@ -179,9 +189,99 @@ async def get_current_user_info(current_user: dict = Depends(verify_token)):
         "is_active": current_user.get("is_active", True)
     }
 
+@router.post("/refresh")
+async def refresh_access_token(request: Request, response: Response):
+    """Refresh access token using refresh token from HTTP-only cookie"""
+    try:
+        # Get refresh token from cookie
+        refresh_token = request.cookies.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No refresh token provided"
+            )
+        
+        auth_service = get_auth_service()
+        
+        # Rotate refresh token (security best practice)
+        new_refresh_token, family = auth_service.rotate_refresh_token(refresh_token)
+        
+        # Get user data from refresh token
+        token_data = auth_service.verify_refresh_token(refresh_token)
+        user_id = token_data["user_id"]
+        
+        # Get user info from database
+        user_data = db_manager.get_user_by_id(user_id)
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        # Create new access token
+        access_token_data = {
+            "sub": user_data["username"],
+            "user_id": user_id,
+            "username": user_data["username"]
+        }
+        
+        new_access_token = auth_service.create_access_token(
+            data=access_token_data,
+            expires_delta=timedelta(minutes=15)
+        )
+        
+        # Set new cookies
+        auth_service.set_auth_cookies(response, new_access_token, new_refresh_token)
+        
+        logger.info(f"Token refreshed for user: {user_data['username']}")
+        
+        return {
+            "success": True,
+            "message": "Token refreshed successfully",
+            "user_info": {
+                "user_id": user_id,
+                "username": user_data["username"],
+                "email": user_data.get("email"),
+                "full_name": user_data.get("full_name")
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token refresh failed"
+        )
+
 @router.post("/logout")
-async def logout_user(current_user: dict = Depends(verify_token)):
-    """User logout"""
-    # In a real implementation, you might want to blacklist the token
-    logger.info(f"User logged out: {current_user.get('username')}")
-    return {"message": "Logged out successfully"}
+async def logout_user(request: Request, response: Response):
+    """User logout with token cleanup"""
+    try:
+        # Get refresh token to revoke it
+        refresh_token = request.cookies.get("refresh_token")
+        if refresh_token:
+            auth_service = get_auth_service()
+            auth_service.revoke_refresh_token(refresh_token)
+        
+        # Get user info if possible (for logging)
+        try:
+            current_user = verify_token_from_request(request)
+            username = current_user.get("username", "unknown")
+        except:
+            username = "unknown"
+        
+        # Clear cookies
+        auth_service = get_auth_service()
+        auth_service.clear_auth_cookies(response)
+        
+        logger.info(f"User logged out: {username}")
+        return {"success": True, "message": "Logged out successfully"}
+        
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        # Still clear cookies even if other operations fail
+        auth_service = get_auth_service()
+        auth_service.clear_auth_cookies(response)
+        return {"success": True, "message": "Logged out successfully"}

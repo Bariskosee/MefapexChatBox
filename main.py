@@ -32,7 +32,7 @@ from api.health import router as health_router
 from database.manager import db_manager
 
 from websocket_manager import websocket_manager, message_handler
-from auth_service import init_auth_service, get_auth_service, verify_token
+from auth_service import init_auth_service, get_auth_service, verify_token, verify_token_from_request
 
 # Configure logging
 config = get_config()
@@ -393,38 +393,22 @@ async def login_legacy(login_data: LoginRequest, request: Request):
 
 @app.get("/me")
 async def get_current_user(request: Request):
-    """Get current user info (simplified for demo)"""
+    """Get current user info with cookie support"""
     try:
-        # Extract from Authorization header manually
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+        # Use the new verify function that checks both cookies and headers
+        current_user = verify_token_from_request(request)
         
-        token = auth_header.split(" ")[1]
+        return {
+            "user_id": current_user.get("user_id"),
+            "username": current_user.get("username"),
+            "payload": current_user.get("payload", {})
+        }
         
-        # Verify token
-        auth_service = get_auth_service()
-        try:
-            from jose import jwt
-            payload = jwt.decode(token, auth_service.secret_key, algorithms=[auth_service.algorithm])
-            username = payload.get("sub")
-            user_id = payload.get("user_id")
-            
-            if not username:
-                raise HTTPException(status_code=401, detail="Invalid token")
-            
-            return {
-                "username": username,
-                "user_id": user_id,
-                "email": f"{username}@mefapex.com"
-            }
-        except Exception as e:
-            logger.warning(f"JWT validation error: {e}")
-            raise HTTPException(status_code=401, detail="Invalid token")
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Get current user error: {e}")
-        raise HTTPException(status_code=401, detail="Authentication required")
+        logger.error(f"Error getting current user: {e}")
+        raise HTTPException(status_code=401, detail="Authentication failed")
 
 # Chat endpoints
 class ChatMessage(BaseModel):
@@ -452,9 +436,12 @@ async def chat_simple(chat_msg: ChatMessage, request: Request):
         raise HTTPException(status_code=500, detail="Chat error")
 
 @app.post("/chat/authenticated")
-async def chat_authenticated(chat_msg: ChatMessage, request: Request, current_user: dict = Depends(verify_token)):
-    """Authenticated chat endpoint with session management"""
+async def chat_authenticated(chat_msg: ChatMessage, request: Request):
+    """Authenticated chat endpoint with session management (cookie-based)"""
     try:
+        # Verify authentication from request (cookie or header)
+        current_user = verify_token_from_request(request)
+        
         message = chat_msg.message.strip()
         if not message:
             raise HTTPException(status_code=400, detail="Message cannot be empty")

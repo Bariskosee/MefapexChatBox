@@ -20,18 +20,12 @@ const scrollToTopBtn = document.getElementById('scrollToTop');
 // State
 let isLoggedIn = false;
 let isTyping = false;
-let authToken = null;
+let currentUser = null;
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', function() {
-    // Check for saved auth token
-    const savedToken = localStorage.getItem('authToken');
-    if (savedToken) {
-        authToken = savedToken;
-        console.log('🔑 Found saved auth token:', authToken.substring(0, 20) + '...');
-        // Verify token is still valid
-        verifyTokenAndAutoLogin();
-    }
+    // Check for existing auth session (cookies)
+    checkAuthStatus();
     
     // Focus on username input
     document.getElementById('username').focus();
@@ -72,28 +66,27 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('✅ Event listeners added!');
 });
 
-// Verify saved token and auto-login with new session management
-async function verifyTokenAndAutoLogin() {
-    if (!authToken) return;
-    
+// Check authentication status with cookie-based auth
+async function checkAuthStatus() {
     try {
-        console.log('🔍 Verifying saved auth token...');
+        console.log('🔍 Checking authentication status...');
         const response = await fetch(`${API_BASE_URL}/me`, {
-            headers: { 'Authorization': `Bearer ${authToken}` }
+            credentials: 'include' // Include cookies
         });
         
         if (response.ok) {
             const userData = await response.json();
-            console.log('✅ Token verified, auto-login successful:', userData.username);
+            console.log('✅ User authenticated:', userData.username);
             
             // Auto-login successful
+            currentUser = userData;
             isLoggedIn = true;
             loginContainer.style.display = 'none';
             chatContainer.style.display = 'flex';
             logoutBtn.style.display = 'block';
             
             // 🎯 CORE: New session on login - always create fresh session
-            await sessionManager.startNewSessionOnLogin(authToken, userData.user_id);
+            await sessionManager.startNewSessionOnLogin(true, userData.user_id);
             
             // Focus message input
             messageInput.focus();
@@ -101,17 +94,43 @@ async function verifyTokenAndAutoLogin() {
             // Update history button visibility
             updateHistoryButtonVisibility();
         } else {
-            console.log('❌ Token expired or invalid, clearing...');
-            // Token invalid, clear it
-            authToken = null;
-            localStorage.removeItem('authToken');
+            console.log('❌ Not authenticated or session expired');
+            // User not authenticated
+            currentUser = null;
+            isLoggedIn = false;
             sessionManager.cleanup();
         }
     } catch (error) {
-        console.log('❌ Token verification failed:', error);
-        authToken = null;
-        localStorage.removeItem('authToken');
+        console.log('❌ Auth check failed:', error);
+        currentUser = null;
+        isLoggedIn = false;
         sessionManager.cleanup();
+    }
+}
+
+// Auto-refresh tokens when access token expires
+async function refreshTokens() {
+    try {
+        console.log('🔄 Refreshing access token...');
+        const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Tokens refreshed successfully');
+            currentUser = data.user_info;
+            return true;
+        } else {
+            console.log('❌ Token refresh failed, redirecting to login');
+            await logout();
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Token refresh error:', error);
+        await logout();
+        return false;
     }
 }
 
@@ -135,7 +154,7 @@ function scrollToTop() {
     });
 }
 
-// Login function - Exact session behavior implementation
+// Login function - Cookie-based authentication
 async function login() {
     console.log('🔐 Login function called!');
     
@@ -153,7 +172,60 @@ async function login() {
     console.log('🚀 Attempting login with:', username, '****');
     
     try {
-        // Try JWT login first
+        // Try new cookie-based auth first
+        console.log('📡 Calling cookie-based auth endpoint...');
+        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include', // Include cookies
+            body: JSON.stringify({
+                username: username,
+                password: password
+            })
+        });
+        
+        console.log('📊 Response status:', response.status);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('📄 Cookie auth response data:', data);
+            
+            if (data.success) {
+                currentUser = data.user_info;
+                
+                console.log('✅ Cookie-based login successful!');
+                isLoggedIn = true;
+                loginContainer.style.display = 'none';
+                chatContainer.style.display = 'flex';
+                logoutBtn.style.display = 'block';
+                hideLoginError();
+                
+                // 🎯 CORE: New session on every login
+                await sessionManager.startNewSessionOnLogin(true, currentUser.user_id);
+                
+                // Focus composer
+                messageInput.focus();
+                
+                updateHistoryButtonVisibility();
+            } else {
+                throw new Error(data.message || 'Login failed');
+            }
+        } else {
+            // Fallback to legacy JWT login
+            await loginJWTFallback(username, password);
+        }
+    } catch (error) {
+        console.error('💥 Cookie auth error:', error);
+        // Try JWT fallback
+        await loginJWTFallback(username, password);
+    }
+}
+
+// JWT fallback login for backwards compatibility
+async function loginJWTFallback(username, password) {
+    try {
         console.log('📡 Calling JWT login endpoint...');
         const response = await fetch(`${API_BASE_URL}/login`, {
             method: 'POST',
@@ -166,56 +238,47 @@ async function login() {
             })
         });
         
-        console.log('📊 Response status:', response.status);
+        console.log('📊 JWT Response status:', response.status);
         
         if (response.ok) {
             const data = await response.json();
             console.log('📄 JWT Response data:', data);
             
             if (data.access_token) {
-                authToken = data.access_token;
-                localStorage.setItem('authToken', authToken);
+                // For JWT fallback, we still avoid localStorage
+                // The token will be sent in Authorization header for this session only
+                currentUser = data.user_info;
+                window.jwtToken = data.access_token; // Store in memory only
                 
-                // Get user data
-                const meResponse = await fetch(`${API_BASE_URL}/me`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                console.log('✅ JWT Login successful!');
+                isLoggedIn = true;
+                loginContainer.style.display = 'none';
+                chatContainer.style.display = 'flex';
+                logoutBtn.style.display = 'block';
+                hideLoginError();
                 
-                if (meResponse.ok) {
-                    const userData = await meResponse.json();
-                    
-                    console.log('✅ JWT Login successful!');
-                    isLoggedIn = true;
-                    loginContainer.style.display = 'none';
-                    chatContainer.style.display = 'flex';
-                    logoutBtn.style.display = 'block';
-                    hideLoginError();
-                    
-                    // 🎯 CORE: New session on every login
-                    await sessionManager.startNewSessionOnLogin(authToken, userData.user_id);
-                    
-                    // Focus composer
-                    messageInput.focus();
-                    
-                    updateHistoryButtonVisibility();
-                } else {
-                    throw new Error('Failed to get user data');
-                }
+                // 🎯 CORE: New session on every login
+                await sessionManager.startNewSessionOnLogin(window.jwtToken, currentUser.user_id);
+                
+                // Focus composer
+                messageInput.focus();
+                
+                updateHistoryButtonVisibility();
             } else {
                 throw new Error('No access token received');
             }
         } else {
-            // Fallback to legacy login
+            // Final fallback to legacy login
             await loginLegacyFallback(username, password);
         }
     } catch (error) {
-        console.error('💥 Login error:', error);
+        console.error('💥 JWT fallback error:', error);
         // Try legacy login as final fallback
         await loginLegacyFallback(username, password);
     }
 }
 
-// Fallback to legacy login if JWT fails
+// Legacy login fallback for older systems
 async function loginLegacyFallback(username, password) {
     try {
         console.log('📡 Calling legacy login endpoint...');
@@ -242,6 +305,7 @@ async function loginLegacyFallback(username, password) {
         if (data.success) {
             console.log('✅ Legacy login successful!');
             
+            currentUser = { username: username, user_id: username };
             isLoggedIn = true;
             loginContainer.style.display = 'none';
             chatContainer.style.display = 'flex';
@@ -257,7 +321,7 @@ async function loginLegacyFallback(username, password) {
             document.getElementById('password').value = '';
             
             // 🎯 CORE: New session on login (even for legacy)
-            // Note: Limited functionality without JWT token
+            // Note: Limited functionality without authentication
             await sessionManager.startNewSessionOnLogin(null, username);
             
             updateHistoryButtonVisibility();
@@ -276,7 +340,7 @@ async function loginLegacyFallback(username, password) {
 // Make login function available globally
 window.login = login;
 
-// Logout function - Exact session behavior implementation
+// Logout function - Cookie-based with token cleanup
 async function logout() {
     console.log('🚪 Logout initiated...');
     
@@ -290,11 +354,31 @@ async function logout() {
         // Non-blocking error - user can still logout
     }
     
+    try {
+        // Call logout endpoint to clear cookies and revoke tokens
+        const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        
+        if (response.ok) {
+            console.log('✅ Server logout successful');
+        } else {
+            console.warn('⚠️ Server logout failed, continuing with client cleanup');
+        }
+    } catch (error) {
+        console.warn('⚠️ Server logout error:', error);
+        // Continue with client cleanup even if server logout fails
+    }
+    
     // Close history sidebar if it's open
     closeChatHistorySidebar();
     
     // Clear UI state
     isLoggedIn = false;
+    currentUser = null;
+    window.jwtToken = null; // Clear any JWT token from memory
+    
     loginContainer.style.display = 'flex';
     chatContainer.style.display = 'none';
     logoutBtn.style.display = 'none';
@@ -316,10 +400,6 @@ async function logout() {
     messageInput.value = '';
 
     hideLoginError();
-    
-    // Clear authentication
-    authToken = null;
-    localStorage.removeItem('authToken');
     
     updateHistoryButtonVisibility();
     
@@ -358,7 +438,7 @@ document.getElementById('password').addEventListener('keypress', function(event)
     }
 });
 
-// Send message function - Updated for new session management
+// Send message function - Updated for cookie-based authentication
 async function sendMessage() {
     console.log('sendMessage called, isTyping:', isTyping, 'isLoggedIn:', isLoggedIn);
     
@@ -387,26 +467,43 @@ async function sendMessage() {
     showTyping();
     
     try {
-        // Use authenticated endpoint if user is logged in and has token
-        const endpoint = authToken ? '/chat/authenticated' : '/chat';
-        const headers = {
-            'Content-Type': 'application/json',
+        // Use authenticated endpoint for logged-in users
+        const endpoint = '/chat/authenticated';
+        const requestOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include', // Include cookies
+            body: JSON.stringify({
+                message: message
+            })
         };
         
-        // Add authentication header if token exists
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
+        // Add JWT token if available (for fallback compatibility)
+        if (window.jwtToken) {
+            requestOptions.headers['Authorization'] = `Bearer ${window.jwtToken}`;
         }
         
         console.log('Making API request to:', `${API_BASE_URL}${endpoint}`);
         
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({
-                message: message
-            })
-        });
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
+        
+        // Handle token expiration
+        if (response.status === 401) {
+            console.log('🔄 Access token expired, attempting refresh...');
+            const refreshed = await refreshTokens();
+            if (refreshed) {
+                // Retry the request
+                const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
+                if (retryResponse.ok) {
+                    const data = await retryResponse.json();
+                    handleChatResponse(data, message);
+                    return;
+                }
+            }
+            throw new Error('Authentication failed');
+        }
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -415,36 +512,52 @@ async function sendMessage() {
         const data = await response.json();
         console.log('Received response:', data);
         
-        // Hide typing indicator
-        hideTyping();
-        
-        // Add bot response to chat UI
-        addMessageToUI(data.response, 'bot');
-        console.log('Bot response added to chat');
-        
-        // 🎯 CORE: Add message to session manager with auto-save
-        console.log('🔄 About to call sessionManager.addMessage()');
-        try {
-            await sessionManager.addMessage(message, data.response);
-            console.log('✅ Message saved to session and database');
-        } catch (error) {
-            console.error('❌ Failed to save message to session/database:', error);
-            console.warn('⚠️ Message saved to session but failed to save to database:', error);
-        }
-        
-        // Ensure input stays enabled and focused
-        messageInput.disabled = false;
-        messageInput.focus();
+        handleChatResponse(data, message);
         
     } catch (error) {
         console.error('Chat error:', error);
         hideTyping();
         addMessageToUI('Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.', 'bot');
         
+        // If authentication error, prompt re-login
+        if (error.message.includes('Authentication') || error.message.includes('401')) {
+            setTimeout(() => {
+                showLoginError('Oturumunuz sona erdi. Lütfen tekrar giriş yapın.');
+                logout();
+            }, 2000);
+        }
+        
         // Ensure input stays enabled even on error
         messageInput.disabled = false;
         messageInput.focus();
     }
+}
+
+// Handle chat response processing
+function handleChatResponse(data, originalMessage) {
+    // Hide typing indicator
+    hideTyping();
+    
+    // Add bot response to chat UI
+    addMessageToUI(data.response, 'bot');
+    console.log('Bot response added to chat');
+    
+    // 🎯 CORE: Add message to session manager with auto-save
+    console.log('🔄 About to call sessionManager.addMessage()');
+    try {
+        sessionManager.addMessage(originalMessage, data.response).then(() => {
+            console.log('✅ Message saved to session and database');
+        }).catch(error => {
+            console.error('❌ Failed to save message to session/database:', error);
+            console.warn('⚠️ Message saved to session but failed to save to database:', error);
+        });
+    } catch (error) {
+        console.error('❌ Failed to save message to session/database:', error);
+    }
+    
+    // Ensure input stays enabled and focused
+    messageInput.disabled = false;
+    messageInput.focus();
 }
 
 // Error handling for fetch requests
@@ -456,8 +569,7 @@ window.addEventListener('unhandledrejection', function(event) {
 function openChatHistorySidebar() {
     console.log('🔍 openChatHistorySidebar called');
     console.log('🔍 sessionManager exists:', !!window.sessionManager);
-    console.log('🔍 sessionManager.authToken:', !!sessionManager?.authToken);
-    console.log('🔍 sessionManager.userId:', sessionManager?.userId);
+    console.log('🔍 currentUser:', !!currentUser);
     console.log('🔍 isLoggedIn:', isLoggedIn);
     
     const sidebar = document.getElementById('chatHistorySidebar');
@@ -471,7 +583,7 @@ function openChatHistorySidebar() {
     }
     
     // Check login state first
-    if (!isLoggedIn || !authToken) {
+    if (!isLoggedIn || !currentUser) {
         console.log('🔍 User not logged in, showing login required message');
         if (historyList) {
             historyList.innerHTML = `
@@ -521,16 +633,16 @@ function updateHistoryButtonVisibility() {
     console.log('🔍 updateHistoryButtonVisibility called');
     console.log('🔍 historyBtn element found:', !!historyBtn);
     console.log('🔍 isLoggedIn:', isLoggedIn);
-    console.log('🔍 authToken exists:', !!authToken);
+    console.log('🔍 currentUser exists:', !!currentUser);
     
     if (historyBtn) {
-        // Only show history button when user is logged in AND has valid token
-        if (isLoggedIn && authToken) {
+        // Only show history button when user is logged in
+        if (isLoggedIn && currentUser) {
             historyBtn.style.display = 'block';
-            console.log('🔍 History button made visible (user logged in with token)');
+            console.log('🔍 History button made visible (user logged in)');
         } else {
             historyBtn.style.display = 'none';
-            console.log('🔍 History button hidden (user not logged in or no token)');
+            console.log('🔍 History button hidden (user not logged in)');
         }
     } else {
         console.error('❌ History button element not found');
@@ -540,7 +652,7 @@ function updateHistoryButtonVisibility() {
 // 🚪 AUTO-SAVE ON PAGE CLOSE/REFRESH
 window.addEventListener('beforeunload', function(event) {
     // Save session when user closes tab or refreshes page
-    if (isLoggedIn && sessionManager && sessionManager.currentSession && sessionManager.authToken) {
+    if (isLoggedIn && sessionManager && sessionManager.currentSession && (currentUser || window.jwtToken)) {
         console.log('🚪 Page closing, saving session...');
         
         try {

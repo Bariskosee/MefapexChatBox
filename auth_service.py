@@ -21,7 +21,7 @@ from typing import Optional, Dict, Any, Tuple
 from collections import defaultdict
 from core.configuration import get_config
 
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -44,7 +44,8 @@ class AuthenticationService:
         # JWT Configuration
         self.secret_key = secret_key or self._generate_secret_key()
         self.algorithm = "HS256"
-        self.access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        self.access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))  # Shorter access tokens
+        self.refresh_token_expire_days = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))  # Refresh tokens last longer
         
         # Password hashing
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -60,10 +61,15 @@ class AuthenticationService:
         # Brute force protection
         self.brute_force_protection = BruteForceProtection()
         
+        # Refresh token storage (in production, use Redis or database)
+        self.refresh_tokens = {}  # {token: {user_id, expires_at, family}}
+        
         # Production security checks
         self._validate_production_security()
         
         logger.info(f"🔐 Authentication service initialized for {environment} environment")
+        logger.info(f"🕒 Access token expiry: {self.access_token_expire_minutes} minutes")
+        logger.info(f"🕒 Refresh token expiry: {self.refresh_token_expire_days} days")
     
     def _generate_secret_key(self) -> str:
         """Generate secure SECRET_KEY if not provided"""
@@ -162,6 +168,7 @@ class AuthenticationService:
             "iat": datetime.utcnow(),
             "jti": str(uuid.uuid4()),  # Unique token ID
             "iss": "mefapex-api",  # Issuer
+            "type": "access"  # Token type
         })
         
         try:
@@ -174,10 +181,225 @@ class AuthenticationService:
                 detail="Token creation failed"
             )
     
+    def create_refresh_token(self, user_id: str, family: str = None) -> tuple[str, str]:
+        """Create refresh token and return (token, family_id)"""
+        if family is None:
+            family = str(uuid.uuid4())
+        
+        token_id = str(uuid.uuid4())
+        expires_at = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+        
+        data = {
+            "sub": user_id,
+            "user_id": user_id,
+            "jti": token_id,
+            "family": family,
+            "exp": expires_at,
+            "iat": datetime.utcnow(),
+            "iss": "mefapex-api",
+            "type": "refresh"
+        }
+        
+        try:
+            refresh_token = jwt.encode(data, self.secret_key, algorithm=self.algorithm)
+            
+            # Store refresh token (in production, use Redis or database)
+            self.refresh_tokens[token_id] = {
+                "user_id": user_id,
+                "expires_at": expires_at,
+                "family": family,
+                "created_at": datetime.utcnow()
+            }
+            
+            # Clean expired tokens periodically
+            self._cleanup_expired_refresh_tokens()
+            
+            return refresh_token, family
+        except Exception as e:
+            logger.error(f"Refresh token creation error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Refresh token creation failed"
+            )
+    
+    def verify_refresh_token(self, refresh_token: str) -> Dict[str, Any]:
+        """Verify refresh token and return user data"""
+        try:
+            payload = jwt.decode(refresh_token, self.secret_key, algorithms=[self.algorithm])
+            
+            token_type = payload.get("type")
+            if token_type != "refresh":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type"
+                )
+            
+            token_id = payload.get("jti")
+            user_id = payload.get("user_id")
+            family = payload.get("family")
+            
+            if not all([token_id, user_id, family]):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token structure"
+                )
+            
+            # Check if token exists in storage
+            stored_token = self.refresh_tokens.get(token_id)
+            if not stored_token:
+                # Token might have been revoked or expired
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token not found or revoked"
+                )
+            
+            # Verify token belongs to same family (prevents token reuse attacks)
+            if stored_token["family"] != family:
+                # Possible token theft, revoke entire family
+                self._revoke_token_family(family)
+                logger.warning(f"🚨 Possible refresh token theft detected for user {user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token family mismatch"
+                )
+            
+            return {
+                "user_id": user_id,
+                "family": family,
+                "token_id": token_id
+            }
+            
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired"
+            )
+        except jwt.JWTError as e:
+            logger.warning(f"Refresh token verification failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+    
+    def rotate_refresh_token(self, old_refresh_token: str) -> tuple[str, str]:
+        """Rotate refresh token - create new one and invalidate old one"""
+        # Verify old token
+        token_data = self.verify_refresh_token(old_refresh_token)
+        
+        # Revoke old token
+        old_payload = jwt.decode(old_refresh_token, self.secret_key, algorithms=[self.algorithm])
+        old_token_id = old_payload.get("jti")
+        if old_token_id in self.refresh_tokens:
+            del self.refresh_tokens[old_token_id]
+        
+        # Create new token with same family
+        return self.create_refresh_token(
+            user_id=token_data["user_id"],
+            family=token_data["family"]
+        )
+    
+    def revoke_refresh_token(self, refresh_token: str):
+        """Revoke a specific refresh token"""
+        try:
+            payload = jwt.decode(refresh_token, self.secret_key, algorithms=[self.algorithm])
+            token_id = payload.get("jti")
+            if token_id and token_id in self.refresh_tokens:
+                del self.refresh_tokens[token_id]
+                logger.info(f"Refresh token {token_id} revoked")
+        except Exception as e:
+            logger.warning(f"Error revoking refresh token: {e}")
+    
+    def _revoke_token_family(self, family: str):
+        """Revoke all tokens in a family (used when token theft is detected)"""
+        to_remove = []
+        for token_id, token_data in self.refresh_tokens.items():
+            if token_data.get("family") == family:
+                to_remove.append(token_id)
+        
+        for token_id in to_remove:
+            del self.refresh_tokens[token_id]
+        
+        logger.warning(f"🚨 Revoked {len(to_remove)} tokens from family {family}")
+    
+    def _cleanup_expired_refresh_tokens(self):
+        """Clean up expired refresh tokens"""
+        now = datetime.utcnow()
+        expired_tokens = []
+        
+        for token_id, token_data in self.refresh_tokens.items():
+            if token_data["expires_at"] < now:
+                expired_tokens.append(token_id)
+        
+        for token_id in expired_tokens:
+            del self.refresh_tokens[token_id]
+        
+        if expired_tokens:
+            logger.info(f"Cleaned up {len(expired_tokens)} expired refresh tokens")
+    
+    def set_auth_cookies(self, response: Response, access_token: str, refresh_token: str, secure: bool = None):
+        """Set secure HTTP-only authentication cookies"""
+        if secure is None:
+            # Auto-detect based on environment
+            secure = self.environment == "production"
+        
+        # Set access token cookie (shorter expiry)
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            max_age=self.access_token_expire_minutes * 60,  # Convert to seconds
+            httponly=True,
+            secure=secure,
+            samesite="strict",
+            path="/"
+        )
+        
+        # Set refresh token cookie (longer expiry)
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            max_age=self.refresh_token_expire_days * 24 * 60 * 60,  # Convert to seconds
+            httponly=True,
+            secure=secure,
+            samesite="strict",
+            path="/api/auth"  # Restrict to auth endpoints only
+        )
+        
+        logger.info(f"🍪 Auth cookies set (secure={secure})")
+    
+    def clear_auth_cookies(self, response: Response):
+        """Clear authentication cookies"""
+        response.delete_cookie(key="access_token", path="/")
+        response.delete_cookie(key="refresh_token", path="/api/auth")
+        logger.info("🍪 Auth cookies cleared")
+    
+    def extract_token_from_cookie_or_header(self, request: Request) -> Optional[str]:
+        """Extract access token from either cookie or Authorization header"""
+        # First try cookie
+        access_token = request.cookies.get("access_token")
+        if access_token:
+            return access_token
+        
+        # Fallback to Authorization header for backwards compatibility
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            return auth_header.split(" ", 1)[1]
+        
+        return None
+    
     def verify_token(self, credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
         """Verify JWT token and return user data"""
         try:
             payload = jwt.decode(credentials.credentials, self.secret_key, algorithms=[self.algorithm])
+            
+            # Check token type
+            token_type = payload.get("type", "access")  # Default to access for backwards compatibility
+            if token_type != "access":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type for this endpoint",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
             username: str = payload.get("sub")
             user_id: str = payload.get("user_id")
             
@@ -204,6 +426,55 @@ class AuthenticationService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
     
+    def verify_token_from_request(self, request: Request) -> Dict[str, Any]:
+        """Verify JWT token from request (cookie or header)"""
+        access_token = self.extract_token_from_cookie_or_header(request)
+        
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No access token provided",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        try:
+            payload = jwt.decode(access_token, self.secret_key, algorithms=[self.algorithm])
+            
+            # Check token type
+            token_type = payload.get("type", "access")
+            if token_type != "access":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type for this endpoint",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            username: str = payload.get("sub")
+            user_id: str = payload.get("user_id")
+            
+            if username is None or user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            return {"username": username, "user_id": user_id, "payload": payload}
+            
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Access token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except jwt.JWTError as e:
+            logger.warning(f"JWT verification failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    
     # 👤 USER AUTHENTICATION
     def authenticate_user(self, username: str, password: str, users_db: dict = None) -> dict:
         """Authenticate user credentials"""
@@ -217,6 +488,7 @@ class AuthenticationService:
                 db_manager.update_last_login(username)
                 logger.info(f"✅ User authenticated: {username}")
                 return {
+                    "success": True,
                     "username": username,
                     "user_id": str(user_data["user_id"]),  # Use user_id instead of id
                     "email": user_data.get("email"),
@@ -229,6 +501,7 @@ class AuthenticationService:
             if self.demo_user_enabled and username == "demo" and password == self.demo_password:
                 logger.info("✅ Demo user authenticated")
                 return {
+                    "success": True,
                     "username": "demo", 
                     "user_id": "demo_user_id",  # Use consistent demo_user_id
                     "hashed_password": self.get_password_hash(self.demo_password),
@@ -240,15 +513,18 @@ class AuthenticationService:
                 user = users_db[username]
                 if self.verify_password(password, user["hashed_password"]):
                     logger.info(f"✅ User authenticated: {username}")
-                    return user
+                    return {
+                        "success": True,
+                        **user
+                    }
             
             logger.warning(f"❌ Authentication failed for user: {username}")
-            return None  # Return None instead of False for failed authentication
+            return {"success": False, "error": "Invalid credentials"}
             
         except Exception as e:
             logger.error(f"Database authentication error: {e}")
             logger.warning(f"❌ Authentication failed for user: {username}")
-            return None  # Return None instead of False for exceptions
+            return {"success": False, "error": "Authentication error"}
     
     def authenticate_demo_user(self, username: str, password: str) -> bool:
         """Specific demo user authentication"""
@@ -359,6 +635,10 @@ def authenticate_user(username: str, password: str, users_db: dict = None) -> di
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """Convenience function for token verification"""
     return get_auth_service().verify_token(credentials)
+
+def verify_token_from_request(request: Request) -> Dict[str, Any]:
+    """Dependency for verifying token from request (cookie or header)"""
+    return get_auth_service().verify_token_from_request(request)
 
 def validate_password_strength(password: str) -> Tuple[bool, str]:
     """Convenience function for password validation"""
