@@ -6,7 +6,7 @@ This guide will help you migrate from SQLite to PostgreSQL and resolve login iss
 ## ✅ What We've Accomplished
 
 1. **PostgreSQL Dependencies**: Added `psycopg2-binary` and `asyncpg` to requirements.txt
-2. **Database Manager**: Created `postgresql_manager.py` for PostgreSQL support
+2. **Database Manager**: Integrated PostgreSQL support into unified `database/manager.py`
 3. **Application**: Created `main_postgresql.py` with PostgreSQL integration
 4. **Database Schema**: Set up proper PostgreSQL schema with users, sessions, and messages
 5. **Environment**: Configured `.env` file for PostgreSQL settings
