@@ -32,7 +32,7 @@ class SessionManager {
         this.isSaving = false;
         this.pendingSaveRequest = false;
         
-        console.log('🚀 SessionManager initialized');
+        safeLog('SessionManager initialized');
     }
 
     /**
@@ -40,15 +40,15 @@ class SessionManager {
      * Create fresh session - clean start, no history display
      */
     async startNewSessionOnLogin(isAuthenticated, userId) {
-        console.log('🆕 Starting new session on login');
-        console.log('🔑 Is authenticated:', !!isAuthenticated);
-        console.log('👤 User ID provided:', userId);
+        safeLog('Starting new session on login');
+        devLog('Is authenticated', !!isAuthenticated);
+        devLog('User ID provided', !!userId);
         
         this.isAuthenticated = !!isAuthenticated;
         this.userId = userId;
         
-        console.log('🔑 Auth status set in sessionManager:', this.isAuthenticated);
-        console.log('👤 User ID set in sessionManager:', this.userId);
+        devLog('Auth status set in sessionManager', this.isAuthenticated);
+        devLog('User ID set in sessionManager', !!this.userId);
         
         // Always create fresh session on login
         this.currentSession = generateSessionId();
@@ -64,7 +64,7 @@ class SessionManager {
         // Focus composer
         this.focusComposer();
         
-        console.log(`✅ New session started: ${this.currentSession}`);
+        safeLog('New session started successfully');
         return this.currentSession;
     }
     
@@ -106,16 +106,16 @@ class SessionManager {
      * Save current session to history if it has messages
      */
     async saveSessionOnLogout() {
-        console.log('💾 Save session on logout triggered');
+        safeLog('Save session on logout triggered');
         
         if (!this.currentSession || !this.isAuthenticated || !this.userId) {
-            console.log('❌ No session to save - missing session, auth, or user');
+            safeLog('No session to save - missing session, auth, or user');
             return { success: true, reason: 'no_session' };
         }
 
         // Edge case: Don't save empty sessions
         if (this.messages.length === 0) {
-            console.log('✅ Empty session - not saving');
+            safeLog('Empty session - not saving');
             return { success: true, reason: 'empty_session' };
         }
 
@@ -126,7 +126,7 @@ class SessionManager {
             const saveResult = await this.saveToBackendWithRetry(sessionData);
             
             if (saveResult.success) {
-                console.log('✅ Session saved successfully on logout');
+                safeLog('Session saved successfully on logout');
                 
                 // Clear current session
                 this.clearCurrentSession();
@@ -140,7 +140,7 @@ class SessionManager {
             }
             
         } catch (error) {
-            console.error('❌ Failed to save session on logout:', error);
+            safeError('Failed to save session on logout', error.message);
             
             // Show non-blocking toast
             this.showSaveErrorToast(error.message);
@@ -155,36 +155,36 @@ class SessionManager {
      * Fetch and render the list with proper states
      */
     async loadHistoryPanel() {
-        console.log('📚 Loading history panel');
-        console.log('📚 Auth status:', this.isAuthenticated);
-        console.log('📚 User ID:', this.userId);
+        safeLog('Loading history panel');
+        devLog('Auth status', this.isAuthenticated);
+        devLog('User ID exists', !!this.userId);
         
         // Check if user is logged in first
         if (!this.isAuthenticated || !this.userId) {
-            console.warn('⚠️ Not authenticated or no user ID - user not logged in');
+            safeWarn('Not authenticated or no user ID - user not logged in');
             this.showHistoryLoginRequired();
             return;
         }
 
         // Show loading state
         this.showHistoryLoading();
-        console.log('📚 Loading state shown, fetching history...');
+        safeLog('Loading state shown, fetching history...');
 
         try {
             const history = await this.fetchUserHistory();
-            console.log('📚 History fetched:', history.length, 'sessions');
-            console.log('📚 History data:', history);
+            safeLog('History fetched successfully', { count: history.length });
+            devLog('History data', history);
             
             if (history.length === 0) {
-                console.log('📚 No history found, showing empty state');
+                safeLog('No history found, showing empty state');
                 this.showHistoryEmpty();
             } else {
-                console.log('📚 Rendering history list');
+                safeLog('Rendering history list');
                 this.renderHistoryList(history);
             }
             
         } catch (error) {
-            console.error('❌ Failed to load history:', error);
+            safeError('Failed to load history', error.message);
             
             // Check if it's an authentication error
             if (error.message.includes('401') || error.message.includes('403')) {

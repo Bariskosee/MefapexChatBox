@@ -26,7 +26,7 @@ async function performLogin() {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
     
-    console.log('🔐 Simple login attempt:', username);
+    safeLog('Simple login attempt initiated');
     
     if (!username || !password) {
         showStatus('Kullanıcı adı ve şifre gereklidir.', 'error');
@@ -48,11 +48,11 @@ async function performLogin() {
             })
         });
         
-        console.log('Login response status:', response.status);
+        safeLog('Login response received');
         
         if (response.ok) {
             const data = await response.json();
-            console.log('Login successful:', data);
+            safeLog('Login successful');
             
             if (data.access_token) {
                 authToken = data.access_token;
@@ -65,7 +65,7 @@ async function performLogin() {
                 
                 if (meResponse.ok) {
                     const userData = await meResponse.json();
-                    console.log('User data:', userData);
+                    safeLog('User data retrieved successfully');
                     
                     // Successfully logged in
                     isLoggedIn = true;
@@ -90,7 +90,7 @@ async function performLogin() {
             await tryLegacyLogin(username, password);
         }
     } catch (error) {
-        console.error('Login error:', error);
+        safeError('Login error', error.message);
         showStatus('Giriş hatası: ' + error.message, 'error');
     }
 }
@@ -109,7 +109,7 @@ async function tryLegacyLogin(username, password) {
         });
         
         const data = await response.json();
-        console.log('Legacy login response:', data);
+        safeLog('Legacy login response received');
         
         if (data.success) {
             isLoggedIn = true;
@@ -127,7 +127,7 @@ async function tryLegacyLogin(username, password) {
             throw new Error(data.message || 'Giriş başarısız');
         }
     } catch (error) {
-        console.error('Legacy login error:', error);
+        safeError('Legacy login error', error.message);
         showStatus('Kullanıcı adı veya şifre hatalı', 'error');
     }
 }
@@ -207,13 +207,13 @@ async function sendChatMessage() {
         }
         
         const data = await response.json();
-        console.log('Chat response:', data);
+        safeLog('Chat response received');
         
         // Add bot response
         addMessage(data.response, 'bot');
         
     } catch (error) {
-        console.error('Chat error:', error);
+        safeError('Chat error', error.message);
         addMessage('Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.', 'bot');
     } finally {
         isTyping = false;

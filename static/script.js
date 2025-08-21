@@ -2,9 +2,9 @@
 // 🎯 Exact Session & History Implementation
 const API_BASE_URL = window.location.origin;
 
-// Debug: Log the API URL
-console.log('API_BASE_URL:', API_BASE_URL);
-console.log('JavaScript loaded successfully!');
+// Safe debug logging
+safeLog('API_BASE_URL initialized');
+safeLog('JavaScript loaded successfully!');
 
 // DOM Elements
 const loginContainer = document.getElementById('loginContainer');
@@ -74,20 +74,20 @@ document.addEventListener('DOMContentLoaded', function() {
         sidebarCloseBtn.addEventListener('click', closeChatHistorySidebar);
     }
     
-    console.log('✅ Event listeners added!');
+    safeLog('Event listeners added successfully');
 });
 
 // Check authentication status with cookie-based auth
 async function checkAuthStatus() {
     try {
-        console.log('🔍 Checking authentication status...');
+        safeLog('Checking authentication status...');
         const response = await fetch(`${API_BASE_URL}/me`, {
             credentials: 'include' // Include cookies
         });
         
         if (response.ok) {
             const userData = await response.json();
-            console.log('✅ User authenticated:', userData.username);
+            safeLog('User authenticated successfully');
             
             // Auto-login successful
             currentUser = userData;
@@ -115,14 +115,14 @@ async function checkAuthStatus() {
                 window.accessibilityManager.announceMessage('Başarıyla giriş yapıldı', 'polite');
             }
         } else {
-            console.log('❌ Not authenticated or session expired');
+            safeLog('Not authenticated or session expired');
             // User not authenticated
             currentUser = null;
             isLoggedIn = false;
             sessionManager.cleanup();
         }
     } catch (error) {
-        console.log('❌ Auth check failed:', error);
+        safeLog('Auth check failed', error.message);
         currentUser = null;
         isLoggedIn = false;
         sessionManager.cleanup();
@@ -132,7 +132,7 @@ async function checkAuthStatus() {
 // Auto-refresh tokens when access token expires
 async function refreshTokens() {
     try {
-        console.log('🔄 Refreshing access token...');
+        safeLog('Refreshing access token...');
         const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
             method: 'POST',
             credentials: 'include'
@@ -140,16 +140,16 @@ async function refreshTokens() {
         
         if (response.ok) {
             const data = await response.json();
-            console.log('✅ Tokens refreshed successfully');
+            safeLog('Tokens refreshed successfully');
             currentUser = data.user_info;
             return true;
         } else {
-            console.log('❌ Token refresh failed, redirecting to login');
+            safeLog('Token refresh failed, redirecting to login');
             await logout();
             return false;
         }
     } catch (error) {
-        console.error('❌ Token refresh error:', error);
+        safeError('Token refresh error', error.message);
         await logout();
         return false;
     }
@@ -177,24 +177,25 @@ function scrollToTop() {
 
 // Login function - Cookie-based authentication
 async function login() {
-    console.log('🔐 Login function called!');
+    safeLog('Login function called');
     
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
     
-    console.log('Username:', username, 'Password length:', password.length);
+    // SECURITY: Never log actual credentials or their lengths
+    devLog('Login attempt with provided credentials');
     
     if (!username || !password) {
-        console.log('❌ Missing credentials');
+        safeLog('Missing credentials');
         showLoginError('Kullanıcı adı ve şifre gereklidir.');
         return;
     }
     
-    console.log('🚀 Attempting login with:', username, '****');
+    safeLog('Attempting login with cookie-based authentication');
     
     try {
         // Try new cookie-based auth first
-        console.log('📡 Calling cookie-based auth endpoint...');
+        safeLog('Calling cookie-based auth endpoint...');
         const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
             method: 'POST',
             headers: {
@@ -207,16 +208,16 @@ async function login() {
             })
         });
         
-        console.log('📊 Response status:', response.status);
+        safeLog('Response received from auth endpoint');
         
         if (response.ok) {
             const data = await response.json();
-            console.log('📄 Cookie auth response data:', data);
+            safeLog('Cookie auth response received');
             
             if (data.success) {
                 currentUser = data.user_info;
                 
-                console.log('✅ Cookie-based login successful!');
+                safeLog('Cookie-based login successful');
                 isLoggedIn = true;
                 loginContainer.style.display = 'none';
                 chatContainer.style.display = 'flex';
@@ -238,7 +239,7 @@ async function login() {
             await loginJWTFallback(username, password);
         }
     } catch (error) {
-        console.error('💥 Cookie auth error:', error);
+        safeError('Cookie auth error', error.message);
         // Try JWT fallback
         await loginJWTFallback(username, password);
     }
@@ -247,7 +248,7 @@ async function login() {
 // JWT fallback login for backwards compatibility
 async function loginJWTFallback(username, password) {
     try {
-        console.log('📡 Calling JWT login endpoint...');
+        safeLog('Calling JWT login endpoint...');
         const response = await fetch(`${API_BASE_URL}/login`, {
             method: 'POST',
             headers: {
@@ -259,11 +260,11 @@ async function loginJWTFallback(username, password) {
             })
         });
         
-        console.log('📊 JWT Response status:', response.status);
+        safeLog('JWT Response received');
         
         if (response.ok) {
             const data = await response.json();
-            console.log('📄 JWT Response data:', data);
+            safeLog('JWT Response processed');
             
             if (data.access_token) {
                 // For JWT fallback, we still avoid localStorage
@@ -271,7 +272,7 @@ async function loginJWTFallback(username, password) {
                 currentUser = data.user_info;
                 window.jwtToken = data.access_token; // Store in memory only
                 
-                console.log('✅ JWT Login successful!');
+                safeLog('JWT Login successful');
                 isLoggedIn = true;
                 loginContainer.style.display = 'none';
                 chatContainer.style.display = 'flex';
@@ -293,7 +294,7 @@ async function loginJWTFallback(username, password) {
             await loginLegacyFallback(username, password);
         }
     } catch (error) {
-        console.error('💥 JWT fallback error:', error);
+        safeError('JWT fallback error', error.message);
         // Try legacy login as final fallback
         await loginLegacyFallback(username, password);
     }
@@ -302,7 +303,7 @@ async function loginJWTFallback(username, password) {
 // Legacy login fallback for older systems
 async function loginLegacyFallback(username, password) {
     try {
-        console.log('📡 Calling legacy login endpoint...');
+        safeLog('Calling legacy login endpoint...');
         const response = await fetch(`${API_BASE_URL}/login-legacy`, {
             method: 'POST',
             headers: {
@@ -314,17 +315,17 @@ async function loginLegacyFallback(username, password) {
             })
         });
         
-        console.log('📊 Legacy Response status:', response.status);
+        safeLog('Legacy Response received');
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
         const data = await response.json();
-        console.log('📄 Legacy Response data:', data);
+        safeLog('Legacy Response processed');
         
         if (data.success) {
-            console.log('✅ Legacy login successful!');
+            safeLog('Legacy login successful');
             
             currentUser = { username: username, user_id: username };
             isLoggedIn = true;
@@ -347,13 +348,13 @@ async function loginLegacyFallback(username, password) {
             
             updateHistoryButtonVisibility();
             
-            console.log('🎯 Legacy login completed!');
+            safeLog('Legacy login completed');
         } else {
             throw new Error(data.message || 'Giriş başarısız');
         }
         
     } catch (legacyError) {
-        console.error('❌ Legacy login error:', legacyError);
+        safeError('Legacy login error', legacyError.message);
         showLoginError('Giriş başarısız. Kullanıcı adı ve şifreyi kontrol edin.');
     }
 }
@@ -401,15 +402,15 @@ if (typeof addMessageToUI === 'undefined') {
 
 // Logout function - Cookie-based with token cleanup
 async function logout() {
-    console.log('🚪 Logout initiated...');
+    safeLog('Logout initiated');
     
     // 🎯 CORE: Save on logout (only if session has messages)
     const saveResult = await sessionManager.saveSessionOnLogout();
     
     if (saveResult.success) {
-        console.log(`✅ Logout save completed: ${saveResult.reason}`);
+        safeLog(`Logout save completed: ${saveResult.reason}`);
     } else {
-        console.warn(`⚠️ Logout save failed: ${saveResult.error}`);
+        safeWarn(`Logout save failed: ${saveResult.error}`);
         // Non-blocking error - user can still logout
     }
     
@@ -421,12 +422,12 @@ async function logout() {
         });
         
         if (response.ok) {
-            console.log('✅ Server logout successful');
+            safeLog('Server logout successful');
         } else {
-            console.warn('⚠️ Server logout failed, continuing with client cleanup');
+            safeWarn('Server logout failed, continuing with client cleanup');
         }
     } catch (error) {
-        console.warn('⚠️ Server logout error:', error);
+        safeWarn('Server logout error', error.message);
         // Continue with client cleanup even if server logout fails
     }
     
@@ -462,7 +463,7 @@ async function logout() {
     
     updateHistoryButtonVisibility();
     
-    console.log('✅ Logout completed');
+    safeLog('Logout completed');
 }
 
 // Show login error
@@ -499,20 +500,20 @@ document.getElementById('password').addEventListener('keypress', function(event)
 
 // Send message function - Updated for cookie-based authentication
 async function sendMessage() {
-    console.log('sendMessage called, isTyping:', isTyping, 'isLoggedIn:', isLoggedIn);
+    devLog('sendMessage called', { isTyping, isLoggedIn });
     
     if (isTyping || !isLoggedIn) {
-        console.log('Blocked: isTyping or not logged in');
+        safeLog('Message blocked: typing in progress or user not logged in');
         return;
     }
     
     const message = messageInput.value.trim();
     if (!message) {
-        console.log('Empty message, returning');
+        safeLog('Empty message, returning');
         return;
     }
     
-    console.log('Sending message:', message);
+    safeLog('Sending message to chat API');
     
     // Clear input but keep it enabled
     messageInput.value = '';
@@ -520,7 +521,7 @@ async function sendMessage() {
     
     // Add user message to chat UI
     addMessageToUI(message, 'user');
-    console.log('User message added to chat');
+    safeLog('User message added to chat');
     
     // Show typing indicator
     showTyping();
@@ -544,13 +545,13 @@ async function sendMessage() {
             requestOptions.headers['Authorization'] = `Bearer ${window.jwtToken}`;
         }
         
-        console.log('Making API request to:', `${API_BASE_URL}${endpoint}`);
+        safeLog('Making API request to authenticated chat endpoint');
         
         const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
         
         // Handle token expiration
         if (response.status === 401) {
-            console.log('🔄 Access token expired, attempting refresh...');
+            safeLog('Access token expired, attempting refresh...');
             const refreshed = await refreshTokens();
             if (refreshed) {
                 // Retry the request
@@ -569,12 +570,12 @@ async function sendMessage() {
         }
         
         const data = await response.json();
-        console.log('Received response:', data);
+        safeLog('Received response from chat API');
         
         handleChatResponse(data, message);
         
     } catch (error) {
-        console.error('Chat error:', error);
+        safeError('Chat error', error.message);
         hideTyping();
         addMessageToUI('Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.', 'bot');
         
@@ -599,19 +600,19 @@ function handleChatResponse(data, originalMessage) {
     
     // Add bot response to chat UI
     addMessageToUI(data.response, 'bot');
-    console.log('Bot response added to chat');
+    safeLog('Bot response added to chat');
     
     // 🎯 CORE: Add message to session manager with auto-save
-    console.log('🔄 About to call sessionManager.addMessage()');
+    devLog('About to call sessionManager.addMessage()');
     try {
         sessionManager.addMessage(originalMessage, data.response).then(() => {
-            console.log('✅ Message saved to session and database');
+            safeLog('Message saved to session and database');
         }).catch(error => {
-            console.error('❌ Failed to save message to session/database:', error);
-            console.warn('⚠️ Message saved to session but failed to save to database:', error);
+            safeError('Failed to save message to session/database', error.message);
+            safeWarn('Message saved to session but failed to save to database', error.message);
         });
     } catch (error) {
-        console.error('❌ Failed to save message to session/database:', error);
+        safeError('Failed to save message to session/database', error.message);
     }
     
     // Ensure input stays enabled and focused
@@ -626,16 +627,16 @@ window.addEventListener('unhandledrejection', function(event) {
 
 // Sidebar open/close logic - Updated for session manager with accessibility
 function openChatHistorySidebar() {
-    console.log('🔍 openChatHistorySidebar called');
-    console.log('🔍 sessionManager exists:', !!window.sessionManager);
-    console.log('🔍 currentUser:', !!currentUser);
-    console.log('🔍 isLoggedIn:', isLoggedIn);
+    devLog('openChatHistorySidebar called');
+    devLog('sessionManager exists', !!window.sessionManager);
+    devLog('currentUser exists', !!currentUser);
+    devLog('isLoggedIn', isLoggedIn);
     
     const sidebar = document.getElementById('chatHistorySidebar');
     const historyList = document.getElementById('chatHistoryList');
     
-    console.log('🔍 sidebar element found:', !!sidebar);
-    console.log('🔍 historyList element found:', !!historyList);
+    devLog('sidebar element found', !!sidebar);
+    devLog('historyList element found', !!historyList);
     
     if (sidebar) {
         sidebar.style.transform = 'translateX(0)';
@@ -653,7 +654,7 @@ function openChatHistorySidebar() {
     
     // Check login state first
     if (!isLoggedIn || !currentUser) {
-        console.log('🔍 User not logged in, showing login required message');
+        safeLog('User not logged in, showing login required message');
         if (historyList) {
             historyList.innerHTML = `
                 <li role="listitem" style="padding: 40px; text-align: center; color: #ffd700;">
@@ -671,10 +672,10 @@ function openChatHistorySidebar() {
     }
     
     if (window.sessionManager && typeof sessionManager.loadHistoryPanel === 'function') {
-        console.log('🔍 Calling sessionManager.loadHistoryPanel()');
+        devLog('Calling sessionManager.loadHistoryPanel()');
         sessionManager.loadHistoryPanel();
     } else {
-        console.error('❌ SessionManager or loadHistoryPanel not available');
+        safeError('SessionManager or loadHistoryPanel not available');
         if (historyList) {
             historyList.innerHTML = `
                 <li role="listitem" style="padding: 40px; text-align: center; color: #e74c3c;">
@@ -715,22 +716,22 @@ window.closeChatHistorySidebar = closeChatHistorySidebar;
 function updateHistoryButtonVisibility() {
     const historyBtn = document.getElementById('openHistoryBtn');
     
-    console.log('🔍 updateHistoryButtonVisibility called');
-    console.log('🔍 historyBtn element found:', !!historyBtn);
-    console.log('🔍 isLoggedIn:', isLoggedIn);
-    console.log('🔍 currentUser exists:', !!currentUser);
+    devLog('updateHistoryButtonVisibility called');
+    devLog('historyBtn element found', !!historyBtn);
+    devLog('isLoggedIn', isLoggedIn);
+    devLog('currentUser exists', !!currentUser);
     
     if (historyBtn) {
         // Only show history button when user is logged in
         if (isLoggedIn && currentUser) {
             historyBtn.style.display = 'block';
-            console.log('🔍 History button made visible (user logged in)');
+            devLog('History button made visible (user logged in)');
         } else {
             historyBtn.style.display = 'none';
-            console.log('🔍 History button hidden (user not logged in)');
+            devLog('History button hidden (user not logged in)');
         }
     } else {
-        console.error('❌ History button element not found');
+        safeError('History button element not found');
     }
 }
 
@@ -738,7 +739,7 @@ function updateHistoryButtonVisibility() {
 window.addEventListener('beforeunload', function(event) {
     // Save session when user closes tab or refreshes page
     if (isLoggedIn && sessionManager && sessionManager.currentSession && (currentUser || window.jwtToken)) {
-        console.log('🚪 Page closing, saving session...');
+        safeLog('Page closing, saving session...');
         
         try {
             // Use sendBeacon for better reliability during page unload
@@ -755,13 +756,13 @@ window.addEventListener('beforeunload', function(event) {
                 );
                 
                 if (success) {
-                    console.log('📡 Session save beacon sent successfully');
+                    devLog('Session save beacon sent successfully');
                 }
             }
         } catch (error) {
-            console.warn('Error saving session on page close:', error);
+            safeWarn('Error saving session on page close', error.message);
         }
     }
 });
 
-console.log('✅ Main script loaded - session management ready');
+safeLog('Main script loaded - session management ready');

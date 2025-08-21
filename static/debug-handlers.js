@@ -44,12 +44,13 @@ async function testJWTLogin() {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     
-    log(`Testing JWT Login with username: ${username}`, 'info');
+    // SECURITY: Don't log actual credentials
+    log(`Testing JWT Login (credentials provided)`, 'info');
     setStatus('Testing JWT login...', 'info');
     
     try {
         const requestData = { username, password };
-        log(`Request data: ${JSON.stringify(requestData)}`, 'info');
+        log(`Request prepared for JWT login`, 'info');
         
         const response = await fetch(`${API_BASE_URL}/login`, {
             method: 'POST',
@@ -63,12 +64,13 @@ async function testJWTLogin() {
         
         if (response.ok) {
             const data = await response.json();
-            log(`JWT Login Success: ${JSON.stringify(data, null, 2)}`, 'success');
+            // SECURITY: Don't log full response data that may contain tokens
+            log(`JWT Login Success (response received)`, 'success');
             setStatus('✅ JWT Login successful!', 'success');
             
             // Test the /me endpoint
             if (data.access_token) {
-                await testMeEndpoint(data.access_token);
+                await testMeEndpoint('[TOKEN_FILTERED]'); // Don't pass actual token to log
             }
         } else {
             const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -85,12 +87,13 @@ async function testLegacyLogin() {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     
-    log(`Testing Legacy Login with username: ${username}`, 'info');
+    // SECURITY: Don't log actual credentials
+    log(`Testing Legacy Login (credentials provided)`, 'info');
     setStatus('Testing legacy login...', 'info');
     
     try {
         const requestData = { username, password };
-        log(`Request data: ${JSON.stringify(requestData)}`, 'info');
+        log(`Request prepared for legacy login`, 'info');
         
         const response = await fetch(`${API_BASE_URL}/login-legacy`, {
             method: 'POST',
@@ -103,7 +106,7 @@ async function testLegacyLogin() {
         log(`Response status: ${response.status} ${response.statusText}`, 'info');
         
         const data = await response.json();
-        log(`Legacy Login Response: ${JSON.stringify(data, null, 2)}`, data.success ? 'success' : 'error');
+        log(`Legacy Login Response processed`, data.success ? 'success' : 'error');
         
         if (data.success) {
             setStatus('✅ Legacy Login successful!', 'success');
@@ -121,12 +124,13 @@ async function testMeEndpoint(token) {
     
     try {
         const response = await fetch(`${API_BASE_URL}/me`, {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer [TOKEN_FILTERED]` } // Don't log actual token
         });
         
         if (response.ok) {
             const userData = await response.json();
-            log(`User Data: ${JSON.stringify(userData, null, 2)}`, 'success');
+            // SECURITY: Don't log full user data that may contain sensitive info
+            log(`User Data received successfully`, 'success');
         } else {
             log(`/me endpoint failed: ${response.status}`, 'error');
         }
