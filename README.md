@@ -29,6 +29,9 @@
 - **🌙 Dark Theme**: Göz dostu koyu tema tasarımı
 - **📱 Responsive Design**: Mobil uyumlu arayüz
 - **⚡ Gerçek Zamanlı Chat**: WebSocket desteği
+- **🔄 Distributed WebSocket**: Yatay ölçekleme ve yük dağıtımı
+- **🌐 Multi-Worker Support**: Redis pub/sub ile çoklu worker desteği
+- **💾 Session Persistence**: WebSocket oturumları Redis'te saklanır
 - **💬 Session Yönetimi**: Oturum bazlı chat geçmişi
 
 ### 🔐 **Güvenlik & Performans**
@@ -473,6 +476,45 @@ docker-compose -f docker-compose.prod.yml up -d
 
 # SSL sertifikası ile
 docker-compose -f docker-compose.ssl.yml up -d
+
+# Distributed WebSocket ile horizontal scaling
+docker-compose -f docker-compose.distributed.yml up -d
+```
+
+### 🌐 **Distributed WebSocket Deployment**
+
+**Yatay ölçekleme ve çoklu worker desteği:**
+
+```bash
+# Redis ile distributed WebSocket başlatma
+export REDIS_URL=redis://localhost:6379/0
+export DISTRIBUTED_WEBSOCKET_ENABLED=true
+export WORKERS=4
+
+# Distributed modda başlat
+./start_distributed.sh
+
+# Veya Gunicorn ile
+gunicorn main:app -c gunicorn.conf.py
+```
+
+**Özellikler:**
+- ✅ **Multi-Worker Support**: 4+ worker ile yük dağıtımı
+- ✅ **Session Persistence**: Redis'te WebSocket oturum saklama
+- ✅ **Auto-Failover**: Worker çökmelerinde otomatik geçiş
+- ✅ **Load Balancing**: Nginx ile otomatik yük dengeleme
+- ✅ **Real-time Sync**: Workers arası gerçek zamanlı mesaj senkronizasyonu
+
+**Monitoring:**
+```bash
+# WebSocket sistem durumu
+curl http://localhost:8000/health
+
+# Connection istatistikleri  
+curl http://localhost:8000/api/websocket/stats
+
+# Distributed test
+python test_distributed_websocket.py
 ```
 
 ### 🔒 **Güvenlik Checklist**

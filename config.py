@@ -59,6 +59,12 @@ class Config:
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
     REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
     
+    # Distributed WebSocket Settings
+    DISTRIBUTED_WEBSOCKET_ENABLED = os.getenv("DISTRIBUTED_WEBSOCKET_ENABLED", "true").lower() == "true"
+    WEBSOCKET_SESSION_TTL = int(os.getenv("WEBSOCKET_SESSION_TTL", 3600))  # 1 hour
+    WORKER_ID = os.getenv("WORKER_ID", None)  # Auto-generated if not set
+    NODE_ID = os.getenv("NODE_ID", f"node-{os.getpid()}")  # Unique node identifier
+    
     # Cache Configuration with size limits and eviction policies
     CACHE_TYPE = os.getenv("CACHE_TYPE", "hybrid")  # hybrid, redis, local
     
@@ -91,7 +97,6 @@ class Config:
     CACHE_SIZE = RESPONSE_CACHE_MAX_SIZE  # Backward compatibility
     CACHE_TTL = RESPONSE_CACHE_TTL       # Backward compatibility
     CACHE_LOCAL_SIZE = LOCAL_CACHE_MAX_SIZE  # Backward compatibility
-    NODE_ID = os.getenv("NODE_ID", f"node-{os.getpid()}")  # Unique node identifier
     
     # Brute force protection
     MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", 5))

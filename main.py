@@ -6,6 +6,8 @@ import logging
 import asyncio
 import os
 import time
+import json
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, status, Depends
@@ -33,6 +35,7 @@ from api.health import router as health_router
 from database.manager import db_manager
 
 from websocket_manager import websocket_manager, message_handler
+from core.websocket_middleware import setup_websocket_middleware, WebSocketSessionValidator
 from auth_service import init_auth_service, get_auth_service, verify_token, verify_token_from_request
 
 # Configure logging
@@ -163,8 +166,13 @@ async def lifespan(app: FastAPI):
         
         # Initialize WebSocket manager
         try:
-            websocket_manager.set_message_handler(message_handler)
-            logger.info("🔌 WebSocket manager initialized")
+            # Setup distributed WebSocket middleware
+            setup_websocket_middleware(app, websocket_manager, cleanup_interval=300)
+            
+            # Set message handler for legacy compatibility
+            if hasattr(websocket_manager, 'set_message_handler'):
+                websocket_manager.set_message_handler(message_handler)
+            logger.info("🔌 WebSocket manager initialized with distributed support")
         except Exception as e:
             logger.warning(f"WebSocket manager warning: {e}")
         
@@ -206,7 +214,10 @@ async def lifespan(app: FastAPI):
         
         # Close WebSocket connections
         try:
-            await websocket_manager.close_all_connections()
+            if hasattr(websocket_manager, 'close'):
+                await websocket_manager.close()
+            elif hasattr(websocket_manager, 'close_all_connections'):
+                await websocket_manager.close_all_connections()
             logger.info("🔌 WebSocket connections closed")
         except Exception as e:
             logger.warning(f"WebSocket cleanup warning: {e}")
@@ -838,27 +849,79 @@ async def emergency_memory_cleanup():
 # WebSocket endpoint for real-time chat
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """WebSocket endpoint for real-time communication"""
+    """WebSocket endpoint for real-time communication with distributed support"""
+    session_id = None
     try:
-        # Connect user
-        await websocket_manager.connect(websocket, user_id, f"user_{user_id}")
+        # Validate connection parameters
+        is_valid, error_msg = WebSocketSessionValidator.validate_connection_params(
+            user_id, f"user_{user_id}"
+        )
+        if not is_valid:
+            await websocket.close(code=1008, reason=error_msg)
+            return
         
-        logger.info(f"🔌 WebSocket connected: {user_id}")
+        # Connect user - handle both legacy and distributed managers
+        if hasattr(websocket_manager, 'connect') and len(websocket_manager.connect.__code__.co_varnames) > 3:
+            # Distributed manager (returns session_id)
+            session_id = await websocket_manager.connect(websocket, user_id, f"user_{user_id}")
+            if session_id is None:
+                await websocket.close(code=1011, reason="Session creation failed")
+                return
+        else:
+            # Legacy manager
+            await websocket_manager.connect(websocket, user_id, f"user_{user_id}")
+        
+        logger.info(f"🔌 WebSocket connected: {user_id} (session: {session_id or 'legacy'})")
         
         while True:
             # Receive message
             data = await websocket.receive_text()
             
-            # Process message through message handler
-            await message_handler.handle_message(websocket, user_id, data)
+            try:
+                # Parse message as JSON
+                message_data = json.loads(data) if isinstance(data, str) else data
+                
+                # Sanitize message for security
+                message_data = WebSocketSessionValidator.sanitize_message(message_data)
+                
+                # Process message through message handler
+                if hasattr(message_handler, 'handle_message'):
+                    # Check if the handler expects the new signature (websocket, message_data)
+                    handler_params = message_handler.handle_message.__code__.co_varnames
+                    if len(handler_params) > 3:  # self, websocket, message_data
+                        await message_handler.handle_message(websocket, message_data)
+                    else:  # Legacy: self, websocket, user_id, data
+                        await message_handler.handle_message(websocket, user_id, data)
+                
+            except json.JSONDecodeError:
+                # Handle non-JSON messages
+                await websocket_manager.send_personal_message({
+                    'type': 'error',
+                    'message': 'Invalid message format. Expected JSON.',
+                    'timestamp': datetime.utcnow().isoformat()
+                }, websocket)
+            except Exception as e:
+                logger.error(f"Error processing WebSocket message from {user_id}: {e}")
+                await websocket_manager.send_personal_message({
+                    'type': 'error',
+                    'message': 'Error processing message',
+                    'timestamp': datetime.utcnow().isoformat()
+                }, websocket)
             
     except WebSocketDisconnect:
-        logger.info(f"🔌 WebSocket disconnected: {user_id}")
-        websocket_manager.disconnect(websocket, user_id)
-        
+        logger.info(f"🔌 WebSocket disconnected: {user_id} (session: {session_id or 'legacy'})")
     except Exception as e:
         logger.error(f"WebSocket error for {user_id}: {e}")
-        websocket_manager.disconnect(websocket, user_id)
+    finally:
+        # Clean disconnect - handle both manager types
+        try:
+            if hasattr(websocket_manager, 'disconnect'):
+                if len(websocket_manager.disconnect.__code__.co_varnames) == 2:  # self, websocket
+                    websocket_manager.disconnect(websocket)
+                else:  # Legacy: self, websocket, user_id
+                    websocket_manager.disconnect(websocket, user_id)
+        except Exception as e:
+            logger.error(f"Error during WebSocket cleanup for {user_id}: {e}")
 
 # Error handlers
 @app.exception_handler(404)

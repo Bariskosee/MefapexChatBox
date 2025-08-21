@@ -1,10 +1,12 @@
 """
 WebSocket manager for real-time communication in MEFAPEX AI Assistant
 Replaces HTTP polling with efficient WebSocket connections
+Now supports distributed deployment with Redis pub/sub for horizontal scaling
 """
 import asyncio
 import json
 import logging
+import os
 import uuid
 from typing import Dict, Set, Optional, Any
 from datetime import datetime
@@ -12,6 +14,8 @@ import weakref
 
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
+
+from core.distributed_websocket_manager import create_distributed_websocket_manager
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +216,35 @@ class ConnectionManager:
         await self.broadcast_to_all(ping_message)
         logger.debug("📡 Ping sent to all connections")
 
-# Global connection manager instance
-websocket_manager = ConnectionManager()
+# Initialize the appropriate connection manager based on configuration
+def _get_connection_manager():
+    """Get connection manager instance based on configuration"""
+    try:
+        from config import config
+        
+        # Check if Redis is configured for distributed mode
+        redis_url = getattr(config, 'REDIS_URL', None)
+        distributed_enabled = getattr(config, 'DISTRIBUTED_WEBSOCKET_ENABLED', True)
+        
+        if distributed_enabled and redis_url and redis_url != "redis://localhost:6379/0":
+            # Use distributed manager with Redis
+            worker_id = getattr(config, 'WORKER_ID', None) or getattr(config, 'NODE_ID', None)
+            return create_distributed_websocket_manager(redis_url=redis_url, worker_id=worker_id)
+        else:
+            # Fallback to legacy in-memory manager for development
+            logger.info("Using legacy in-memory WebSocket manager (development mode)")
+            return ConnectionManager()
+            
+    except ImportError:
+        # Fallback if config is not available
+        logger.warning("Config not available, using legacy WebSocket manager")
+        return ConnectionManager()
+    except Exception as e:
+        logger.error(f"Error initializing WebSocket manager: {e}, falling back to legacy")
+        return ConnectionManager()
+
+# Global connection manager instance - will be distributed if Redis is configured
+websocket_manager = _get_connection_manager()
 
 class WebSocketMessageHandler:
     """
