@@ -564,11 +564,16 @@ class SessionManager {
         // Render history sessions
         sessions.forEach((session, index) => {
             console.log('📚 Processing session:', session);
+            console.log('📚 Session ID:', session.sessionId || session.session_id);
             const timeAgo = this.getTimeAgo(new Date(session.startedAt || session.created_at));
             const preview = session.preview || this.getSessionPreview(session.messages || []);
+            const sessionId = session.sessionId || session.session_id;
             
             html += `
-                <li class="history-session-item" data-session-id="${session.sessionId || session.session_id}">
+                <li class="history-session-item" 
+                    data-session-id="${sessionId}" 
+                    onclick="window.sessionManager.loadHistorySession('${sessionId}')"
+                    style="border: 2px solid red; margin: 2px; background: rgba(255,0,0,0.1);">
                     <div class="session-header">
                         <span class="session-title">💬 Sohbet #${sessions.length - index}</span>
                         <span class="session-count">${session.messageCount || session.message_count || 0} mesaj</span>
@@ -591,20 +596,7 @@ class SessionManager {
         console.log('📝 Setting historyList innerHTML');
         historyList.innerHTML = html;
         
-        // Add event listeners for session items
-        const sessionItems = historyList.querySelectorAll('.history-session-item');
-        console.log('🎯 Adding event listeners to', sessionItems.length, 'session items');
-        sessionItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.preventDefault();
-                const sessionId = item.getAttribute('data-session-id');
-                console.log('🎯 Session item clicked:', sessionId);
-                if (sessionId) {
-                    this.loadHistorySession(sessionId);
-                }
-            });
-        });
-        console.log('✅ Event listeners added successfully');
+        console.log('✅ HTML content set with onclick handlers');
     }
 
     async loadHistorySession(sessionId) {
@@ -775,8 +767,8 @@ console.log('  - fetchUserHistory:', typeof window.sessionManager.fetchUserHisto
 console.log('  - startNewSessionOnLogin:', typeof window.sessionManager.startNewSessionOnLogin);
 
 // Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
+const sessionManagerStyle = document.createElement('style');
+sessionManagerStyle.textContent = `
     @keyframes slideIn {
         from { transform: translateX(100%); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
@@ -792,6 +784,6 @@ style.textContent = `
         100% { transform: rotate(360deg); }
     }
 `;
-document.head.appendChild(style);
+document.head.appendChild(sessionManagerStyle);
 
 console.log('✅ SessionManager module loaded');

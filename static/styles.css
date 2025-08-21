@@ -689,6 +689,9 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .history-session-item:hover {

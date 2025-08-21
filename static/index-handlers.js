@@ -247,6 +247,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const sidebar = document.getElementById('chatHistorySidebar');
         const openHistoryBtn = document.getElementById('openHistoryBtn');
         
+        // Don't close if clicking on history session items
+        if (event.target.closest('.history-session-item')) {
+            return;
+        }
+        
         if (sidebar && !sidebar.contains(event.target) && event.target !== openHistoryBtn) {
             const sidebarTransform = window.getComputedStyle(sidebar).transform;
             if (sidebarTransform !== 'matrix(1, 0, 0, 1, -300, 0)' && sidebarTransform !== 'none') {
