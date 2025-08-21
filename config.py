@@ -59,13 +59,38 @@ class Config:
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
     REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
     
-    # Cache Configuration
+    # Cache Configuration with size limits and eviction policies
     CACHE_TYPE = os.getenv("CACHE_TYPE", "hybrid")  # hybrid, redis, local
-    CACHE_SIZE = int(os.getenv("CACHE_SIZE", 1000))  # For local cache
-    CACHE_TTL = int(os.getenv("CACHE_TTL", 3600))  # 1 hour default TTL
-    CACHE_LOCAL_SIZE = int(os.getenv("CACHE_LOCAL_SIZE", 500))  # Local cache in hybrid mode
-    CACHE_LOCAL_TTL = int(os.getenv("CACHE_LOCAL_TTL", 1800))  # 30 minutes for local cache
-    CACHE_REDIS_TTL = int(os.getenv("CACHE_REDIS_TTL", 3600))  # 1 hour for Redis cache
+    
+    # Response Cache Settings
+    RESPONSE_CACHE_ENABLED = os.getenv("RESPONSE_CACHE_ENABLED", "true").lower() == "true"
+    RESPONSE_CACHE_MAX_SIZE = int(os.getenv("RESPONSE_CACHE_MAX_SIZE", "1000"))
+    RESPONSE_CACHE_TTL = int(os.getenv("RESPONSE_CACHE_TTL", "3600"))  # 1 hour default TTL
+    RESPONSE_CACHE_EVICTION_POLICY = os.getenv("RESPONSE_CACHE_EVICTION_POLICY", "lru")  # lru, fifo, lfu, random, ttl_aware
+    
+    # Distributed Cache Settings
+    DISTRIBUTED_CACHE_ENABLED = os.getenv("DISTRIBUTED_CACHE_ENABLED", "true").lower() == "true"
+    LOCAL_CACHE_MAX_SIZE = int(os.getenv("LOCAL_CACHE_MAX_SIZE", "500"))  # Local cache in hybrid mode
+    LOCAL_CACHE_TTL = int(os.getenv("LOCAL_CACHE_TTL", "1800"))  # 30 minutes for local cache
+    REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "3600"))  # 1 hour for Redis cache
+    REDIS_MAX_ENTRIES = int(os.getenv("REDIS_MAX_ENTRIES", "10000"))  # Maximum Redis entries
+    
+    # Cache Memory Management
+    CACHE_MAX_MEMORY_MB = int(os.getenv("CACHE_MAX_MEMORY_MB", "100"))  # Maximum cache memory usage
+    CACHE_CLEANUP_INTERVAL = int(os.getenv("CACHE_CLEANUP_INTERVAL", "300"))  # 5 minutes cleanup interval
+    CACHE_MEMORY_CHECK_INTERVAL = int(os.getenv("CACHE_MEMORY_CHECK_INTERVAL", "60"))  # Memory check interval
+    
+    # Cache Auto-scaling
+    CACHE_AUTO_SCALE_ENABLED = os.getenv("CACHE_AUTO_SCALE_ENABLED", "true").lower() == "true"
+    CACHE_SCALE_DOWN_THRESHOLD = float(os.getenv("CACHE_SCALE_DOWN_THRESHOLD", "0.5"))  # Scale down when usage < 50%
+    CACHE_SCALE_UP_THRESHOLD = float(os.getenv("CACHE_SCALE_UP_THRESHOLD", "0.9"))    # Scale up when usage > 90%
+    CACHE_MIN_SIZE = int(os.getenv("CACHE_MIN_SIZE", "100"))
+    CACHE_MAX_SIZE = int(os.getenv("CACHE_MAX_SIZE", "10000"))
+    
+    # Legacy cache settings (for backward compatibility)
+    CACHE_SIZE = RESPONSE_CACHE_MAX_SIZE  # Backward compatibility
+    CACHE_TTL = RESPONSE_CACHE_TTL       # Backward compatibility
+    CACHE_LOCAL_SIZE = LOCAL_CACHE_MAX_SIZE  # Backward compatibility
     NODE_ID = os.getenv("NODE_ID", f"node-{os.getpid()}")  # Unique node identifier
     
     # Brute force protection

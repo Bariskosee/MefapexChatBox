@@ -133,6 +133,40 @@ class RateLimitConfig:
     enabled: bool = True
 
 @dataclass
+class CacheConfig:
+    """Cache configuration with TTL and size limits"""
+    # Response cache settings
+    response_cache_enabled: bool = True
+    response_cache_max_size: int = 1000
+    response_cache_ttl: int = 3600  # 1 hour
+    response_cache_eviction_policy: str = "lru"  # lru, fifo, random
+    
+    # Distributed cache settings
+    distributed_cache_enabled: bool = True
+    local_cache_max_size: int = 500
+    local_cache_ttl: int = 1800  # 30 minutes
+    redis_cache_ttl: int = 3600  # 1 hour
+    
+    # Redis settings
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
+    redis_url: Optional[str] = None
+    
+    # Cache optimization settings
+    cleanup_interval: int = 300  # 5 minutes
+    max_memory_usage_mb: int = 100  # Maximum cache memory usage
+    memory_check_interval: int = 60  # Memory check interval in seconds
+    
+    # Auto-scaling settings
+    auto_scale_enabled: bool = True
+    scale_down_threshold: float = 0.5  # Scale down when usage < 50%
+    scale_up_threshold: float = 0.9    # Scale up when usage > 90%
+    min_cache_size: int = 100
+    max_cache_size: int = 10000
+
+@dataclass
 class ValidationConfig:
     """Input validation configuration"""
     max_message_length: int = 1000
@@ -160,6 +194,7 @@ class UnifiedConfig:
         self.qdrant = self._init_qdrant_config()
         self.server = self._init_server_config()
         self.rate_limit = self._init_rate_limit_config()
+        self.cache = self._init_cache_config()
         self.validation = self._init_validation_config()
         
         # Validate configuration
@@ -297,6 +332,54 @@ class UnifiedConfig:
             min_username_length=int(os.getenv("MIN_USERNAME_LENGTH", "3"))
         )
     
+    def _init_cache_config(self) -> CacheConfig:
+        """Initialize cache configuration"""
+        # Build Redis URL if not provided
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            redis_host = os.getenv("REDIS_HOST", "localhost")
+            redis_port = int(os.getenv("REDIS_PORT", "6379"))
+            redis_db = int(os.getenv("REDIS_DB", "0"))
+            redis_password = os.getenv("REDIS_PASSWORD")
+            
+            if redis_password:
+                redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}"
+            else:
+                redis_url = f"redis://{redis_host}:{redis_port}/{redis_db}"
+        
+        return CacheConfig(
+            # Response cache settings
+            response_cache_enabled=os.getenv("RESPONSE_CACHE_ENABLED", "true").lower() == "true",
+            response_cache_max_size=int(os.getenv("RESPONSE_CACHE_MAX_SIZE", "1000")),
+            response_cache_ttl=int(os.getenv("RESPONSE_CACHE_TTL", "3600")),
+            response_cache_eviction_policy=os.getenv("RESPONSE_CACHE_EVICTION_POLICY", "lru"),
+            
+            # Distributed cache settings
+            distributed_cache_enabled=os.getenv("DISTRIBUTED_CACHE_ENABLED", "true").lower() == "true",
+            local_cache_max_size=int(os.getenv("LOCAL_CACHE_MAX_SIZE", "500")),
+            local_cache_ttl=int(os.getenv("LOCAL_CACHE_TTL", "1800")),
+            redis_cache_ttl=int(os.getenv("REDIS_CACHE_TTL", "3600")),
+            
+            # Redis settings
+            redis_host=os.getenv("REDIS_HOST", "localhost"),
+            redis_port=int(os.getenv("REDIS_PORT", "6379")),
+            redis_db=int(os.getenv("REDIS_DB", "0")),
+            redis_password=os.getenv("REDIS_PASSWORD"),
+            redis_url=redis_url,
+            
+            # Cache optimization settings
+            cleanup_interval=int(os.getenv("CACHE_CLEANUP_INTERVAL", "300")),
+            max_memory_usage_mb=int(os.getenv("CACHE_MAX_MEMORY_MB", "100")),
+            memory_check_interval=int(os.getenv("CACHE_MEMORY_CHECK_INTERVAL", "60")),
+            
+            # Auto-scaling settings
+            auto_scale_enabled=os.getenv("CACHE_AUTO_SCALE_ENABLED", "true").lower() == "true",
+            scale_down_threshold=float(os.getenv("CACHE_SCALE_DOWN_THRESHOLD", "0.5")),
+            scale_up_threshold=float(os.getenv("CACHE_SCALE_UP_THRESHOLD", "0.9")),
+            min_cache_size=int(os.getenv("CACHE_MIN_SIZE", "100")),
+            max_cache_size=int(os.getenv("CACHE_MAX_SIZE", "10000"))
+        )
+    
     def _validate_config(self):
         """Validate configuration for current environment"""
         errors = []
@@ -385,6 +468,15 @@ class UnifiedConfig:
                 "use_huggingface": self.ai.use_huggingface,
                 "has_openai_key": bool(self.ai.openai_api_key)
             },
+            "cache": {
+                "response_cache_enabled": self.cache.response_cache_enabled,
+                "response_cache_max_size": self.cache.response_cache_max_size,
+                "response_cache_ttl": self.cache.response_cache_ttl,
+                "distributed_cache_enabled": self.cache.distributed_cache_enabled,
+                "local_cache_max_size": self.cache.local_cache_max_size,
+                "redis_host": self.cache.redis_host,
+                "auto_scale_enabled": self.cache.auto_scale_enabled
+            },
             "server": {
                 "host": self.server.host,
                 "port": self.server.port,
@@ -434,6 +526,10 @@ def get_ai_config() -> AIConfig:
 def get_server_config() -> ServerConfig:
     """Get server configuration"""
     return get_config().server
+
+def get_cache_config() -> CacheConfig:
+    """Get cache configuration"""
+    return get_config().cache
 
 def is_production() -> bool:
     """Check if running in production"""

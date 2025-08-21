@@ -226,3 +226,156 @@ async def models_status():
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat()
         }
+
+@router.get("/cache")
+async def cache_health():
+    """
+    🗄️ Get cache health status and metrics
+    """
+    try:
+        # Try to import cache manager
+        try:
+            from cache_manager import get_cache_manager, get_cache_health, get_cache_metrics
+            cache_health_data = await get_cache_health()
+            cache_metrics = await get_cache_metrics()
+            
+            return {
+                "status": "healthy",
+                "timestamp": datetime.utcnow().isoformat(),
+                "health": cache_health_data,
+                "metrics": cache_metrics
+            }
+        except ImportError:
+            # Fallback to basic cache info
+            return {
+                "status": "basic",
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": "Using basic cache implementation",
+                "cache_manager_available": False
+            }
+        
+    except Exception as e:
+        logger.error(f"Cache health check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.get("/cache/stats")
+async def cache_stats():
+    """
+    📊 Get detailed cache statistics and performance metrics
+    """
+    try:
+        try:
+            from cache_manager import get_cache_metrics, get_cache_manager
+            cache_manager = get_cache_manager()
+            
+            if not cache_manager.initialized:
+                return {
+                    "status": "not_initialized",
+                    "message": "Cache manager not initialized"
+                }
+            
+            metrics = await get_cache_metrics()
+            
+            # Add performance analysis
+            analysis = {}
+            if 'response_cache' in metrics:
+                rc_stats = metrics['response_cache']
+                hit_rate = rc_stats.get('hit_rate', 0)
+                
+                if hit_rate > 80:
+                    analysis['response_cache'] = "excellent"
+                elif hit_rate > 60:
+                    analysis['response_cache'] = "good"
+                elif hit_rate > 40:
+                    analysis['response_cache'] = "fair"
+                else:
+                    analysis['response_cache'] = "poor"
+            
+            if 'distributed_cache' in metrics:
+                dc_stats = metrics['distributed_cache']
+                redis_available = dc_stats.get('redis_available', False)
+                analysis['distributed_cache'] = "redis_enabled" if redis_available else "local_only"
+            
+            return {
+                "status": "healthy",
+                "timestamp": datetime.utcnow().isoformat(),
+                "metrics": metrics,
+                "performance_analysis": analysis
+            }
+            
+        except ImportError:
+            return {
+                "status": "basic",
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": "Advanced cache statistics not available"
+            }
+        
+    except Exception as e:
+        logger.error(f"Cache stats retrieval failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.post("/cache/optimize")
+async def optimize_caches():
+    """
+    🔧 Manually optimize all cache instances
+    """
+    try:
+        try:
+            from cache_manager import optimize_all_caches
+            await optimize_all_caches()
+            
+            return {
+                "status": "success",
+                "message": "Cache optimization completed",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        except ImportError:
+            return {
+                "status": "unavailable",
+                "message": "Cache optimization not available in basic mode"
+            }
+        
+    except Exception as e:
+        logger.error(f"Cache optimization failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.post("/cache/clear")
+async def clear_caches():
+    """
+    🗑️ Clear all cache instances (use with caution)
+    """
+    try:
+        try:
+            from cache_manager import clear_all_caches
+            await clear_all_caches()
+            
+            return {
+                "status": "success",
+                "message": "All caches cleared",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        except ImportError:
+            return {
+                "status": "unavailable",
+                "message": "Cache clearing not available in basic mode"
+            }
+        
+    except Exception as e:
+        logger.error(f"Cache clearing failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }

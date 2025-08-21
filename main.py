@@ -82,11 +82,21 @@ except ImportError:
 # Distributed Cache import
 try:
     from distributed_cache import create_distributed_cache
-    distributed_cache = create_distributed_cache(config)
-    logger.info("✅ Distributed cache initialized")
+    from cache_manager import initialize_cache_manager, shutdown_cache_manager, get_cache_manager
+    cache_manager_available = True
+    logger.info("✅ Cache manager available")
 except ImportError as e:
-    distributed_cache = None
-    logger.warning(f"⚠️ Distributed cache not available: {e}")
+    cache_manager_available = False
+    logger.warning(f"⚠️ Cache manager not available: {e}")
+    
+    # Fallback to basic distributed cache
+    try:
+        from distributed_cache import create_distributed_cache
+        distributed_cache = create_distributed_cache(config)
+        logger.info("✅ Basic distributed cache initialized")
+    except ImportError as e:
+        distributed_cache = None
+        logger.warning(f"⚠️ Distributed cache not available: {e}")
 
 # Global database manager already imported above
 # db_manager is available globally from the import
@@ -138,6 +148,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"❌ Database initialization failed: {e}")
             raise
+        
+        # Initialize cache manager
+        try:
+            if cache_manager_available:
+                await initialize_cache_manager(config)
+                logger.info("🗄️ Cache manager initialized")
+            else:
+                logger.info("🗄️ Using basic cache implementation")
+        except Exception as e:
+            logger.error(f"❌ Cache manager initialization failed: {e}")
+            # Don't raise here as cache is not critical for basic functionality
         
         # Initialize WebSocket manager
         try:
@@ -194,16 +215,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"❌ Birleşik mimari temizlik hatası: {e}")
         
+        # Shutdown cache manager
+        try:
+            if cache_manager_available:
+                await shutdown_cache_manager()
+                logger.info("�️ Cache manager shutdown")
+        except Exception as e:
+            logger.warning(f"Cache manager shutdown warning: {e}")
+    
     except Exception as e:
         logger.error(f"❌ General shutdown error: {e}")
-    
-    # Cleanup distributed cache
-    if distributed_cache and hasattr(distributed_cache, 'shutdown'):
-        try:
-            await distributed_cache.shutdown()
-            logger.info("💾 Distributed cache shutdown")
-        except Exception as e:
-            logger.warning(f"Cache shutdown warning: {e}")
     
     # Close database connections
     try:
@@ -213,14 +234,6 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Database close warning: {e}")
     
     logger.info("✅ Application shutdown completed")
-    
-    # Cleanup distributed cache
-    if distributed_cache and hasattr(distributed_cache, 'shutdown'):
-        try:
-            await distributed_cache.shutdown()
-            logger.info("💾 Distributed cache shutdown")
-        except Exception as e:
-            logger.warning(f"Cache shutdown warning: {e}")
     
     # Close database connections
     try:
