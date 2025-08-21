@@ -359,7 +359,7 @@ async function loginLegacyFallback(username, password) {
     }
 }
 
-// Add message to UI function - Enhanced with accessibility
+// Add message to UI function - Enhanced with accessibility and markdown formatting
 function addMessageToUI(message, sender) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender}`;
@@ -367,7 +367,16 @@ function addMessageToUI(message, sender) {
     
     const messageBubble = document.createElement('div');
     messageBubble.className = 'message-bubble';
-    messageBubble.textContent = message;
+    
+    // Format message content based on sender
+    if (sender === 'bot') {
+        // Parse and format bot messages with markdown-like syntax
+        const formattedMessage = formatBotMessage(message);
+        messageBubble.innerHTML = formattedMessage;
+    } else {
+        // User messages remain as plain text
+        messageBubble.textContent = message;
+    }
     
     // Add timestamp for screen readers
     const timestamp = new Date().toLocaleTimeString('tr-TR');
@@ -398,6 +407,75 @@ function addMessageToUI(message, sender) {
 // Add this function if it doesn't exist
 if (typeof addMessageToUI === 'undefined') {
     window.addMessageToUI = addMessageToUI;
+}
+
+// Format bot messages with markdown-like syntax to HTML
+function formatBotMessage(message) {
+    if (!message) return '';
+    
+    let formatted = message;
+    
+    // Convert **bold** to <strong>
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // Split into lines for processing
+    const lines = formatted.split('\n');
+    let inList = false;
+    let result = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        
+        // Skip completely empty lines but add spacing
+        if (line === '') {
+            // If we were in a list, close it
+            if (inList) {
+                result.push('</ul>');
+                inList = false;
+            }
+            result.push('<div class="bot-spacer"></div>');
+            continue;
+        }
+        
+        // Check if line starts with bullet point
+        if (line.startsWith('• ') || line.startsWith('- ')) {
+            if (!inList) {
+                result.push('<ul class="bot-list">');
+                inList = true;
+            }
+            // Remove the bullet/dash and wrap in li
+            const content = line.substring(2).trim();
+            result.push(`<li>${content}</li>`);
+        } else {
+            // If we were in a list and this line is not a list item, close the list
+            if (inList) {
+                result.push('</ul>');
+                inList = false;
+            }
+            
+            // Handle different types of lines
+            if (line.match(/^\*\*.*\*\*:?\s*$/)) {
+                // Lines that are entirely bold (main section headers)
+                result.push(`<div class="bot-section-header">${line}</div>`);
+            } else if (line.includes('<strong>') && line.includes('</strong>') && line.includes(':')) {
+                // Lines with bold parts and colons (subsection headers)
+                result.push(`<div class="bot-subsection">${line}</div>`);
+            } else if (line.match(/^[🎯🏭💻🛠️⏰🔧📞💬📧🎫🚀🤖🌐📱🛡️🔒✅🆕]/)) {
+                // Lines starting with emojis (special highlights)
+                result.push(`<div class="bot-highlight-line">${line}</div>`);
+            } else {
+                // Regular text lines
+                result.push(`<div class="bot-text-line">${line}</div>`);
+            }
+        }
+    }
+    
+    // Close any open list
+    if (inList) {
+        result.push('</ul>');
+    }
+    
+    return result.join('');
 }
 
 // Logout function - Cookie-based with token cleanup

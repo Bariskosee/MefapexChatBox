@@ -337,6 +337,86 @@ body {
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
 }
 
+/* Bot message formatting styles */
+.message.bot .message-bubble .bot-list {
+    margin: 8px 0;
+    padding-left: 20px;
+    list-style: none;
+}
+
+.message.bot .message-bubble .bot-list li {
+    margin: 6px 0;
+    position: relative;
+    padding-left: 16px;
+    line-height: 1.4;
+}
+
+.message.bot .message-bubble .bot-list li:before {
+    content: '▪';
+    color: #5dade2;
+    font-size: 16px;
+    position: absolute;
+    left: 0;
+    top: -1px;
+}
+
+.message.bot .message-bubble .bot-section-header {
+    font-weight: 600;
+    color: #5dade2;
+    margin: 12px 0 8px 0;
+    font-size: 16px;
+}
+
+.message.bot .message-bubble .bot-subsection {
+    font-weight: 500;
+    color: #7fb3d3;
+    margin: 10px 0 6px 0;
+    font-size: 15px;
+}
+
+.message.bot .message-bubble .bot-highlight-line {
+    margin: 8px 0;
+    padding: 6px 0;
+    line-height: 1.5;
+    font-weight: 500;
+}
+
+.message.bot .message-bubble .bot-spacer {
+    height: 8px;
+    margin: 4px 0;
+}
+
+.message.bot .message-bubble .bot-text-line {
+    margin: 4px 0;
+    line-height: 1.5;
+}
+
+.message.bot .message-bubble strong {
+    color: #5dade2;
+    font-weight: 600;
+}
+
+.message.bot .message-bubble br {
+    margin: 6px 0;
+    display: block;
+    content: "";
+    line-height: 0.8;
+}
+
+/* Improved spacing for bot messages */
+.message.bot .message-bubble {
+    line-height: 1.6;
+    padding: 18px 22px;
+}
+
+.message.bot .message-bubble > div:first-child {
+    margin-top: 0;
+}
+
+.message.bot .message-bubble > div:last-child {
+    margin-bottom: 0;
+}
+
 .chat-input-container {
     display: flex;
     padding: 25px;
