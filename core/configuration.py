@@ -131,6 +131,23 @@ class RateLimitConfig:
     requests_per_minute: int = 200
     chat_requests_per_minute: int = 100
     enabled: bool = True
+    
+    # Distributed rate limiting with Redis
+    use_redis: bool = True
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 1  # Use separate DB for rate limiting
+    redis_password: Optional[str] = None
+    redis_url: Optional[str] = None
+    
+    # Rate limiting windows and cleanup
+    window_size_seconds: int = 60  # 1 minute window
+    cleanup_interval_seconds: int = 300  # 5 minutes
+    key_prefix: str = "rate_limit"
+    
+    # Fallback to in-memory when Redis is unavailable
+    fallback_to_memory: bool = True
+    memory_cleanup_interval: int = 60
 
 @dataclass
 class CacheConfig:
@@ -317,10 +334,34 @@ class UnifiedConfig:
     
     def _init_rate_limit_config(self) -> RateLimitConfig:
         """Initialize rate limiting configuration"""
+        # Build Redis URL if not provided
+        redis_url = os.getenv("RATE_LIMIT_REDIS_URL")
+        if not redis_url:
+            redis_host = os.getenv("RATE_LIMIT_REDIS_HOST", os.getenv("REDIS_HOST", "localhost"))
+            redis_port = int(os.getenv("RATE_LIMIT_REDIS_PORT", os.getenv("REDIS_PORT", "6379")))
+            redis_db = int(os.getenv("RATE_LIMIT_REDIS_DB", "1"))
+            redis_password = os.getenv("RATE_LIMIT_REDIS_PASSWORD", os.getenv("REDIS_PASSWORD"))
+            
+            if redis_password:
+                redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}"
+            else:
+                redis_url = f"redis://{redis_host}:{redis_port}/{redis_db}"
+        
         return RateLimitConfig(
             requests_per_minute=int(os.getenv("RATE_LIMIT_REQUESTS", "200")),
             chat_requests_per_minute=int(os.getenv("RATE_LIMIT_CHAT", "100")),
-            enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+            enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",
+            use_redis=os.getenv("RATE_LIMIT_USE_REDIS", "true").lower() == "true",
+            redis_host=os.getenv("RATE_LIMIT_REDIS_HOST", os.getenv("REDIS_HOST", "localhost")),
+            redis_port=int(os.getenv("RATE_LIMIT_REDIS_PORT", os.getenv("REDIS_PORT", "6379"))),
+            redis_db=int(os.getenv("RATE_LIMIT_REDIS_DB", "1")),
+            redis_password=os.getenv("RATE_LIMIT_REDIS_PASSWORD", os.getenv("REDIS_PASSWORD")),
+            redis_url=redis_url,
+            window_size_seconds=int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")),
+            cleanup_interval_seconds=int(os.getenv("RATE_LIMIT_CLEANUP_INTERVAL", "300")),
+            key_prefix=os.getenv("RATE_LIMIT_KEY_PREFIX", "rate_limit"),
+            fallback_to_memory=os.getenv("RATE_LIMIT_FALLBACK_MEMORY", "true").lower() == "true",
+            memory_cleanup_interval=int(os.getenv("RATE_LIMIT_MEMORY_CLEANUP", "60"))
         )
     
     def _init_validation_config(self) -> ValidationConfig:

@@ -13,8 +13,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.configuration import get_config
-from core.services.config_service import get_config_service
-from middleware import SecurityHeadersMiddleware, RateLimitMiddleware, LoggingMiddleware, RateLimiter
+from middleware import SecurityHeadersMiddleware, RateLimitMiddleware, LoggingMiddleware
+from core.rate_limiter import get_rate_limiter, close_rate_limiter
 
 # Import API routes
 from api.auth import router as auth_router, set_rate_limiter as set_auth_rate_limiter
@@ -36,7 +36,6 @@ class ApplicationFactory:
     
     def __init__(self):
         self.config = get_config()
-        self.config_service = get_config_service()
         self._configure_logging()
     
     def _configure_logging(self):
@@ -97,6 +96,10 @@ class ApplicationFactory:
     async def _cleanup_services(self):
         """Cleanup services during shutdown"""
         try:
+            # Cleanup rate limiter
+            await close_rate_limiter()
+            logger.info("🧹 Rate limiter closed")
+            
             # Cleanup AI models
             if hasattr(model_manager, 'cleanup'):
                 await model_manager.cleanup()
@@ -125,19 +128,10 @@ class ApplicationFactory:
     
     def _setup_middleware(self, app: FastAPI):
         """Setup application middleware"""
-        # Initialize rate limiter
-        rate_limiter = RateLimiter(
-            max_requests_per_minute=self.config.rate_limit.requests_per_minute,
-            max_chat_requests_per_minute=self.config.rate_limit.chat_requests_per_minute
-        )
-        
-        # Set rate limiter for API routes
-        set_auth_rate_limiter(rate_limiter)
-        set_chat_rate_limiter(rate_limiter)
-        
+        # Note: Rate limiter will be initialized during application startup
         # Add middleware (order matters!)
         app.add_middleware(LoggingMiddleware)
-        app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+        app.add_middleware(RateLimitMiddleware)  # No rate_limiter parameter, will be auto-initialized
         app.add_middleware(SecurityHeadersMiddleware)
         
         # CORS middleware

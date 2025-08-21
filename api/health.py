@@ -13,6 +13,7 @@ from datetime import datetime
 from database.manager import db_manager
 from model_manager import model_manager
 from core.configuration import get_config
+from core.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/health", tags=["health"])
@@ -374,6 +375,123 @@ async def clear_caches():
         
     except Exception as e:
         logger.error(f"Cache clearing failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.get("/rate-limiter")
+async def rate_limiter_health():
+    """
+    🚦 Get rate limiter health status and statistics
+    """
+    try:
+        rate_limiter = await get_rate_limiter()
+        stats = await rate_limiter.get_stats()
+        
+        # Test rate limiter functionality
+        test_ip = "health-check-test"
+        test_allowed = await rate_limiter.is_allowed(test_ip, "general")
+        test_count = await rate_limiter.get_current_count(test_ip, "general")
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "stats": stats,
+            "test_result": {
+                "allowed": test_allowed,
+                "count": test_count
+            },
+            "backend_type": "redis" if stats.get("redis_available", False) else "memory",
+            "configuration": {
+                "enabled": stats["enabled"],
+                "general_limit": stats["limits"]["general_requests_per_minute"],
+                "chat_limit": stats["limits"]["chat_requests_per_minute"],
+                "window_seconds": stats["config"]["window_size_seconds"]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Rate limiter health check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.get("/rate-limiter/stats") 
+async def rate_limiter_detailed_stats():
+    """
+    📊 Get detailed rate limiter statistics and performance metrics
+    """
+    try:
+        rate_limiter = await get_rate_limiter()
+        stats = await rate_limiter.get_stats()
+        
+        # Additional performance analysis
+        backend_type = "redis" if stats.get("redis_available", False) else "memory"
+        performance_analysis = {
+            "backend_efficiency": "high" if backend_type == "redis" else "medium",
+            "scalability": "excellent" if backend_type == "redis" else "limited",
+            "persistence": "persistent" if backend_type == "redis" else "volatile"
+        }
+        
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "detailed_stats": stats,
+            "performance_analysis": performance_analysis,
+            "recommendations": {
+                "for_production": "Use Redis backend for multi-instance deployments",
+                "for_development": "Memory backend is sufficient for single-instance development",
+                "scaling": "Redis backend recommended when scaling beyond 1 instance"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Rate limiter stats retrieval failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.post("/rate-limiter/test")
+async def test_rate_limiter():
+    """
+    🧪 Test rate limiter functionality with sample requests
+    """
+    try:
+        rate_limiter = await get_rate_limiter()
+        test_ip = "api-test-" + str(int(time.time()))
+        
+        # Run a series of test requests
+        test_results = []
+        for i in range(5):
+            allowed = await rate_limiter.is_allowed(test_ip, "general")
+            count = await rate_limiter.get_current_count(test_ip, "general")
+            
+            test_results.append({
+                "request_number": i + 1,
+                "allowed": allowed,
+                "current_count": count
+            })
+        
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "test_results": test_results,
+            "test_ip": test_ip,
+            "summary": {
+                "total_requests": len(test_results),
+                "allowed_requests": sum(1 for r in test_results if r["allowed"]),
+                "blocked_requests": sum(1 for r in test_results if not r["allowed"])
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Rate limiter test failed: {e}")
         return {
             "status": "error",
             "error": str(e),

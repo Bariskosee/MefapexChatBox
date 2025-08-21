@@ -21,7 +21,8 @@ from pydantic import BaseModel
 from core.configuration import get_config, Environment
 
 # Import middleware
-from middleware import SecurityHeadersMiddleware, RateLimitMiddleware, LoggingMiddleware, RateLimiter
+from middleware import SecurityHeadersMiddleware, RateLimitMiddleware, LoggingMiddleware
+from core.rate_limiter import get_rate_limiter, close_rate_limiter
 
 # Import API routes
 from api.auth import router as auth_router, set_rate_limiter as set_auth_rate_limiter
@@ -167,13 +168,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"WebSocket manager warning: {e}")
         
-        # Set rate limiters for APIs
-        try:
-            set_auth_rate_limiter(rate_limiter)
-            set_chat_rate_limiter(rate_limiter)
-            logger.info("🚦 Rate limiters configured")
-        except Exception as e:
-            logger.warning(f"Rate limiter warning: {e}")
+        # Set rate limiters for APIs - will be configured with distributed rate limiter
+        logger.info("🚦 Rate limiters will be configured automatically")
         
         logger.info("✅ Tüm servisler başarıyla başlatıldı")
         
@@ -188,6 +184,13 @@ async def lifespan(app: FastAPI):
     logger.info("� MEFAPEX Chatbot uygulaması kapatılıyor...")
     
     try:
+        # Close distributed rate limiter
+        try:
+            await close_rate_limiter()
+            logger.info("🚦 Distributed rate limiter closed")
+        except Exception as e:
+            logger.warning(f"Rate limiter close warning: {e}")
+        
         # Stop memory monitoring
         try:
             from memory_monitor import memory_monitor
@@ -255,19 +258,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Initialize rate limiter
-rate_limiter = RateLimiter(
-    max_requests_per_minute=config.rate_limit.requests_per_minute,
-    max_chat_requests_per_minute=config.rate_limit.chat_requests_per_minute
-)
-
-# Set rate limiter for API routes
-set_auth_rate_limiter(rate_limiter)
-set_chat_rate_limiter(rate_limiter)
-
 # Add middleware (order matters!)
 app.add_middleware(LoggingMiddleware)
-app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+app.add_middleware(RateLimitMiddleware)  # Will be auto-initialized with distributed rate limiter
 app.add_middleware(SecurityHeadersMiddleware)
 
 # CORS middleware
