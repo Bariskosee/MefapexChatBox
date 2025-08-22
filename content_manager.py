@@ -65,6 +65,18 @@ class ContentManager:
             self.enhanced_matcher = None
             logger.warning(f"⚠️ Enhanced Question Matcher not available: {e}")
         
+        # NEW: Intent Classifier'ı initialize et
+        try:
+            from intent_classifier import intent_classifier
+            self.intent_classifier = intent_classifier
+            if intent_classifier.is_trained:
+                logger.info("🎯 Intent Classifier initialized and ready")
+            else:
+                logger.info("🎯 Intent Classifier available but not trained")
+        except ImportError as e:
+            self.intent_classifier = None
+            logger.warning(f"⚠️ Intent Classifier not available: {e}")
+        
         # İstatistikler - enhanced tracking
         self.stats = {
             'total_queries': 0,
@@ -72,6 +84,7 @@ class ContentManager:
             'fuzzy_matches': 0,
             'semantic_matches': 0,
             'enhanced_matches': 0,
+            'intent_matches': 0,  # NEW: Intent classifier matches
             'no_matches': 0,
             'cache_hits': 0
         }
@@ -82,6 +95,12 @@ class ContentManager:
         logger.info("🎯 ContentManager initialized in ENHANCED STATIC-ONLY mode")
         logger.info("📝 AI usage: Multi-level understanding assistance (semantic + intent)")
         logger.info("🧠 Enhanced fuzzy matching and semantic search enabled")
+        if self.intent_classifier and self.intent_classifier.is_trained:
+            logger.info("🤖 Machine Learning Intent Classification enabled")
+        elif self.intent_classifier:
+            logger.info("🤖 Intent Classification available but not trained")
+        else:
+            logger.info("⚠️ Intent Classification not available")
         
     def load_static_content(self) -> bool:
         """Load static responses from JSON file"""
@@ -108,8 +127,8 @@ class ContentManager:
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
-        Find appropriate response for user message - ENHANCED with Turkish Quality Optimization
-        Flow: Cache -> Enhanced Turkish -> Enhanced Matching -> Direct Match -> AI Semantic -> Default
+        Find appropriate response for user message - ENHANCED with Intent Classification
+        Flow: Cache -> Intent Classifier -> Enhanced Turkish -> Enhanced Matching -> Direct Match -> AI Semantic -> Default
         Returns: (response_text, source)
         """
         if not user_message or not user_message.strip():
@@ -125,7 +144,34 @@ class ContentManager:
             logger.debug(f"🎯 Cache hit for: {user_message[:30]}...")
             return cached_response, f"cache_{source}"
         
-        # ======= NEW: Enhanced Turkish Content Manager (PRIORITY) =======
+        # ======= NEW: Intent Classification (PRIORITY) =======
+        if self.intent_classifier and self.intent_classifier.is_trained:
+            try:
+                intent_prediction = self.intent_classifier.predict_intent(user_message)
+                if intent_prediction:
+                    # Intent classifier found a confident prediction
+                    intent_category = intent_prediction.category
+                    confidence = intent_prediction.confidence
+                    
+                    # Map intent to static response
+                    static_response = self._get_response_by_category(intent_category)
+                    if static_response:
+                        self.stats['intent_matches'] += 1
+                        logger.info(f"🎯 Intent match: '{user_message[:30]}...' -> {intent_category} "
+                                   f"(confidence: {confidence:.3f})")
+                        
+                        # Cache the response
+                        if self._cache_enabled:
+                            self._cache[user_message_lower] = (static_response, f"intent_{intent_category}")
+                        
+                        return static_response, f"intent_{intent_category}"
+                    else:
+                        logger.debug(f"Intent {intent_category} matched but no static response found")
+                        
+            except Exception as e:
+                logger.warning(f"Intent classification failed: {e}")
+        
+        # ======= Enhanced Turkish Content Manager (Fallback Level 1) =======
         if self.improved_turkish:
             try:
                 turkish_match = self.improved_turkish.find_best_match(user_message)
@@ -149,7 +195,7 @@ class ContentManager:
             except Exception as e:
                 logger.warning(f"Enhanced Turkish matching failed: {e}")
         
-        # ======= Original Enhanced Question Matching =======
+        # ======= Enhanced Question Matching (Fallback Level 2) =======
         if self.enhanced_matcher:
             try:
                 enhanced_match = self.enhanced_matcher.find_best_match(user_message)
@@ -169,7 +215,7 @@ class ContentManager:
             except Exception as e:
                 logger.warning(f"Enhanced matching failed: {e}")
         
-        # Level 1: Direct keyword matching (fallback)
+        # Level 3: Direct keyword matching (fallback)
         response, source = self._find_static_response_direct(user_message_lower)
         if response:
             self.stats['exact_matches'] += 1
@@ -178,7 +224,7 @@ class ContentManager:
                 self._cache[user_message_lower] = (response, source)
             return response, source
         
-        # Level 2: AI semantic similarity matching (fallback)
+        # Level 4: AI semantic similarity matching (fallback)
         if self._ai_enabled and self.model_manager:
             response, source = self._find_static_response_semantic(user_message, user_message_lower)
             if response:
@@ -188,7 +234,7 @@ class ContentManager:
                     self._cache[user_message_lower] = (response, source)
                 return response, source
         
-        # Level 3: Intent-based matching (fallback)
+        # Level 5: Intent-based matching (fallback)
         response, source = self._find_static_response_intent(user_message, user_message_lower)
         if response:
             self.stats['fuzzy_matches'] += 1
@@ -582,14 +628,18 @@ class ContentManager:
             "cache_enabled": self._cache_enabled,
             "ai_enabled": self._ai_enabled,
             "enhanced_matcher_enabled": self.enhanced_matcher is not None,
+            "intent_classifier_enabled": self.intent_classifier is not None,
+            "intent_classifier_trained": self.intent_classifier.is_trained if self.intent_classifier else False,
             "huggingface_available": self.model_manager is not None,
-            "system_mode": "enhanced_static_with_smart_matching",
-            "ai_usage": "multi_level_understanding_plus_semantic",
+            "system_mode": "enhanced_static_with_smart_matching_and_intent_classification",
+            "ai_usage": "multi_level_understanding_plus_semantic_plus_intent",
             "matching_levels": {
-                "level_0": "enhanced_question_matching_with_fuzzy_and_semantic",
-                "level_1": "direct_keyword_matching",
-                "level_2": "ai_semantic_similarity", 
-                "level_3": "intent_based_matching"
+                "level_0": "intent_classification_ml_model",  # NEW
+                "level_1": "enhanced_turkish_content_matching",
+                "level_2": "enhanced_question_matching_with_fuzzy_and_semantic",
+                "level_3": "direct_keyword_matching",
+                "level_4": "ai_semantic_similarity", 
+                "level_5": "intent_based_matching"
             },
             "query_stats": self.stats
         }
@@ -601,13 +651,15 @@ class ContentManager:
                 self.stats['exact_matches'] + 
                 self.stats['fuzzy_matches'] + 
                 self.stats['semantic_matches'] + 
-                self.stats['enhanced_matches']
+                self.stats['enhanced_matches'] +
+                self.stats['intent_matches']  # NEW
             )
             
             stats["performance"] = {
                 "total_queries": total_queries,
                 "successful_matches": successful_matches,
                 "success_rate": f"{(successful_matches / total_queries) * 100:.1f}%",
+                "intent_match_rate": f"{(self.stats['intent_matches'] / total_queries) * 100:.1f}%",  # NEW
                 "enhanced_match_rate": f"{(self.stats['enhanced_matches'] / total_queries) * 100:.1f}%",
                 "cache_hit_rate": f"{(self.stats['cache_hits'] / total_queries) * 100:.1f}%"
             }
@@ -627,6 +679,24 @@ class ContentManager:
             except Exception as e:
                 logger.warning(f"Could not get AI model stats: {e}")
                 stats["ai_model_info"] = {"error": str(e)}
+        
+        # Add Intent Classifier stats if available
+        if self.intent_classifier:
+            try:
+                intent_info = self.intent_classifier.get_model_info()
+                stats["intent_classifier_info"] = {
+                    "purpose": "machine_learning_based_intent_classification",
+                    "model_type": "tfidf_logistic_regression",
+                    "is_trained": intent_info.get("is_trained", False),
+                    "categories": intent_info.get("categories", []),
+                    "num_categories": intent_info.get("num_categories", 0),
+                    "confidence_threshold": intent_info.get("confidence_threshold", 0.3),
+                    "vocabulary_size": intent_info.get("vocabulary_size", 0),
+                    "sklearn_available": intent_info.get("sklearn_available", False)
+                }
+            except Exception as e:
+                logger.warning(f"Could not get Intent Classifier stats: {e}")
+                stats["intent_classifier_info"] = {"error": str(e)}
         
         return stats
 
@@ -670,12 +740,25 @@ class ContentManager:
     
     def test_enhanced_matching(self, test_queries: List[str] = None) -> Dict:
         """
-        Test the enhanced multi-level matching system with fuzzy and semantic search
+        Test the enhanced multi-level matching system with intent classification
         """
         if test_queries is None:
             test_queries = [
-                # Çalışma saatleri testleri (fuzzy matching için)
-                "çalışma saatleri nelerdir",       # Normal
+                # Intent classification testleri
+                "merhaba nasılsınız",               # Should match greetings via intent
+                "selam arkadaş",                   # Should match greetings via intent
+                "MEFAPEX ne yapıyor",              # Should match company_info via intent
+                "şirketiniz hakkında bilgi",       # Should match company_info via intent
+                "çalışma saatleri nelerdir",       # Should match working_hours via intent
+                "kaçta açıyorsunuz",               # Should match working_hours via intent
+                "yardıma ihtiyacım var",           # Should match support_types via intent
+                "teknik destek nasıl alabilirim",  # Should match support_types via intent
+                "hangi programlama dilleri",       # Should match technology_info via intent
+                "yazılım geliştirme yapıyor musunuz", # Should match technology_info via intent
+                "teşekkürler görüşürüz",           # Should match thanks_goodbye via intent
+                "sağolun yardımınız için",         # Should match thanks_goodbye via intent
+                
+                # Fuzzy matching testleri (eğer intent başarısız olursa)
                 "calisma saatleri nedir",          # Türkçe char yok
                 "calışma saatleri",               # Karışık yazım
                 "iş saatleri kaç",                # Eş anlamlı
@@ -685,21 +768,14 @@ class ContentManager:
                 "mesai saatleri",                 # Eş anlamlı
                 "ofis saatleri nedir",            # Workplace synonym
                 
-                # Diğer kategoriler
-                "merhaba nasılsın",               # Should match greetings
-                "MEFAPEX ne yapıyor",             # Should match company_info  
-                "yardıma ihtiyacım var",          # Should match support_types
-                "hangi programlama dilleri",      # Should match technology_info
-                "teşekkürler görüşürüz",          # Should match thanks_goodbye
-                "teknik destek nasıl alabilirim", # Should match support
-                
                 # Edge cases
-                "bugün hava nasıl",               # Should match default
-                "futbol maçı"                     # Should match default
+                "bugün hava nasıl",               # Should match default (low intent confidence)
+                "futbol maçı ne zaman",           # Should match default (low intent confidence)
+                "rastgele metin buraya",          # Should match default (low intent confidence)
             ]
         
         results = {}
-        logger.info("🧪 Testing enhanced matching system with fuzzy search...")
+        logger.info("🧪 Testing enhanced matching system with intent classification...")
         
         for query in test_queries:
             try:
@@ -708,12 +784,18 @@ class ContentManager:
                     "source": source,
                     "response_length": len(response),
                     "found_static": source != "default",
-                    "enhanced_match": "enhanced" in source
+                    "intent_match": "intent_" in source,
+                    "enhanced_match": "enhanced" in source,
+                    "turkish_match": "turkish" in source
                 }
                 
-                # Log results with enhanced info
-                if "enhanced" in source:
+                # Log results with detailed info
+                if "intent_" in source:
+                    logger.info(f"🎯✅ \"{query}\" -> {source} (Intent Classification)")
+                elif "enhanced" in source:
                     logger.info(f"🧠✅ \"{query}\" -> {source} (Enhanced Match)")
+                elif "turkish" in source:
+                    logger.info(f"🇹🇷✅ \"{query}\" -> {source} (Turkish Enhanced)")
                 elif source != "default":
                     logger.info(f"✅ \"{query}\" -> {source}")
                 else:
@@ -723,25 +805,37 @@ class ContentManager:
                 results[query] = {"error": str(e)}
                 logger.error(f"❌ Test failed for '{query}': {e}")
         
-        # Summary with enhanced stats
+        # Summary with detailed stats
         successful_matches = sum(1 for r in results.values() 
                                if isinstance(r, dict) and r.get("found_static", False))
+        intent_matches = sum(1 for r in results.values() 
+                           if isinstance(r, dict) and r.get("intent_match", False))
         enhanced_matches = sum(1 for r in results.values() 
                              if isinstance(r, dict) and r.get("enhanced_match", False))
+        turkish_matches = sum(1 for r in results.values() 
+                            if isinstance(r, dict) and r.get("turkish_match", False))
         
         summary = {
             "total_tests": len(test_queries),
             "successful_static_matches": successful_matches,
+            "intent_matches": intent_matches,
             "enhanced_matches": enhanced_matches,
+            "turkish_matches": turkish_matches,
             "default_responses": len(test_queries) - successful_matches,
             "success_rate": f"{(successful_matches/len(test_queries)*100):.1f}%",
-            "enhanced_match_rate": f"{(enhanced_matches/len(test_queries)*100):.1f}%"
+            "intent_match_rate": f"{(intent_matches/len(test_queries)*100):.1f}%",
+            "enhanced_match_rate": f"{(enhanced_matches/len(test_queries)*100):.1f}%",
+            "turkish_match_rate": f"{(turkish_matches/len(test_queries)*100):.1f}%"
         }
         
         logger.info(f"📊 Test Summary: {successful_matches}/{len(test_queries)} static matches "
                    f"({summary['success_rate']} success rate)")
+        logger.info(f"🎯 Intent matches: {intent_matches}/{len(test_queries)} "
+                   f"({summary['intent_match_rate']} intent rate)")
         logger.info(f"🧠 Enhanced matches: {enhanced_matches}/{len(test_queries)} "
                    f"({summary['enhanced_match_rate']} enhanced rate)")
+        logger.info(f"🇹🇷 Turkish matches: {turkish_matches}/{len(test_queries)} "
+                   f"({summary['turkish_match_rate']} turkish rate)")
         
         return {
             "results": results,
