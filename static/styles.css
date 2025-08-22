@@ -124,7 +124,7 @@ body {
     align-items: center;
     flex: 1;
     padding: 50px 40px;
-    background: linear-gradient(145deg, #2d3748 0%, #24303f 25%, #1f2937 50%, #1d2833 75%, #1a202c 100%);
+    background: var(--login-bg, linear-gradient(145deg, #2d3748 0%, #24303f 25%, #1f2937 50%, #1d2833 75%, #1a202c 100%)) !important;
     border-radius: 0 0 25px 25px;
 }
 

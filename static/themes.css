@@ -140,22 +140,22 @@
 
 /* Update existing styles to use CSS variables */
 body {
-    background: var(--primary-bg);
-    color: var(--text-primary);
+    background: var(--primary-bg) !important;
+    color: var(--text-primary) !important;
 }
 
 .container {
-    background: var(--container-bg);
-    box-shadow: 0 20px 60px var(--shadow-primary);
+    background: var(--container-bg) !important;
+    box-shadow: 0 20px 60px var(--shadow-primary) !important;
 }
 
 .header {
-    background: var(--header-bg);
-    color: var(--text-primary);
+    background: var(--header-bg) !important;
+    color: var(--text-primary) !important;
 }
 
 .login-container {
-    background: var(--login-bg);
+    background: var(--login-bg) !important;
 }
 
 .login-form h2 {
@@ -247,4 +247,40 @@ body {
     background: #fff5f5;
     border-color: #fed7d7;
     color: #e53e3e;
+}
+
+/* Force theme application for critical elements */
+[data-theme="dark"] body {
+    background: var(--primary-bg) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .container {
+    background: var(--container-bg) !important;
+}
+
+[data-theme="dark"] .login-container {
+    background: var(--login-bg) !important;
+}
+
+[data-theme="light"] body {
+    background: var(--primary-bg) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .container {
+    background: var(--container-bg) !important;
+}
+
+[data-theme="light"] .login-container {
+    background: var(--login-bg) !important;
+}
+
+/* Ensure no white backgrounds leak through in dark mode */
+[data-theme="dark"] * {
+    background-color: inherit;
+}
+
+[data-theme="dark"] *:not(.login-form input):not(.chat-input):not(.message.user .message-bubble) {
+    background-color: transparent;
 }
