@@ -1,0 +1,125 @@
+{
+  "Standard Messages": {
+    "test_info": {
+      "total_messages": 53,
+      "iterations_per_message": 50,
+      "total_lookups": 2650
+    },
+    "inverted_index": {
+      "count": 2650,
+      "average": 2.2112392451952403e-06,
+      "average_ms": 0.0022,
+      "median": 2.083001163555309e-06,
+      "median_ms": 0.0021,
+      "min": 4.579997039400041e-07,
+      "min_ms": 0.0005,
+      "max": 3.4374999813735485e-05,
+      "max_ms": 0.0344,
+      "std_dev": 1.6358600875091335e-06,
+      "std_dev_ms": 0.0016,
+      "matches": 2100
+    },
+    "linear_search": {
+      "count": 2650,
+      "average": 4.690109883085825e-05,
+      "average_ms": 0.0469,
+      "median": 4.254099985701032e-05,
+      "median_ms": 0.0425,
+      "min": 3.237499913666397e-05,
+      "min_ms": 0.0324,
+      "max": 0.00035037499765167013,
+      "max_ms": 0.3504,
+      "std_dev": 1.723221066746545e-05,
+      "std_dev_ms": 0.0172,
+      "matches": 1950
+    },
+    "comparison": {
+      "speedup_factor": 21.21,
+      "improvement_percent": 95.29,
+      "time_saved_per_lookup_ms": 0.0447,
+      "total_time_saved_ms": 118.43
+    }
+  },
+  "Stress Test": {
+    "test_info": {
+      "total_messages": 100,
+      "iterations_per_message": 20,
+      "total_lookups": 2000
+    },
+    "inverted_index": {
+      "count": 2000,
+      "average": 1.5666745293856365e-06,
+      "average_ms": 0.0016,
+      "median": 1.6670019249431789e-06,
+      "median_ms": 0.0017,
+      "min": 3.749992174562067e-07,
+      "min_ms": 0.0004,
+      "max": 1.3332999515114352e-05,
+      "max_ms": 0.0133,
+      "std_dev": 8.723402470453251e-07,
+      "std_dev_ms": 0.0009,
+      "matches": 1980
+    },
+    "linear_search": {
+      "count": 2000,
+      "average": 4.619475457548106e-05,
+      "average_ms": 0.0462,
+      "median": 4.275000173947774e-05,
+      "median_ms": 0.0428,
+      "min": 3.1583000236423686e-05,
+      "min_ms": 0.0316,
+      "max": 0.0001655830019444693,
+      "max_ms": 0.1656,
+      "std_dev": 1.4298569005738348e-05,
+      "std_dev_ms": 0.0143,
+      "matches": 1980
+    },
+    "comparison": {
+      "speedup_factor": 29.49,
+      "improvement_percent": 96.61,
+      "time_saved_per_lookup_ms": 0.0446,
+      "total_time_saved_ms": 89.26
+    }
+  },
+  "Combined Load": {
+    "test_info": {
+      "total_messages": 153,
+      "iterations_per_message": 30,
+      "total_lookups": 4590
+    },
+    "inverted_index": {
+      "count": 4590,
+      "average": 1.7216889005588583e-06,
+      "average_ms": 0.0017,
+      "median": 1.7499987734481692e-06,
+      "median_ms": 0.0017,
+      "min": 3.749992174562067e-07,
+      "min_ms": 0.0004,
+      "max": 1.9291997887194157e-05,
+      "max_ms": 0.0193,
+      "std_dev": 1.1841232188516871e-06,
+      "std_dev_ms": 0.0012,
+      "matches": 4230
+    },
+    "linear_search": {
+      "count": 4590,
+      "average": 4.633715683575958e-05,
+      "average_ms": 0.0463,
+      "median": 4.308300049160607e-05,
+      "median_ms": 0.0431,
+      "min": 3.162500070175156e-05,
+      "min_ms": 0.0316,
+      "max": 0.00023887499992270023,
+      "max_ms": 0.2389,
+      "std_dev": 1.4545854995952915e-05,
+      "std_dev_ms": 0.0145,
+      "matches": 4140
+    },
+    "comparison": {
+      "speedup_factor": 26.91,
+      "improvement_percent": 96.28,
+      "time_saved_per_lookup_ms": 0.0446,
+      "total_time_saved_ms": 204.78
+    }
+  }
+}

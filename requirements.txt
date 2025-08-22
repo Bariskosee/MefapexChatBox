@@ -34,6 +34,8 @@ sentence-transformers>=2.3.0
 accelerate>=0.21.0
 # Turkish language support
 langdetect>=1.0.9
+# Turkish morphological analysis
+spacy>=3.7.0
 # Additional Turkish NLP models will be downloaded automatically
 
 # ================================

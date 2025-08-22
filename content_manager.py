@@ -37,6 +37,11 @@ class ContentManager:
         self._cache_enabled = True
         self._ai_enabled = True  # AI sadece anlama için kullanılır
         
+        # NEW: Inverted index for optimized keyword lookup
+        self._keyword_index = {}  # keyword -> set of categories
+        self._phrase_index = {}   # phrase -> set of categories
+        self._index_built = False
+        
         # Import model manager for AI-assisted understanding (not generation)
         try:
             from model_manager import model_manager
@@ -103,7 +108,7 @@ class ContentManager:
             logger.info("⚠️ Intent Classification not available")
         
     def load_static_content(self) -> bool:
-        """Load static responses from JSON file"""
+        """Load static responses from JSON file and build inverted index"""
         try:
             json_path = os.path.join(self.content_dir, "static_responses.json")
             
@@ -118,12 +123,53 @@ class ContentManager:
             self.categories = data.get("categories", {})
             self.settings = data.get("settings", {})
             
+            # Build inverted index for optimized lookup
+            self._build_inverted_index()
+            
             logger.info(f"✅ Loaded {len(self.static_responses)} static responses")
+            logger.info(f"🔍 Built inverted index: {len(self._keyword_index)} keywords, {len(self._phrase_index)} phrases")
             return True
             
         except Exception as e:
             logger.error(f"❌ Failed to load static content: {e}")
             return False
+
+    def _build_inverted_index(self):
+        """Build inverted index structure for fast keyword lookup"""
+        self._keyword_index.clear()
+        self._phrase_index.clear()
+        
+        for category, response_data in self.static_responses.items():
+            if not isinstance(response_data, dict):
+                continue
+                
+            keywords = response_data.get("keywords", [])
+            
+            for keyword in keywords:
+                keyword_lower = keyword.lower().strip()
+                
+                # Index individual words
+                words = keyword_lower.split()
+                for word in words:
+                    if word:  # Skip empty words
+                        if word not in self._keyword_index:
+                            self._keyword_index[word] = set()
+                        self._keyword_index[word].add(category)
+                
+                # Index full phrases (for exact phrase matching)
+                if keyword_lower:
+                    if keyword_lower not in self._phrase_index:
+                        self._phrase_index[keyword_lower] = set()
+                    self._phrase_index[keyword_lower].add(category)
+            
+            # Also index category name for direct category matching
+            category_lower = category.lower()
+            if category_lower not in self._keyword_index:
+                self._keyword_index[category_lower] = set()
+            self._keyword_index[category_lower].add(category)
+        
+        self._index_built = True
+        logger.debug(f"🔍 Inverted index built: {len(self._keyword_index)} keywords, {len(self._phrase_index)} phrases")
 
     def find_response(self, user_message: str) -> Tuple[str, str]:
         """
@@ -280,8 +326,66 @@ class ContentManager:
 
     def _find_static_response_direct(self, user_message_lower: str) -> Tuple[Optional[str], str]:
         """
-        Level 1: Direct keyword and phrase matching
-        Fast, exact matching for common queries
+        Level 1: Direct keyword and phrase matching using inverted index
+        Fast, exact matching for common queries with O(k) complexity instead of O(n*k)
+        """
+        if not self._index_built:
+            logger.warning("Inverted index not built, falling back to linear search")
+            return self._find_static_response_direct_fallback(user_message_lower)
+        
+        # Quick phrase matching first (exact matches)
+        for phrase in self._phrase_index:
+            if phrase in user_message_lower:
+                categories = self._phrase_index[phrase]
+                for category in categories:
+                    response_data = self.static_responses.get(category)
+                    if isinstance(response_data, dict):
+                        response_text = response_data.get("message", "")
+                        if response_text:
+                            logger.debug(f"🎯 Direct phrase match: '{phrase}' -> {category}")
+                            return response_text, "static_phrase"
+        
+        # Word-based matching with scoring
+        user_words = set(user_message_lower.split())
+        category_scores = {}
+        
+        for word in user_words:
+            if word in self._keyword_index:
+                categories = self._keyword_index[word]
+                for category in categories:
+                    if category not in category_scores:
+                        category_scores[category] = 0
+                    category_scores[category] += 1
+        
+        # Find best matching category
+        if category_scores:
+            # Sort by score, then by category priority
+            best_category = max(category_scores.keys(), 
+                              key=lambda cat: (category_scores[cat], 
+                                             -self.categories.get(cat, {}).get("priority", 999)))
+            
+            # Calculate normalized score
+            response_data = self.static_responses.get(best_category)
+            if isinstance(response_data, dict):
+                keywords = response_data.get("keywords", [])
+                total_keyword_words = sum(len(kw.split()) for kw in keywords)
+                
+                if total_keyword_words > 0:
+                    normalized_score = category_scores[best_category] / max(total_keyword_words, len(user_words))
+                    
+                    # Require minimum confidence for direct matches
+                    if normalized_score > 0.3:  # Tuned threshold
+                        response_text = response_data.get("message", "")
+                        if response_text:
+                            logger.debug(f"🎯 Direct keyword match: {best_category} "
+                                       f"(score: {normalized_score:.3f}, words: {category_scores[best_category]})")
+                            return response_text, "static_keyword"
+        
+        return None, ""
+    
+    def _find_static_response_direct_fallback(self, user_message_lower: str) -> Tuple[Optional[str], str]:
+        """
+        Fallback method for direct matching when inverted index is not available
         """
         best_match = None
         best_score = 0
@@ -633,11 +737,17 @@ class ContentManager:
             "huggingface_available": self.model_manager is not None,
             "system_mode": "enhanced_static_with_smart_matching_and_intent_classification",
             "ai_usage": "multi_level_understanding_plus_semantic_plus_intent",
+            "inverted_index": {
+                "enabled": self._index_built,
+                "keywords": len(self._keyword_index),
+                "phrases": len(self._phrase_index),
+                "avg_categories_per_keyword": (sum(len(cats) for cats in self._keyword_index.values()) / len(self._keyword_index)) if self._keyword_index else 0
+            },
             "matching_levels": {
                 "level_0": "intent_classification_ml_model",  # NEW
                 "level_1": "enhanced_turkish_content_matching",
                 "level_2": "enhanced_question_matching_with_fuzzy_and_semantic",
-                "level_3": "direct_keyword_matching",
+                "level_3": "direct_keyword_matching_with_inverted_index",  # UPDATED
                 "level_4": "ai_semantic_similarity", 
                 "level_5": "intent_based_matching"
             },
@@ -706,10 +816,10 @@ class ContentManager:
         logger.info("🗑️ Response cache cleared")
 
     def reload_content(self):
-        """Reload static content and clear cache"""
+        """Reload static content, rebuild inverted index and clear cache"""
         self.clear_cache()
-        self.load_static_content()
-        logger.info("🔄 Content reloaded")
+        self.load_static_content()  # This will also rebuild the inverted index
+        logger.info("🔄 Content reloaded and inverted index rebuilt")
     
     def warmup_ai_models(self):
         """

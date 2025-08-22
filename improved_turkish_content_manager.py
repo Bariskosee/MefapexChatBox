@@ -2,12 +2,213 @@
 🇹🇷 Gelişmiş Türkçe Content Manager
 ==================================
 Daha iyi Türkçe yanıtlar için optimize edilmiş content yöneticisi
+Morfological analysis ve lemmatization ile desteklenmiş
 """
 import json
 import re
 import logging
-from typing import Dict, List, Tuple, Optional
+import os
+from typing import Dict, List, Tuple, Optional, Set
 from difflib import SequenceMatcher
+
+# Turkish NLP dependencies
+try:
+    import spacy
+    from spacy.cli import download
+    SPACY_AVAILABLE = True
+except ImportError:
+    SPACY_AVAILABLE = False
+    spacy = None
+
+logger = logging.getLogger(__name__)
+
+class TurkishMorphAnalyzer:
+    """
+    Türkçe morfological analysis ve lemmatization sınıfı
+    spaCy Turkish model kullanır
+    """
+    
+    def __init__(self):
+        self.nlp = None
+        self.fallback_lemmas = self._load_fallback_lemmas()
+        self._initialize_spacy()
+    
+    def _initialize_spacy(self):
+        """spaCy Turkish modelini başlat"""
+        if not SPACY_AVAILABLE:
+            logger.warning("🚫 spaCy not available. Using fallback morphological analysis.")
+            return
+        
+        try:
+            # Try to load Turkish model
+            try:
+                self.nlp = spacy.load("tr_core_news_sm")
+                logger.info("✅ Turkish spaCy model loaded successfully")
+            except OSError:
+                # Model not found, log warning but don't try to download
+                logger.warning("⚠️ Turkish spaCy model (tr_core_news_sm) not found.")
+                logger.info("🔄 Using fallback morphological analysis")
+                logger.info("💡 To install Turkish model: python -m spacy download tr_core_news_sm")
+                self.nlp = None
+        except Exception as e:
+            logger.error(f"❌ Error initializing spaCy: {e}")
+            self.nlp = None
+    
+    def _load_fallback_lemmas(self) -> Dict[str, str]:
+        """Fallback lemma sözlüğü yükle"""
+        return {
+            # Fiiller (Verbs)
+            'çalışıyor': 'çalış', 'çalışıyorum': 'çalış', 'çalışıyorsun': 'çalış',
+            'çalışan': 'çalış', 'çalışmak': 'çalış', 'çalıştı': 'çalış',
+            'gidiyor': 'git', 'gidiyorum': 'git', 'gitti': 'git', 'gitmek': 'git',
+            'geliyor': 'gel', 'geliyorum': 'gel', 'geldi': 'gel', 'gelmek': 'gel',
+            'yapıyor': 'yap', 'yapıyorum': 'yap', 'yaptı': 'yap', 'yapmak': 'yap',
+            'oluyor': 'ol', 'oluyorum': 'ol', 'oldu': 'ol', 'olmak': 'ol',
+            'istiyor': 'iste', 'istiyorum': 'iste', 'istedi': 'iste', 'istemek': 'iste',
+            'başlıyor': 'başla', 'başlıyorum': 'başla', 'başladı': 'başla', 'başlamak': 'başla',
+            'bitiyor': 'bit', 'bitiyorum': 'bit', 'bitti': 'bit', 'bitmek': 'bit',
+            'açıyor': 'aç', 'açıyorum': 'aç', 'açtı': 'aç', 'açmak': 'aç',
+            'kapıyor': 'kapa', 'kapıyorum': 'kapa', 'kapattı': 'kapa', 'kapamak': 'kapa',
+            'alıyor': 'al', 'alıyorum': 'al', 'aldı': 'al', 'almak': 'al',
+            'veriyor': 'ver', 'veriyorum': 'ver', 'verdi': 'ver', 'vermek': 'ver',
+            'buluyor': 'bul', 'buluyorum': 'bul', 'buldu': 'bul', 'bulmak': 'bul',
+            'düşünüyor': 'düşün', 'düşünüyorum': 'düşün', 'düşündü': 'düşün',
+            'konuşuyor': 'konuş', 'konuşuyorum': 'konuş', 'konuştu': 'konuş',
+            'çalışması': 'çalış', 'çalışmasını': 'çalış', 'çalışmasına': 'çalış',
+            
+            # İsimler (Nouns) - Çoğul ve hal ekleri
+            'saatleri': 'saat', 'saatler': 'saat', 'saatin': 'saat', 'saate': 'saat',
+            'günleri': 'gün', 'günler': 'gün', 'günün': 'gün', 'güne': 'gün',
+            'işleri': 'iş', 'işler': 'iş', 'işin': 'iş', 'işe': 'iş',
+            'sorunları': 'sorun', 'sorunlar': 'sorun', 'sorunun': 'sorun', 'soruna': 'sorun',
+            'hataları': 'hata', 'hatalar': 'hata', 'hatanın': 'hata', 'hataya': 'hata',
+            'sistemleri': 'sistem', 'sistemler': 'sistem', 'sistemin': 'sistem', 'sisteme': 'sistem',
+            'bilgileri': 'bilgi', 'bilgiler': 'bilgi', 'bilginin': 'bilgi', 'bilgiye': 'bilgi',
+            'desteği': 'destek', 'destekler': 'destek', 'desteğin': 'destek', 'desteğe': 'destek',
+            'güvenliği': 'güvenlik', 'güvenlikler': 'güvenlik', 'güvenliğin': 'güvenlik',
+            'personeli': 'personel', 'personeller': 'personel', 'personelin': 'personel',
+            'projesi': 'proje', 'projeler': 'proje', 'projenin': 'proje', 'projeye': 'proje',
+            'eğitimi': 'eğitim', 'eğitimler': 'eğitim', 'eğitimin': 'eğitim', 'eğitime': 'eğitim',
+            'kullanıcısı': 'kullanıcı', 'kullanıcılar': 'kullanıcı', 'kullanıcının': 'kullanıcı',
+            
+            # Sıfatlar (Adjectives)
+            'iyi': 'iyi', 'iyiler': 'iyi', 'iyidir': 'iyi', 'iyiyi': 'iyi',
+            'kötü': 'kötü', 'kötüler': 'kötü', 'kötüdür': 'kötü', 'kötüyü': 'kötü',
+            'hızlı': 'hızlı', 'hızlılar': 'hızlı', 'hızlıdır': 'hızlı',
+            'yavaş': 'yavaş', 'yavaşlar': 'yavaş', 'yavaştır': 'yavaş',
+            'kolay': 'kolay', 'kolaylar': 'kolay', 'kolaydır': 'kolay',
+            'zor': 'zor', 'zorlar': 'zor', 'zordur': 'zor',
+            'yeni': 'yeni', 'yeniler': 'yeni', 'yenidir': 'yeni',
+            'eski': 'eski', 'eskiler': 'eski', 'eskidir': 'eski',
+            'büyük': 'büyük', 'büyükler': 'büyük', 'büyüktür': 'büyük',
+            'küçük': 'küçük', 'küçükler': 'küçük', 'küçüktür': 'küçük',
+            
+            # Zamanlar (Time expressions)
+            'bugün': 'bugün', 'bugünü': 'bugün', 'bugüne': 'bugün',
+            'yarın': 'yarın', 'yarını': 'yarın', 'yarına': 'yarın',
+            'dün': 'dün', 'dünü': 'dün', 'düne': 'dün',
+            'şimdi': 'şimdi', 'şimdiyi': 'şimdi', 'şimdiye': 'şimdi',
+            'sonra': 'sonra', 'sonrası': 'sonra', 'sonrasına': 'sonra',
+            'önce': 'önce', 'öncesi': 'önce', 'öncesine': 'önce',
+        }
+    
+    def lemmatize_word(self, word: str) -> str:
+        """Tek kelimeyi lemmatize et"""
+        if not word:
+            return word
+        
+        word_lower = word.lower()
+        
+        # spaCy kullan (varsa)
+        if self.nlp:
+            try:
+                doc = self.nlp(word_lower)
+                if doc and len(doc) > 0:
+                    lemma = doc[0].lemma_
+                    if lemma and lemma != word_lower:
+                        return lemma
+            except Exception as e:
+                logger.debug(f"spaCy lemmatization error for '{word}': {e}")
+        
+        # Fallback lemma sözlüğünü kullan
+        if word_lower in self.fallback_lemmas:
+            return self.fallback_lemmas[word_lower]
+        
+        # Temel morfological rules
+        return self._apply_basic_rules(word_lower)
+    
+    def _apply_basic_rules(self, word: str) -> str:
+        """Temel morfological kuralları uygula"""
+        if len(word) < 3:
+            return word
+        
+        # Çoğul ekleri (-ler, -lar)
+        if word.endswith(('ler', 'lar')):
+            base = word[:-3]
+            if len(base) >= 2:
+                return base
+        
+        # İyelik ekleri (-i, -ı, -u, -ü)
+        if word.endswith(('ları', 'leri', 'ları', 'leri')):
+            base = word[:-4]
+            if len(base) >= 2:
+                return base
+        
+        # Hal ekleri
+        if word.endswith(('nın', 'nin', 'nun', 'nün')):
+            base = word[:-3]
+            if len(base) >= 2:
+                return base
+        
+        if word.endswith(('na', 'ne', 'ya', 'ye')):
+            base = word[:-2]
+            if len(base) >= 2:
+                return base
+        
+        # Fiil ekleri
+        if word.endswith(('ıyor', 'iyor', 'uyor', 'üyor')):
+            base = word[:-4]
+            if len(base) >= 2:
+                return base
+        
+        if word.endswith(('mak', 'mek')):
+            base = word[:-3]
+            if len(base) >= 2:
+                return base
+        
+        return word
+    
+    def lemmatize_text(self, text: str) -> str:
+        """Metindeki tüm kelimeleri lemmatize et"""
+        if not text:
+            return text
+        
+        words = text.split()
+        lemmatized_words = []
+        
+        for word in words:
+            # Noktalama işaretlerini ayır
+            clean_word = re.sub(r'[^\w\s]', '', word)
+            if clean_word:
+                lemma = self.lemmatize_word(clean_word)
+                lemmatized_words.append(lemma)
+        
+        return ' '.join(lemmatized_words)
+    
+    def get_word_variants(self, word: str) -> Set[str]:
+        """Bir kelimenin farklı varyantlarını üret"""
+        variants = {word.lower()}
+        lemma = self.lemmatize_word(word)
+        variants.add(lemma)
+        
+        # Temel varyantlar ekle
+        if lemma in self.fallback_lemmas.values():
+            # Bu lemma için bilinen tüm formları bul
+            for inflected, base in self.fallback_lemmas.items():
+                if base == lemma:
+                    variants.add(inflected)
+        
+        return variants
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +216,94 @@ class ImprovedTurkishContentManager:
     """
     Gelişmiş Türkçe content yöneticisi
     - Daha kapsamlı static responses
-    - Gelişmiş fuzzy matching
+    - Morfological analysis ile gelişmiş matching
     - Türkçe karakter desteği
+    - Lemmatization ile akıllı eşleştirme
     - Akıllı fallback responses
     """
     
     def __init__(self):
+        self.morph_analyzer = TurkishMorphAnalyzer()
         self.responses = self._load_enhanced_responses()
-        self.synonym_map = self._create_synonym_map()
+        self.synonym_map = self._load_synonyms_from_file()
         self.pattern_cache = {}
         
-        logger.info("🇹🇷 Enhanced Turkish Content Manager initialized")
+        logger.info("🇹🇷 Enhanced Turkish Content Manager with morphological analysis initialized")
+    
+    def _load_synonyms_from_file(self) -> Dict[str, List[str]]:
+        """synonyms.json dosyasından eş anlamlı kelimeleri yükle"""
+        try:
+            # Önce mevcut dizinde ara
+            synonyms_path = "content/synonyms.json"
+            if not os.path.exists(synonyms_path):
+                # Alternatif yolları dene
+                possible_paths = [
+                    "./content/synonyms.json",
+                    "../content/synonyms.json",
+                    "/Users/bariskose/Downloads/MefapexChatBox-main/content/synonyms.json"
+                ]
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        synonyms_path = path
+                        break
+            
+            with open(synonyms_path, 'r', encoding='utf-8') as f:
+                loaded_synonyms = json.load(f)
+            
+            # Lemmatization ile eş anlamlıları genişlet
+            enhanced_synonyms = {}
+            for base_word, synonyms in loaded_synonyms.items():
+                # Base word'ü lemmatize et
+                base_lemma = self.morph_analyzer.lemmatize_word(base_word)
+                
+                # Tüm eş anlamlıları lemmatize et ve varyantlarını ekle
+                all_variants = set()
+                all_variants.add(base_word)
+                all_variants.add(base_lemma)
+                
+                for synonym in synonyms:
+                    all_variants.add(synonym)
+                    synonym_lemma = self.morph_analyzer.lemmatize_word(synonym)
+                    all_variants.add(synonym_lemma)
+                    
+                    # Kelime varyantlarını da ekle
+                    variants = self.morph_analyzer.get_word_variants(synonym)
+                    all_variants.update(variants)
+                
+                # Boş stringleri filtrele
+                all_variants = [v for v in all_variants if v and len(v) > 1]
+                
+                enhanced_synonyms[base_lemma] = list(all_variants)
+                
+                # Orijinal kelimenin kendisi için de entry ekle
+                if base_word != base_lemma:
+                    enhanced_synonyms[base_word] = list(all_variants)
+            
+            logger.info(f"📚 Loaded and enhanced {len(enhanced_synonyms)} synonym groups from file")
+            return enhanced_synonyms
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load synonyms from file: {e}")
+            return self._create_synonym_map()  # Fallback to hardcoded synonyms
+    
+    def _create_synonym_map(self) -> Dict[str, List[str]]:
+        """Fallback: Türkçe eş anlamlı kelimeler (hard-coded)"""
+        return {
+            'çalış': ['iş', 'mesai', 'görev', 'vazife', 'work', 'job', 'çalışma'],
+            'saat': ['zaman', 'vakit', 'time', 'hours', 'hour'],
+            'aç': ['open', 'başla', 'start', 'begin', 'açık'],
+            'kapa': ['closed', 'bit', 'end', 'finish', 'stop', 'kapalı'],
+            'destek': ['yardım', 'help', 'support', 'assistance', 'aid'],
+            'sorun': ['problem', 'hata', 'error', 'issue', 'bug'],
+            'mefapex': ['şirket', 'company', 'firma', 'organization', 'kurum'],
+            'güvenlik': ['security', 'safety', 'emniyet', 'koruma'],
+            'izin': ['leave', 'vacation', 'tatil', 'permit', 'permission'],
+            'proje': ['project', 'görev', 'task', 'iş', 'work'],
+            'eğitim': ['training', 'education', 'kurs', 'course', 'öğretim'],
+            'sistem': ['system', 'software', 'yazılım', 'program'],
+            'hata': ['error', 'bug', 'problem', 'sorun', 'issue'],
+            'yardım': ['help', 'support', 'destek', 'assistance']
+        }
     
     def _load_enhanced_responses(self) -> Dict:
         """Gelişmiş Türkçe yanıtlar yükle"""
@@ -160,8 +438,11 @@ class ImprovedTurkishContentManager:
         }
     
     def _normalize_turkish(self, text: str) -> str:
-        """Türkçe karakterleri normalize et"""
-        # Türkçe karakter dönüşümleri
+        """Türkçe karakterleri normalize et ve morfological analysis uygula"""
+        if not text:
+            return text
+        
+        # Önce türkçe karakter dönüşümleri
         turkish_map = {
             'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u',
             'Ç': 'c', 'Ğ': 'g', 'I': 'i', 'İ': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u'
@@ -173,78 +454,169 @@ class ImprovedTurkishContentManager:
         
         return normalized
     
-    def _expand_with_synonyms(self, text: str) -> List[str]:
-        """Metni eş anlamlı kelimelerle genişlet"""
-        words = text.split()
-        expanded_texts = [text]
+    def _preprocess_text(self, text: str) -> str:
+        """Metni önişleme: temizleme + normalizasyon + lemmatization"""
+        if not text:
+            return text
         
-        # Her kelime için eş anlamlıları kontrol et
+        # Temizleme
+        text = text.strip().lower()
+        text = re.sub(r'[^\w\s]', ' ', text)  # Noktalama işaretlerini kaldır
+        text = re.sub(r'\s+', ' ', text)  # Çoklu boşlukları tek boşluğa çevir
+        
+        # Lemmatization
+        lemmatized_text = self.morph_analyzer.lemmatize_text(text)
+        
+        # Türkçe karakter normalizasyonu (son adım olarak)
+        normalized_text = self._normalize_turkish(lemmatized_text)
+        
+        return normalized_text
+    
+    def _expand_with_synonyms(self, text: str) -> List[str]:
+        """Metni eş anlamlı kelimelerle ve morfological varyantlarla genişlet"""
+        words = text.split()
+        expanded_texts = {text}  # Set kullanarak dublicate'leri önle
+        
+        # Her kelime için eş anlamlıları ve varyantlarını kontrol et
         for word in words:
+            # Kelimeyi lemmatize et
+            lemma = self.morph_analyzer.lemmatize_word(word)
+            
+            # Normalized versiyonları da kontrol et
             normalized_word = self._normalize_turkish(word)
-            if normalized_word in self.synonym_map:
-                synonyms = self.synonym_map[normalized_word]
-                for synonym in synonyms:
+            normalized_lemma = self._normalize_turkish(lemma)
+            
+            # Eş anlamlıları bul
+            synonyms_found = set()
+            
+            # Orijinal kelime için eş anlamlıları
+            for key in [word, lemma, normalized_word, normalized_lemma]:
+                if key in self.synonym_map:
+                    synonyms_found.update(self.synonym_map[key])
+            
+            # Morfological varyantları da ekle
+            variants = self.morph_analyzer.get_word_variants(word)
+            for variant in variants:
+                normalized_variant = self._normalize_turkish(variant)
+                for key in [variant, normalized_variant]:
+                    if key in self.synonym_map:
+                        synonyms_found.update(self.synonym_map[key])
+            
+            # Bulunan eş anlamlıları ile yeni metinler oluştur
+            for synonym in synonyms_found:
+                if synonym and synonym != word:
                     # Orijinal kelimeyi eş anlamlısıyla değiştir
                     new_text = text.replace(word, synonym)
-                    if new_text not in expanded_texts:
-                        expanded_texts.append(new_text)
+                    expanded_texts.add(new_text)
+                    
+                    # Lemmatized versiyonlarını da dene
+                    lemma_text = text.replace(word, self.morph_analyzer.lemmatize_word(synonym))
+                    expanded_texts.add(lemma_text)
         
-        return expanded_texts
+        return list(expanded_texts)
     
     def _calculate_similarity(self, text1: str, text2: str) -> float:
-        """İki metin arasında benzerlik hesapla"""
+        """İki metin arasında morfological analysis destekli benzerlik hesapla"""
         # Cache kontrolü
         cache_key = f"{text1}|{text2}"
         if cache_key in self.pattern_cache:
             return self.pattern_cache[cache_key]
         
-        # Metinleri normalize et
-        norm1 = self._normalize_turkish(text1)
-        norm2 = self._normalize_turkish(text2)
+        # Metinleri önişle
+        processed1 = self._preprocess_text(text1)
+        processed2 = self._preprocess_text(text2)
         
         # Temel benzerlik
-        basic_similarity = SequenceMatcher(None, norm1, norm2).ratio()
+        basic_similarity = SequenceMatcher(None, processed1, processed2).ratio()
         
-        # Kelime bazlı benzerlik
-        words1 = set(norm1.split())
-        words2 = set(norm2.split())
+        # Kelime bazlı benzerlik (lemmatized)
+        words1 = set(processed1.split())
+        words2 = set(processed2.split())
         
         if not words1 or not words2:
             similarity = basic_similarity
         else:
+            # Exact match
             word_similarity = len(words1 & words2) / len(words1 | words2)
+            
+            # Semantic similarity (synonym-based)
+            semantic_matches = 0
+            total_comparisons = 0
+            
+            for w1 in words1:
+                for w2 in words2:
+                    total_comparisons += 1
+                    if w1 == w2:
+                        semantic_matches += 1
+                    else:
+                        # Check if words are synonyms
+                        w1_synonyms = set()
+                        w2_synonyms = set()
+                        
+                        # Collect synonyms for w1
+                        for key, synonyms in self.synonym_map.items():
+                            if w1 in synonyms or w1 == key:
+                                w1_synonyms.update(synonyms)
+                                w1_synonyms.add(key)
+                        
+                        # Collect synonyms for w2
+                        for key, synonyms in self.synonym_map.items():
+                            if w2 in synonyms or w2 == key:
+                                w2_synonyms.update(synonyms)
+                                w2_synonyms.add(key)
+                        
+                        # Check if there's overlap
+                        if w1_synonyms & w2_synonyms:
+                            semantic_matches += 0.8  # Synonym match weight
+            
+            if total_comparisons > 0:
+                semantic_similarity = semantic_matches / total_comparisons
+            else:
+                semantic_similarity = 0
+            
             # Ağırlıklı ortalama
-            similarity = (basic_similarity * 0.6) + (word_similarity * 0.4)
+            similarity = (basic_similarity * 0.4) + (word_similarity * 0.4) + (semantic_similarity * 0.2)
         
         # Cache'e kaydet
         self.pattern_cache[cache_key] = similarity
         return similarity
     
     def find_best_match(self, user_input: str, threshold: float = 0.3) -> Optional[Dict]:
-        """Kullanıcı girdisi için en iyi eşleşmeyi bul"""
-        user_input = user_input.strip().lower()
-        if not user_input:
+        """Kullanıcı girdisi için en iyi eşleşmeyi bul (morfological analysis ile)"""
+        if not user_input or not user_input.strip():
             return None
+        
+        # Kullanıcı girdisini önişle
+        processed_input = self._preprocess_text(user_input)
         
         best_match = None
         best_score = 0.0
         
-        # Eş anlamlı kelimelerle genişletilmiş versiyonları da kontrol et
-        expanded_inputs = self._expand_with_synonyms(user_input)
+        # Eş anlamlı kelimelerle ve morfological varyantlarla genişletilmiş versiyonları da kontrol et
+        expanded_inputs = self._expand_with_synonyms(processed_input)
+        
+        # Orijinal girdiyi de ekle
+        all_inputs = [user_input.strip().lower(), processed_input] + expanded_inputs
+        all_inputs = list(set(all_inputs))  # Duplicate'leri kaldır
         
         for category, data in self.responses.items():
             patterns = data["patterns"]
             responses = data["responses"]
             
             for pattern in patterns:
-                # Tüm genişletilmiş versiyonları kontrol et
-                for expanded_input in expanded_inputs:
+                # Pattern'i de önişle
+                processed_pattern = self._preprocess_text(pattern)
+                
+                # Tüm girdi versiyonlarını kontrol et
+                for input_variant in all_inputs:
                     # Direkt içerme kontrolü (yüksek puan)
-                    if pattern in expanded_input or expanded_input in pattern:
-                        score = 0.9
+                    if processed_pattern in input_variant or input_variant in processed_pattern:
+                        score = 0.95
+                    elif pattern.lower() in user_input.lower() or user_input.lower() in pattern.lower():
+                        score = 0.9  # Orijinal metin eşleşmesi
                     else:
-                        # Fuzzy matching
-                        score = self._calculate_similarity(expanded_input, pattern)
+                        # Morfological similarity
+                        score = self._calculate_similarity(input_variant, processed_pattern)
                     
                     if score > best_score and score >= threshold:
                         best_score = score
@@ -252,8 +624,46 @@ class ImprovedTurkishContentManager:
                             "category": category,
                             "pattern": pattern,
                             "responses": responses,
-                            "score": score
+                            "score": score,
+                            "matched_input": input_variant,
+                            "processed_pattern": processed_pattern
                         }
+        
+        # Eğer hala eşleşme yoksa, daha esnek arama yap
+        if not best_match or best_score < 0.5:
+            # Lemmatized kelime bazlı arama
+            input_lemmas = set(self._preprocess_text(user_input).split())
+            
+            for category, data in self.responses.items():
+                patterns = data["patterns"]
+                responses = data["responses"]
+                
+                for pattern in patterns:
+                    pattern_lemmas = set(self._preprocess_text(pattern).split())
+                    
+                    if input_lemmas and pattern_lemmas:
+                        # Lemma intersection score
+                        intersection = len(input_lemmas & pattern_lemmas)
+                        union = len(input_lemmas | pattern_lemmas)
+                        
+                        if union > 0:
+                            lemma_score = intersection / union
+                            
+                            # Bonus for multiple word matches
+                            if intersection > 1:
+                                lemma_score *= 1.2
+                            
+                            if lemma_score > best_score and lemma_score >= (threshold * 0.8):
+                                best_score = lemma_score
+                                best_match = {
+                                    "category": category,
+                                    "pattern": pattern,
+                                    "responses": responses,
+                                    "score": lemma_score,
+                                    "matched_input": user_input,
+                                    "processed_pattern": pattern,
+                                    "match_type": "lemma_based"
+                                }
         
         return best_match
     
@@ -328,13 +738,21 @@ class ImprovedTurkishContentManager:
         total_patterns = sum(len(data["patterns"]) for data in self.responses.values())
         total_responses = sum(len(data["responses"]) for data in self.responses.values())
         
+        # Morfological analyzer stats
+        morph_stats = {
+            "spacy_available": self.morph_analyzer.nlp is not None,
+            "fallback_lemmas": len(self.morph_analyzer.fallback_lemmas),
+            "morphological_analysis": "Enabled" if SPACY_AVAILABLE else "Fallback mode"
+        }
+        
         return {
             "total_categories": len(self.responses),
             "total_patterns": total_patterns,
             "total_responses": total_responses,
             "cache_size": len(self.pattern_cache),
             "synonym_words": len(self.synonym_map),
-            "language": "Turkish (Enhanced)"
+            "language": "Turkish (Enhanced with Morphological Analysis)",
+            "morphological_analysis": morph_stats
         }
 
 # Global instance
