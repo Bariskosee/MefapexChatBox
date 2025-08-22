@@ -20,15 +20,15 @@ from qdrant_client import QdrantClient
 
 logger = logging.getLogger(__name__)
 
-# Import cache with fallback
+# Import centralized cache manager
 try:
-    from distributed_cache import create_distributed_cache
-    distributed_cache = None  # Will be initialized later
-    logger.info("✅ Distributed cache available")
+    from cache_manager import get_response_cache, get_distributed_cache
+    logger.info("✅ Cache manager available")
 except ImportError:
-    from response_cache import response_cache
-    distributed_cache = None
-    logger.warning("⚠️ Using fallback local cache")
+    logger.warning("⚠️ Cache manager not available")
+    get_response_cache = None
+    get_distributed_cache = None
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 # Rate limiter placeholder (will be set by main.py)
@@ -38,24 +38,6 @@ def set_rate_limiter(limiter):
     """Set rate limiter from main app"""
     global rate_limiter
     rate_limiter = limiter
-
-# Cache initialization with global access
-def get_cache():
-    """Get appropriate cache instance"""
-    # Try to get from main app first
-    try:
-        from main import distributed_cache as main_cache
-        if main_cache:
-            return main_cache
-    except ImportError:
-        pass
-    
-    # Fallback to local response_cache
-    try:
-        from response_cache import response_cache
-        return response_cache
-    except ImportError:
-        return None
 
 # Initialize database manager
 db_manager = DatabaseManager()
@@ -149,8 +131,14 @@ async def chat_message(
         # Get or create session
         session_id = db_manager.get_or_create_session(user_id)
         
-        # Get appropriate cache instance
-        cache_instance = get_cache()
+        # Get appropriate cache instance (distributed cache preferred, fallback to response cache)
+        cache_instance = None
+        if get_distributed_cache:
+            cache_instance = get_distributed_cache()
+        
+        # Fallback to response cache if distributed cache not available
+        if not cache_instance and get_response_cache:
+            cache_instance = get_response_cache()
         
         # Try to get cached response
         cached = None
