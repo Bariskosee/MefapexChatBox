@@ -184,7 +184,8 @@ class RateLimitingMiddleware:
         import time
         
         # Get client IP
-        client_ip = request.client.host if request.client else "unknown"
+        from core.utils import get_client_ip
+        client_ip = get_client_ip(request)
         current_time = time.time()
         
         # Clean old requests

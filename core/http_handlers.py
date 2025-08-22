@@ -161,7 +161,8 @@ class HTTPRouteHandlers:
                 raise HTTPException(status_code=500, detail="Authentication service not available")
             
             # Get client IP for rate limiting
-            client_ip = request.client.host if request.client else "127.0.0.1"
+            from core.utils import get_client_ip
+            client_ip = get_client_ip(request)
             
             # Check brute force protection
             if hasattr(auth_service, 'brute_force_protection'):

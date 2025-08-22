@@ -70,25 +70,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self.rate_limiter = DistributedRateLimiter(config)
     
     def _get_client_ip(self, request) -> str:
-        """Get client IP safely with proper fallback"""
-        try:
-            if request.client and hasattr(request.client, 'host') and request.client.host:
-                return request.client.host
-            else:
-                # Fallback to headers for proxy situations
-                forwarded_for = request.headers.get("X-Forwarded-For")
-                if forwarded_for:
-                    return forwarded_for.split(",")[0].strip()
-                else:
-                    # Additional fallbacks
-                    return (
-                        request.headers.get("X-Real-IP") or
-                        request.headers.get("X-Forwarded-Host") or
-                        "127.0.0.1"
-                    )
-        except Exception as e:
-            logger.warning(f"Failed to get client IP: {e}")
-            return "127.0.0.1"
+        """Get client IP safely with proper fallback (deprecated - use core.utils.get_client_ip)"""
+        from core.utils import get_client_ip
+        return get_client_ip(request)
     
     async def dispatch(self, request, call_next):
         await self._ensure_rate_limiter()
@@ -177,26 +161,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
         
         # Get client IP safely with proper fallback
-        client_ip = "unknown"
-        
-        try:
-            if request.client and hasattr(request.client, 'host') and request.client.host:
-                client_ip = request.client.host
-            else:
-                # Fallback to headers for proxy situations
-                forwarded_for = request.headers.get("X-Forwarded-For")
-                if forwarded_for:
-                    client_ip = forwarded_for.split(",")[0].strip()
-                else:
-                    # Additional fallbacks
-                    client_ip = (
-                        request.headers.get("X-Real-IP") or
-                        request.headers.get("X-Forwarded-Host") or
-                        "127.0.0.1"
-                    )
-        except Exception as e:
-            logger.warning(f"Failed to get client IP: {e}")
-            client_ip = "127.0.0.1"
+        from core.utils import get_client_ip
+        client_ip = get_client_ip(request)
         
         # Log request
         logger.info(f"🌐 {request.method} {request.url.path} - Client: {client_ip}")

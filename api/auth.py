@@ -48,7 +48,8 @@ def set_rate_limiter(limiter):
 async def register_user(user: UserRegister, request: Request):
     """Register a new user with enhanced security"""
     try:
-        client_ip = request.client.host
+        from core.utils import get_client_ip
+        client_ip = get_client_ip(request)
         
         # Check rate limiting for registration
         if rate_limiter and not rate_limiter.is_allowed(client_ip, "general"):
@@ -115,7 +116,8 @@ async def register_user(user: UserRegister, request: Request):
 async def login_user(user: UserLogin, request: Request, response: Response):
     """User login with secure cookie-based authentication"""
     try:
-        client_ip = request.client.host
+        from core.utils import get_client_ip
+        client_ip = get_client_ip(request)
         
         # Rate limiting
         if rate_limiter and not rate_limiter.is_allowed(client_ip, "general"):

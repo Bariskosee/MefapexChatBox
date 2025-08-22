@@ -534,11 +534,9 @@ class AuthenticationService:
     
     # 🛡️ SECURITY UTILITIES
     def get_client_ip(self, request) -> str:
-        """Extract client IP address from request"""
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(',')[0].strip()
-        return request.client.host if request.client else "unknown"
+        """Extract client IP address from request (deprecated - use core.utils.get_client_ip)"""
+        from core.utils import get_client_ip
+        return get_client_ip(request)
     
     def check_brute_force(self, client_ip: str) -> bool:
         """Check if IP is blocked due to brute force attempts"""

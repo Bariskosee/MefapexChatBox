@@ -100,7 +100,8 @@ async def chat_message(
     start_time = time.time()
     
     try:
-        client_ip = request.client.host
+        from core.utils import get_client_ip
+        client_ip = get_client_ip(request)
         user_id = current_user["user_id"]
         
         # Rate limiting for chat
