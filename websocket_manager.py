@@ -220,11 +220,13 @@ class ConnectionManager:
 def _get_connection_manager():
     """Get connection manager instance based on configuration"""
     try:
-        from config import config
+        from core.config_utils import load_config, get_config_value
+        config = load_config()
         
         # Check if Redis is configured for distributed mode
-        redis_url = getattr(config, 'REDIS_URL', None)
-        distributed_enabled = getattr(config, 'DISTRIBUTED_WEBSOCKET_ENABLED', True)
+        redis_url = get_config_value('redis_url', None, config) or get_config_value('REDIS_URL', None, config)
+        distributed_enabled = get_config_value('distributed_websocket_enabled', True, config) or \
+                            get_config_value('DISTRIBUTED_WEBSOCKET_ENABLED', True, config)
         
         if distributed_enabled and redis_url and redis_url != "redis://localhost:6379/0":
             # Use distributed manager with Redis

@@ -32,13 +32,8 @@ class CacheManager:
             
             # Get configuration
             if not config:
-                try:
-                    from core.configuration import get_cache_config
-                    cache_config = get_cache_config()
-                except ImportError:
-                    # Fallback to simple config
-                    from config import config as app_config
-                    cache_config = app_config
+                from core.config_utils import load_cache_config
+                cache_config = load_cache_config()
             else:
                 cache_config = config
             

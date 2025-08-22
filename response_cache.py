@@ -486,27 +486,37 @@ class SimpleResponseCache(AdvancedResponseCache):
 def create_response_cache(config=None) -> AdvancedResponseCache:
     """Factory function to create response cache with configuration"""
     if not config:
-        try:
-            from core.configuration import get_cache_config
-            cache_config = get_cache_config()
-        except ImportError:
-            # Fallback to simple config
-            from config import config as app_config
-            return AdvancedResponseCache(
-                max_size=getattr(app_config, 'CACHE_SIZE', 1000),
-                ttl=getattr(app_config, 'CACHE_TTL', 3600),
-                eviction_policy=EvictionPolicy.LRU
-            )
+        from core.config_utils import get_cache_settings
+        cache_settings = get_cache_settings()
     else:
-        cache_config = config
+        # Handle direct config object passed in
+        if hasattr(config, 'response_cache_max_size'):
+            cache_settings = {
+                'max_size': config.response_cache_max_size,
+                'ttl': config.response_cache_ttl,
+                'eviction_policy': config.response_cache_eviction_policy,
+                'max_memory_mb': getattr(config, 'max_memory_usage_mb', 100),
+                'auto_scale': getattr(config, 'auto_scale_enabled', True),
+                'cleanup_interval': getattr(config, 'cleanup_interval', 300)
+            }
+        else:
+            # Legacy config
+            cache_settings = {
+                'max_size': getattr(config, 'CACHE_SIZE', 1000),
+                'ttl': getattr(config, 'CACHE_TTL', 3600),
+                'eviction_policy': 'lru',
+                'max_memory_mb': 100,
+                'auto_scale': True,
+                'cleanup_interval': 300
+            }
     
     return AdvancedResponseCache(
-        max_size=cache_config.response_cache_max_size,
-        ttl=cache_config.response_cache_ttl,
-        eviction_policy=cache_config.response_cache_eviction_policy,
-        max_memory_mb=cache_config.max_memory_usage_mb,
-        auto_scale=cache_config.auto_scale_enabled,
-        cleanup_interval=cache_config.cleanup_interval
+        max_size=cache_settings['max_size'],
+        ttl=cache_settings['ttl'],
+        eviction_policy=EvictionPolicy(cache_settings['eviction_policy']),
+        max_memory_mb=cache_settings['max_memory_mb'],
+        auto_scale=cache_settings['auto_scale'],
+        cleanup_interval=cache_settings['cleanup_interval']
     )
 
 # Global cache instance - will be replaced with factory-created instance

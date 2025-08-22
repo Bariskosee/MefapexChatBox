@@ -606,21 +606,18 @@ def create_distributed_cache(config=None) -> Union[EnhancedHybridDistributedCach
     Factory function to create appropriate cache instance based on configuration
     """
     if not config:
-        try:
-            from core.configuration import get_cache_config
-            cache_config = get_cache_config()
-        except ImportError:
-            from config import config as app_config
-            cache_config = app_config
+        from core.config_utils import load_cache_config, get_redis_config
+        cache_config = load_cache_config()
     else:
         cache_config = config
     
     # Check if Redis is configured and available
-    redis_host = getattr(cache_config, 'redis_host', getattr(cache_config, 'REDIS_HOST', None))
-    redis_port = getattr(cache_config, 'redis_port', getattr(cache_config, 'REDIS_PORT', 6379))
+    redis_config = get_redis_config()
+    redis_host = redis_config['host']
+    redis_port = redis_config['port']
     
     if redis_host and REDIS_AVAILABLE:
-        redis_url = getattr(cache_config, 'redis_url', f"redis://{redis_host}:{redis_port}")
+        redis_url = redis_config['url'] or f"redis://{redis_host}:{redis_port}"
         
         return EnhancedHybridDistributedCache(
             redis_url=redis_url,

@@ -62,16 +62,12 @@ db_manager = DatabaseManager()
 
 # Initialize Qdrant client
 try:
-    try:
-        from core.configuration import get_config
-        config = get_config()
-    except ImportError:
-        # Fallback to simple config - TODO: Remove after migration
-        from config import config
+    from core.config_utils import get_qdrant_config
+    qdrant_config = get_qdrant_config()
     
     qdrant_client = QdrantClient(
-        host=getattr(config.qdrant, 'host', 'localhost'),
-        port=getattr(config.qdrant, 'port', 6333)
+        host=qdrant_config['host'],
+        port=qdrant_config['port']
     )
 except Exception as e:
     logger.warning(f"Failed to initialize Qdrant client: {e}")
@@ -249,13 +245,9 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
     
     # Try OpenAI if available
     try:
-        try:
-            from core.configuration import get_config
-            config = get_config()
-            use_openai = config.ai.use_openai
-        except (ImportError, AttributeError):
-            from config import config  # TODO: Remove after migration
-            use_openai = getattr(config, 'USE_OPENAI', False)
+        from core.config_utils import get_ai_config
+        ai_config = get_ai_config()
+        use_openai = ai_config['use_openai']
             
         if use_openai:
             try:
@@ -272,13 +264,9 @@ async def generate_ai_response(message: str) -> tuple[str, str]:
     
     # Try HuggingFace as fallback
     try:
-        try:
-            from core.configuration import get_config
-            config = get_config()
-            use_huggingface = config.ai.use_huggingface
-        except (ImportError, AttributeError):
-            from config import config  # TODO: Remove after migration
-            use_huggingface = getattr(config, 'USE_HUGGINGFACE', True)
+        from core.config_utils import get_ai_config
+        ai_config = get_ai_config()
+        use_huggingface = ai_config['use_huggingface']
             
         if use_huggingface:
             try:
