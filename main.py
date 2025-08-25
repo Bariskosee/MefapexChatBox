@@ -21,6 +21,11 @@ logging.basicConfig(
     level=logging.INFO if main_config.server.debug else logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# Set specific loggers to reduce noise
+logging.getLogger('improved_turkish_content_manager').setLevel(logging.WARNING)
+logging.getLogger('TurkishMorphAnalyzer').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Global managers and services
@@ -43,6 +48,10 @@ async def lifespan(app: FastAPI):
         
         # Create shutdown manager with initialized services list
         shutdown_manager = ShutdownManager(startup_manager.get_initialized_services())
+        
+        # Setup additional routes with initialized services
+        setup_routes(app, app_services)
+        logger.info("🛤️ Additional routes setup completed")
         
         logger.info("✅ All services initialized successfully")
         
@@ -84,17 +93,7 @@ def create_app() -> FastAPI:
 # Create the application instance
 app = create_app()
 
-# Add startup event to setup additional routes with initialized services
-@app.on_event("startup")
-async def setup_additional_routes_handler():
-    """Setup additional routes after services are initialized"""
-    # Wait a moment for services to be fully initialized during lifespan startup
-    import asyncio
-    await asyncio.sleep(0.1)
-    
-    # Setup additional routes with initialized services
-    setup_routes(app, app_services)
-    logger.info("🛤️ Additional routes setup completed")
+# Routes will be set up during lifespan startup instead of using deprecated @app.on_event
 
 # =============================================================================
 # APPLICATION STARTUP

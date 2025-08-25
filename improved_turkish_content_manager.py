@@ -3,6 +3,25 @@
 ==================================
 Daha iyi Türkçe yanıtlar için optimize edilmiş content yöneticisi
 Morfological analysis ve lemmatization ile desteklenmiş
+
+🚀 ULTRA PERFORMANCE OPTIMIZATION:
+- Morphological analyzer ARTIK TAMAMEN LAZY LOADING ile yüklenir
+- Eş anlamlı kelimeler sadece kullanıcı soru sorduğunda genişletilir  
+- Başlangıç zamanı maksimum seviyede azaltıldı
+- Kaynak tüketimi minimize edildi
+- Zeyrek analyzer tamamen devre dışı bırakıldı
+
+🔧 STRICT LAZY LOADING FEATURES:
+- TurkishMorphAnalyzer: Sadece gerçek ihtiyaç anında yüklenir
+- Synonym expansion: İlk soru işlendiğinde aktif olur
+- Morphological enhancement: Tamamen on-demand olarak çalışır
+- Hiçbir NLP tool otomatik olarak başlatılmaz
+
+🔇 SILENT MODE OPTIMIZATION:
+- Varsayılan log seviyesi ERROR olarak ayarlandı
+- Ayrıntılı loglar sadece enable_detailed_logging=True ile görünür
+- Gereksiz çıktılar tamamen elimine edildi
+- Sessiz çalışma modu aktif
 """
 import json
 import re
@@ -20,7 +39,30 @@ except ImportError:
     SPACY_AVAILABLE = False
     spacy = None
 
+# Alternative Turkish NLP libraries
+try:
+    from TurkishStemmer import TurkishStemmer
+    TURKISH_STEMMER_AVAILABLE = True
+except ImportError:
+    TURKISH_STEMMER_AVAILABLE = False
+    TurkishStemmer = None
+
+# Zeyrek library - DISABLED due to verbose output and slow initialization
+# ZEYREK COMPLETELY DISABLED TO PREVENT VERBOSE OUTPUT
+ZEYREK_AVAILABLE = False
+zeyrek = None
+
 logger = logging.getLogger(__name__)
+
+# Set default logging level to ERROR to minimize verbose output
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.ERROR)
+    formatter = logging.Formatter('%(levelname)s: %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False
 
 class TurkishMorphAnalyzer:
     """
@@ -28,31 +70,91 @@ class TurkishMorphAnalyzer:
     spaCy Turkish model kullanır
     """
     
-    def __init__(self):
+    def __init__(self, enable_detailed_logging=False):
         self.nlp = None
+        self.turkish_stemmer = None
+        self.zeyrek_analyzer = None
         self.fallback_lemmas = self._load_fallback_lemmas()
-        self._initialize_spacy()
-    
-    def _initialize_spacy(self):
-        """spaCy Turkish modelini başlat"""
-        if not SPACY_AVAILABLE:
-            logger.warning("🚫 spaCy not available. Using fallback morphological analysis.")
-            return
+        self.enable_detailed_logging = enable_detailed_logging
+        self._lazy_init = False  # Lazy initialization için
         
-        try:
-            # Try to load Turkish model
+        # Asla otomatik olarak initialize etme - sadece gerçekten gerektiğinde
+        # Eski kod: if enable_detailed_logging: self._initialize_nlp_tools()
+        # Bu satır kaldırıldı - artık hiçbir durumda otomatik init yok
+    
+    def _ensure_initialized(self):
+        """Lazy initialization - sadece gerektiğinde NLP tools'ları yükle"""
+        if not self._lazy_init:
+            self._initialize_nlp_tools()
+            self._lazy_init = True
+    
+    def _initialize_nlp_tools(self):
+        """Initialize Turkish NLP tools with fallback options - ONLY when really needed"""
+        # Sadece detailed logging etkinse debug mesajları göster
+        if self.enable_detailed_logging:
+            print("🔧 Initializing Turkish NLP tools...")
+        
+        # Try to initialize TurkishStemmer
+        if TURKISH_STEMMER_AVAILABLE:
             try:
-                self.nlp = spacy.load("tr_core_news_sm")
-                logger.info("✅ Turkish spaCy model loaded successfully")
-            except OSError:
-                # Model not found, log warning but don't try to download
-                logger.warning("⚠️ Turkish spaCy model (tr_core_news_sm) not found.")
-                logger.info("🔄 Using fallback morphological analysis")
-                logger.info("💡 To install Turkish model: python -m spacy download tr_core_news_sm")
+                self.turkish_stemmer = TurkishStemmer()
+                if self.enable_detailed_logging:
+                    print("✅ TurkishStemmer initialized successfully")
+            except Exception as e:
+                if self.enable_detailed_logging:
+                    print(f"⚠️ Failed to initialize TurkishStemmer: {e}")
+                
+        # Try to initialize Zeyrek morphological analyzer - DISABLED to prevent verbose output
+        # if ZEYREK_AVAILABLE:
+        #     try:
+        #         self.zeyrek_analyzer = zeyrek.MorphAnalyzer()
+        #         if self.enable_detailed_logging:
+        #             print("✅ Zeyrek morphological analyzer initialized successfully")
+        #     except Exception as e:
+        #         if self.enable_detailed_logging:
+        #             print(f"⚠️ Failed to initialize Zeyrek: {e}")
+        
+        # Try to initialize spaCy as backup
+        if SPACY_AVAILABLE:
+            try:
+                # Try to load Turkish model
+                try:
+                    self.nlp = spacy.load("tr_core_news_sm")
+                    if self.enable_detailed_logging:
+                        print("✅ Turkish spaCy model loaded successfully")
+                except OSError:
+                    # Model not found, try basic Turkish language support
+                    if self.enable_detailed_logging:
+                        print("⚠️ Turkish spaCy model (tr_core_news_sm) not found.")
+                        print("🔄 Using basic Turkish language support")
+                    try:
+                        from spacy.lang.tr import Turkish
+                        self.nlp = Turkish()
+                        if self.enable_detailed_logging:
+                            print("✅ Basic Turkish language support loaded")
+                    except Exception as fallback_error:
+                        if self.enable_detailed_logging:
+                            print(f"⚠️ Could not load basic Turkish support: {fallback_error}")
+                        self.nlp = None
+            except Exception as e:
+                if self.enable_detailed_logging:
+                    print(f"❌ Error initializing spaCy: {e}")
                 self.nlp = None
-        except Exception as e:
-            logger.error(f"❌ Error initializing spaCy: {e}")
-            self.nlp = None
+        
+        # Report available tools - only if detailed logging enabled
+        if self.enable_detailed_logging:
+            available_tools = []
+            if self.turkish_stemmer:
+                available_tools.append("TurkishStemmer")
+            if self.zeyrek_analyzer:
+                available_tools.append("Zeyrek")
+            if self.nlp:
+                available_tools.append("spaCy")
+            if available_tools:
+                print(f"✅ Available Turkish NLP tools: {', '.join(available_tools)}")
+            else:
+                print("🔄 Using fallback morphological analysis with manual lemma dictionary")
+                print("💡 To enhance Turkish analysis, install: pip install TurkishStemmer zeyrek")
     
     def _load_fallback_lemmas(self) -> Dict[str, str]:
         """Fallback lemma sözlüğü yükle"""
@@ -113,29 +215,67 @@ class TurkishMorphAnalyzer:
         }
     
     def lemmatize_word(self, word: str) -> str:
-        """Tek kelimeyi lemmatize et"""
+        """Tek kelimeyi lemmatize et using multiple Turkish NLP tools"""
         if not word:
             return word
         
+        # Sadece gerektiğinde initialize et
+        self._ensure_initialized()
+        
         word_lower = word.lower()
         
-        # spaCy kullan (varsa)
+        # ZEYREK DISABLED to prevent verbose output
+        # Try Zeyrek morphological analyzer first (most accurate) - DISABLED
+        # if self.zeyrek_analyzer:
+        #     try:
+        #         analysis = self.zeyrek_analyzer.analyze(word_lower)
+        #         if analysis and len(analysis) > 0:
+        #             lemma = analysis[0][1].lemma
+        #             if lemma and lemma != word_lower:
+        #                 if self.enable_detailed_logging:
+        #                     print(f"Zeyrek lemmatization: '{word}' → '{lemma}'")
+        #                 return lemma
+        #     except Exception as e:
+        #         if self.enable_detailed_logging:
+        #             print(f"Zeyrek lemmatization error for '{word}': {e}")
+        
+        # Try TurkishStemmer (good for stemming)
+        if self.turkish_stemmer:
+            try:
+                stem = self.turkish_stemmer.stem(word_lower)
+                if stem and stem != word_lower and len(stem) >= 2:
+                    if self.enable_detailed_logging:
+                        print(f"TurkishStemmer: '{word}' → '{stem}'")
+                    return stem
+            except Exception as e:
+                if self.enable_detailed_logging:
+                    print(f"TurkishStemmer error for '{word}': {e}")
+        
+        # Try spaCy (if available) - with minimal logging
         if self.nlp:
             try:
                 doc = self.nlp(word_lower)
                 if doc and len(doc) > 0:
                     lemma = doc[0].lemma_
                     if lemma and lemma != word_lower:
+                        if self.enable_detailed_logging:
+                            print(f"spaCy lemmatization: '{word}' → '{lemma}'")
                         return lemma
             except Exception as e:
-                logger.debug(f"spaCy lemmatization error for '{word}': {e}")
+                if self.enable_detailed_logging:
+                    print(f"spaCy lemmatization error for '{word}': {e}")
         
         # Fallback lemma sözlüğünü kullan
         if word_lower in self.fallback_lemmas:
+            if self.enable_detailed_logging:
+                print(f"Fallback lemma: '{word}' → '{self.fallback_lemmas[word_lower]}'")
             return self.fallback_lemmas[word_lower]
         
         # Temel morfological rules
-        return self._apply_basic_rules(word_lower)
+        basic_result = self._apply_basic_rules(word_lower)
+        if basic_result != word_lower and self.enable_detailed_logging:
+            print(f"Basic rules: '{word}' → '{basic_result}'")
+        return basic_result
     
     def _apply_basic_rules(self, word: str) -> str:
         """Temel morfological kuralları uygula"""
@@ -216,19 +356,50 @@ class ImprovedTurkishContentManager:
     """
     Gelişmiş Türkçe content yöneticisi
     - Daha kapsamlı static responses
-    - Morfological analysis ile gelişmiş matching
+    - On-demand morfological analysis ile gelişmiş matching
     - Türkçe karakter desteği
     - Lemmatization ile akıllı eşleştirme
     - Akıllı fallback responses
     """
     
-    def __init__(self):
-        self.morph_analyzer = TurkishMorphAnalyzer()
-        self.responses = self._load_enhanced_responses()
-        self.synonym_map = self._load_synonyms_from_file()
+    def __init__(self, enable_detailed_logging=False):
+        # İlk önce tüm özellikleri ata
+        self.enable_detailed_logging = enable_detailed_logging
         self.pattern_cache = {}
         
-        logger.info("🇹🇷 Enhanced Turkish Content Manager with morphological analysis initialized")
+        # Lazy loading için morphological analyzer'ı None olarak başlat
+        self.morph_analyzer = None
+        self.responses = self._load_enhanced_responses()
+        
+        # Eş anlamlı kelimeleri de lazy loading ile yükle
+        self._synonym_map = None
+        self._synonyms_loaded = False
+        self._synonyms_enhanced = False  # Morfological genişletme yapıldı mı?
+        
+        # Sadece detailed logging aktifse bu mesajı göster
+        if enable_detailed_logging:
+            print("🇹🇷 Enhanced Turkish Content Manager with lazy morphological analysis initialized")
+        # Sessiz mod - hiç log gösterme
+    
+    @property
+    def synonym_map(self):
+        """Lazy loading property for synonym map"""
+        if not self._synonyms_loaded:
+            # Sadece detailed logging etkinse mesaj göster
+            if self.enable_detailed_logging:
+                print("🔧 Loading synonyms on-demand...")
+            self._synonym_map = self._load_synonyms_from_file()
+            self._synonyms_loaded = True
+        return self._synonym_map
+    
+    def _get_morph_analyzer(self):
+        """Lazy loading: Sadece gerektiğinde morphological analyzer'ı oluştur"""
+        if self.morph_analyzer is None:
+            # Sadece detailed logging etkinse mesaj göster
+            if self.enable_detailed_logging:
+                print("🔧 Creating morphological analyzer on-demand...")
+            self.morph_analyzer = TurkishMorphAnalyzer(enable_detailed_logging=self.enable_detailed_logging)
+        return self.morph_analyzer
     
     def _load_synonyms_from_file(self) -> Dict[str, List[str]]:
         """synonyms.json dosyasından eş anlamlı kelimeleri yükle"""
@@ -250,44 +421,34 @@ class ImprovedTurkishContentManager:
             with open(synonyms_path, 'r', encoding='utf-8') as f:
                 loaded_synonyms = json.load(f)
             
-            # Lemmatization ile eş anlamlıları genişlet
-            enhanced_synonyms = {}
+            # İlk yüklemede sadece basit synonyms'ları kullan
+            # Morfological genişletme ilk kullanımda yapılacak
+            simple_synonyms = {}
             for base_word, synonyms in loaded_synonyms.items():
-                # Base word'ü lemmatize et
-                base_lemma = self.morph_analyzer.lemmatize_word(base_word)
-                
-                # Tüm eş anlamlıları lemmatize et ve varyantlarını ekle
+                # Sadece temel kelimeleri ekle, morfological analiz yapmadan
                 all_variants = set()
-                all_variants.add(base_word)
-                all_variants.add(base_lemma)
+                all_variants.add(base_word.lower())
                 
                 for synonym in synonyms:
-                    all_variants.add(synonym)
-                    synonym_lemma = self.morph_analyzer.lemmatize_word(synonym)
-                    all_variants.add(synonym_lemma)
-                    
-                    # Kelime varyantlarını da ekle
-                    variants = self.morph_analyzer.get_word_variants(synonym)
-                    all_variants.update(variants)
+                    all_variants.add(synonym.lower())
                 
                 # Boş stringleri filtrele
                 all_variants = [v for v in all_variants if v and len(v) > 1]
-                
-                enhanced_synonyms[base_lemma] = list(all_variants)
-                
-                # Orijinal kelimenin kendisi için de entry ekle
-                if base_word != base_lemma:
-                    enhanced_synonyms[base_word] = list(all_variants)
+                simple_synonyms[base_word.lower()] = list(all_variants)
             
-            logger.info(f"📚 Loaded and enhanced {len(enhanced_synonyms)} synonym groups from file")
-            return enhanced_synonyms
+            # Sadece detailed logging etkinse bu mesajı göster
+            if self.enable_detailed_logging:
+                print(f"📚 Loaded {len(simple_synonyms)} synonym groups from file (basic mode)")
+            return simple_synonyms
             
         except Exception as e:
-            logger.warning(f"⚠️ Could not load synonyms from file: {e}")
-            return self._create_synonym_map()  # Fallback to hardcoded synonyms
+            # Sadece detailed logging etkinse warning göster
+            if self.enable_detailed_logging:
+                print(f"⚠️ Could not load synonyms from file: {e}")
+            return self._create_basic_synonym_map()  # Fallback to hardcoded synonyms
     
-    def _create_synonym_map(self) -> Dict[str, List[str]]:
-        """Fallback: Türkçe eş anlamlı kelimeler (hard-coded)"""
+    def _create_basic_synonym_map(self) -> Dict[str, List[str]]:
+        """Fallback: Türkçe eş anlamlı kelimeler (hard-coded, basic mode)"""
         return {
             'çalış': ['iş', 'mesai', 'görev', 'vazife', 'work', 'job', 'çalışma'],
             'saat': ['zaman', 'vakit', 'time', 'hours', 'hour'],
@@ -418,24 +579,63 @@ class ImprovedTurkishContentManager:
             }
         }
     
-    def _create_synonym_map(self) -> Dict[str, List[str]]:
-        """Türkçe eş anlamlı kelimeler"""
-        return {
-            'çalışma': ['iş', 'mesai', 'görev', 'vazife', 'work', 'job'],
-            'saat': ['zaman', 'vakit', 'time', 'hours', 'hour'],
-            'açık': ['open', 'başlama', 'start', 'begin'],
-            'kapalı': ['closed', 'bitiş', 'end', 'finish', 'stop'],
-            'destek': ['yardım', 'help', 'support', 'assistance', 'aid'],
-            'problem': ['sorun', 'hata', 'error', 'issue', 'bug'],
-            'mefapex': ['şirket', 'company', 'firma', 'organization', 'kurum'],
-            'güvenlik': ['security', 'safety', 'emniyet', 'koruma'],
-            'izin': ['leave', 'vacation', 'tatil', 'permit', 'permission'],
-            'proje': ['project', 'görev', 'task', 'iş', 'work'],
-            'eğitim': ['training', 'education', 'kurs', 'course', 'öğretim'],
-            'sistem': ['system', 'software', 'yazılım', 'program'],
-            'hata': ['error', 'bug', 'problem', 'sorun', 'issue'],
-            'yardım': ['help', 'support', 'destek', 'assistance']
-        }
+    def _enhance_synonyms_with_morphology(self):
+        """İlk soru işlendiğinde eş anlamlıları morfological analiz ile genişlet - ONLY when user asks a question"""
+        if not hasattr(self, '_synonyms_enhanced') or not self._synonyms_enhanced:
+            # Sadece detailed logging etkinse mesaj göster
+            if self.enable_detailed_logging:
+                print("🔧 Enhancing synonyms with morphological analysis...")
+            
+            # Önce synonyms'ları yükle (eğer yüklenmemişse)
+            if not self._synonyms_loaded:
+                # synonym_map property'sini çağırarak lazy loading'i tetikle
+                _ = self.synonym_map
+            
+            # Mevcut synonym map'i al
+            current_synonyms = dict(self._synonym_map)  # Copy to avoid modification during iteration
+            enhanced_synonyms = {}
+            
+            # Morfological analyzer'ı al - bu da lazy loading ile çalışır
+            morph_analyzer = self._get_morph_analyzer()
+            
+            for base_word, synonyms in current_synonyms.items():
+                # Base word'ü lemmatize et
+                base_lemma = morph_analyzer.lemmatize_word(base_word)
+                
+                # Tüm eş anlamlıları lemmatize et ve varyantlarını ekle
+                all_variants = set()
+                all_variants.add(base_word)
+                all_variants.add(base_lemma)
+                
+                for synonym in synonyms:
+                    all_variants.add(synonym)
+                    synonym_lemma = morph_analyzer.lemmatize_word(synonym)
+                    all_variants.add(synonym_lemma)
+                    
+                    # Kelime varyantlarını da ekle - sadece gerekirse
+                    try:
+                        variants = morph_analyzer.get_word_variants(synonym)
+                        all_variants.update(variants)
+                    except Exception as e:
+                        # Hataları sessizce geç - verbose logging yok
+                        pass
+                
+                # Boş stringleri filtrele
+                all_variants = [v for v in all_variants if v and len(v) > 1]
+                
+                enhanced_synonyms[base_lemma] = list(all_variants)
+                
+                # Orijinal kelimenin kendisi için de entry ekle
+                if base_word != base_lemma:
+                    enhanced_synonyms[base_word] = list(all_variants)
+            
+            # Enhanced synonyms'ı güncelle
+            self._synonym_map = enhanced_synonyms
+            self._synonyms_enhanced = True
+            
+            # Sadece detailed logging etkinse sonuç mesajı göster
+            if self.enable_detailed_logging:
+                print(f"✅ Enhanced {len(enhanced_synonyms)} synonym groups with morphological analysis")
     
     def _normalize_turkish(self, text: str) -> str:
         """Türkçe karakterleri normalize et ve morfological analysis uygula"""
@@ -464,8 +664,9 @@ class ImprovedTurkishContentManager:
         text = re.sub(r'[^\w\s]', ' ', text)  # Noktalama işaretlerini kaldır
         text = re.sub(r'\s+', ' ', text)  # Çoklu boşlukları tek boşluğa çevir
         
-        # Lemmatization
-        lemmatized_text = self.morph_analyzer.lemmatize_text(text)
+        # Lemmatization (lazy loading ile)
+        morph_analyzer = self._get_morph_analyzer()
+        lemmatized_text = morph_analyzer.lemmatize_text(text)
         
         # Türkçe karakter normalizasyonu (son adım olarak)
         normalized_text = self._normalize_turkish(lemmatized_text)
@@ -474,13 +675,19 @@ class ImprovedTurkishContentManager:
     
     def _expand_with_synonyms(self, text: str) -> List[str]:
         """Metni eş anlamlı kelimelerle ve morfological varyantlarla genişlet"""
+        # İlk kullanımda morfological genişletmeyi yap
+        self._enhance_synonyms_with_morphology()
+        
         words = text.split()
         expanded_texts = {text}  # Set kullanarak dublicate'leri önle
+        
+        # Lazy loading ile morphological analyzer'ı al
+        morph_analyzer = self._get_morph_analyzer()
         
         # Her kelime için eş anlamlıları ve varyantlarını kontrol et
         for word in words:
             # Kelimeyi lemmatize et
-            lemma = self.morph_analyzer.lemmatize_word(word)
+            lemma = morph_analyzer.lemmatize_word(word)
             
             # Normalized versiyonları da kontrol et
             normalized_word = self._normalize_turkish(word)
@@ -495,7 +702,7 @@ class ImprovedTurkishContentManager:
                     synonyms_found.update(self.synonym_map[key])
             
             # Morfological varyantları da ekle
-            variants = self.morph_analyzer.get_word_variants(word)
+            variants = morph_analyzer.get_word_variants(word)
             for variant in variants:
                 normalized_variant = self._normalize_turkish(variant)
                 for key in [variant, normalized_variant]:
@@ -510,7 +717,7 @@ class ImprovedTurkishContentManager:
                     expanded_texts.add(new_text)
                     
                     # Lemmatized versiyonlarını da dene
-                    lemma_text = text.replace(word, self.morph_analyzer.lemmatize_word(synonym))
+                    lemma_text = text.replace(word, morph_analyzer.lemmatize_word(synonym))
                     expanded_texts.add(lemma_text)
         
         return list(expanded_texts)
@@ -676,7 +883,9 @@ class ImprovedTurkishContentManager:
             responses = match["responses"]
             import random
             response = random.choice(responses)
-            logger.info(f"🎯 Static response matched: {match['category']} (score: {match['score']:.2f})")
+            # Sadece detailed logging etkinse debug mesajı göster
+            if self.enable_detailed_logging:
+                print(f"🎯 Static response matched: {match['category']} (score: {match['score']:.2f})")
             return response
         
         # Fallback yanıtları
@@ -738,22 +947,42 @@ class ImprovedTurkishContentManager:
         total_patterns = sum(len(data["patterns"]) for data in self.responses.values())
         total_responses = sum(len(data["responses"]) for data in self.responses.values())
         
-        # Morfological analyzer stats
-        morph_stats = {
-            "spacy_available": self.morph_analyzer.nlp is not None,
-            "fallback_lemmas": len(self.morph_analyzer.fallback_lemmas),
-            "morphological_analysis": "Enabled" if SPACY_AVAILABLE else "Fallback mode"
-        }
+        # Morfological analyzer stats (lazy loading aware)
+        if self.morph_analyzer is None:
+            morph_stats = {
+                "morphological_analyzer": "Not loaded (lazy loading - will initialize on first use)",
+                "fallback_lemmas": "Available",
+                "morphological_analysis": "On-demand"
+            }
+        else:
+            morph_stats = {
+                "spacy_available": self.morph_analyzer.nlp is not None,
+                "fallback_lemmas": len(self.morph_analyzer.fallback_lemmas),
+                "morphological_analysis": "Loaded and active"
+            }
+        
+        # Synonym stats (lazy loading aware)
+        if not self._synonyms_loaded:
+            synonym_stats = {
+                "synonyms": "Not loaded (lazy loading - will load on first use)",
+                "enhanced_with_morphology": "Pending"
+            }
+        else:
+            synonym_stats = {
+                "synonym_words": len(self.synonym_map),
+                "enhanced_with_morphology": self._synonyms_enhanced
+            }
         
         return {
             "total_categories": len(self.responses),
             "total_patterns": total_patterns,
             "total_responses": total_responses,
             "cache_size": len(self.pattern_cache),
-            "synonym_words": len(self.synonym_map),
-            "language": "Turkish (Enhanced with Morphological Analysis)",
-            "morphological_analysis": morph_stats
+            "language": "Turkish (Enhanced with On-Demand Morphological Analysis)",
+            "morphological_analysis": morph_stats,
+            "synonym_analysis": synonym_stats
         }
 
-# Global instance
-improved_turkish_content = ImprovedTurkishContentManager()
+# Global instance - ultra efficient mode (no detailed logging, ERROR level only, completely silent)
+# Morfological analysis sadece kullanıcı soru sorduğunda çalışır
+improved_turkish_content = ImprovedTurkishContentManager(enable_detailed_logging=False)

@@ -83,6 +83,7 @@ class StartupManager:
             )
             
             await initialize_unified_architecture()
+            logger.info("✅ Mikroservis mimarisi başlatma tamamlandı")
             self.initialized_services.append("microservice_architecture")
             
             # Check configuration status
@@ -95,38 +96,44 @@ class StartupManager:
         except ImportError as e:
             logger.warning(f"⚠️ Birleşik mimari yüklenemedi: {e}")
             logger.info("🔄 Fallback olarak orijinal model manager kullanılıyor")
+        except Exception as e:
+            logger.error(f"❌ Birleşik mimari başlatma hatası: {e}")
+            logger.info("🔄 Fallback olarak orijinal model manager kullanılıyor")
     
     async def _initialize_memory_monitoring(self):
         """Initialize memory monitoring with emergency manager"""
         try:
+            logger.info("🧠 Memory monitoring başlatılıyor...")
             from memory_monitor import memory_monitor
             memory_monitor.start_monitoring()
             self.initialized_services.append("memory_monitor")
-            logger.info("🧠 Memory monitoring started")
+            logger.info("✅ Memory monitoring started")
         except Exception as e:
-            logger.warning(f"Memory monitoring başlatılamadı: {e}")
+            logger.warning(f"⚠️ Memory monitoring başlatılamadı: {e}")
     
     async def _initialize_turkish_content(self):
         """Initialize Enhanced Turkish content system"""
         try:
+            logger.info("🇹🇷 Turkish content system başlatılıyor...")
             from improved_turkish_content_manager import improved_turkish_content
             # Warm up the Turkish content system
             test_response = improved_turkish_content.get_response("test")
             if test_response:
                 self.initialized_services.append("turkish_content")
-                logger.info("🇹🇷 Enhanced Turkish content system ready")
+                logger.info("✅ Enhanced Turkish content system ready")
         except Exception as e:
-            logger.warning(f"Turkish content system initialization warning: {e}")
+            logger.warning(f"⚠️ Turkish content system initialization warning: {e}")
     
     async def _initialize_auth_service(self):
         """Initialize authentication service"""
         try:
+            logger.info("🔐 Authentication service başlatılıyor...")
             init_auth_service(
                 secret_key=self.config.security.secret_key,
                 environment=self.config.environment.value
             )
             self.initialized_services.append("auth_service")
-            logger.info("🔐 Authentication service initialized")
+            logger.info("✅ Authentication service initialized")
         except Exception as e:
             logger.error(f"❌ Authentication service failed: {e}")
             raise
@@ -134,11 +141,12 @@ class StartupManager:
     async def _initialize_cache_manager(self):
         """Initialize cache manager"""
         try:
+            logger.info("🗄️ Cache manager başlatılıyor...")
             # Try to import cache manager
             from cache_manager import initialize_cache_manager
             await initialize_cache_manager(self.config)
             self.initialized_services.append("cache_manager")
-            logger.info("🗄️ Cache manager initialized")
+            logger.info("✅ Cache manager initialized")
         except ImportError:
             logger.info("🗄️ Using basic cache implementation")
         except Exception as e:
@@ -148,6 +156,7 @@ class StartupManager:
     async def _initialize_websocket_manager(self, app=None):
         """Initialize WebSocket manager"""
         try:
+            logger.info("🔌 WebSocket manager başlatılıyor...")
             # Setup distributed WebSocket middleware if app is provided
             if app:
                 setup_websocket_middleware(app, websocket_manager, cleanup_interval=300)
@@ -157,9 +166,9 @@ class StartupManager:
                 websocket_manager.set_message_handler(message_handler)
             
             self.initialized_services.append("websocket_manager")
-            logger.info("🔌 WebSocket manager initialized with distributed support")
+            logger.info("✅ WebSocket manager initialized with distributed support")
         except Exception as e:
-            logger.warning(f"WebSocket manager warning: {e}")
+            logger.warning(f"⚠️ WebSocket manager warning: {e}")
     
     def _get_model_manager(self):
         """Get the appropriate model manager"""

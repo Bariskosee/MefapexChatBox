@@ -422,6 +422,12 @@ class UnifiedModelManager(IModelManager):
         except Exception as e:
             logger.warning(f"⚠️ AI mikroservis başlatılamadı: {e}")
             self._ai_service_client = None
+            # Ensure AI client is properly closed on failure
+            try:
+                from services.ai_service.client import close_ai_client
+                await close_ai_client()
+            except:
+                pass
     
     def _determine_mode(self) -> None:
         """Çalışma modunu belirle"""

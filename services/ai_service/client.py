@@ -101,6 +101,11 @@ class AIServiceClient:
         except Exception as e:
             self._service_available = False
             logger.error(f"❌ AI servis sağlık kontrolü hatası: {e}")
+            logger.error(f"Sağlık kontrolü hatası: AI servis erişilemez durumda")
+            # Close session on persistent health check failures
+            if self.session and not self.session.closed:
+                await self.session.close()
+                self.session = None
             return False
     
     async def _make_request(self, method: str, endpoint: str, data: Dict = None) -> Dict:
